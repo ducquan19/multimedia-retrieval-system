@@ -34,7 +34,21 @@ function searchResponse(
     retrieval_mode: "mock",
     results: options.empty
       ? []
-      : [{ result_id: "result-001", rank: 1, video_id: "L01_V001" }],
+      : [
+          {
+            result_id: "result-001",
+            rank: 1,
+            video_id: "L01_V001",
+            frame_id: 505,
+            keyframe_url: "/media/keyframes/mock-frame.svg",
+            segment_id: "segment-001",
+            asr_text: "Một người đang mở laptop.",
+            ocr_text: "AIC 2026",
+            objects: [{ label: "laptop", score: 0.97 }],
+            similarity_score: 0.9821,
+            answer: "",
+          },
+        ],
   };
 }
 

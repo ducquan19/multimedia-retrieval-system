@@ -2,6 +2,11 @@ import type { PublicConfig, SearchRequest, SearchResponse } from "./types";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
+export function resolveMediaUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,

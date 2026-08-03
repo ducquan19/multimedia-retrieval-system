@@ -11,6 +11,7 @@ import {
   type SearchSources,
   type TopK,
 } from "../../api/types";
+import { SingleResultInspector } from "../results/SingleResultInspector";
 
 const QUERY_TYPE_LABELS: Record<QueryType, string> = {
   KIS: "Known Item Search",
@@ -343,16 +344,17 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
         </aside>
       </form>
 
-      <SearchState mutation={searchMutation} />
+      <SearchState mutation={searchMutation} maxAnswerLength={config.max_answer_length} />
     </section>
   );
 }
 
 interface SearchStateProps {
   mutation: UseMutationResult<SearchResponse, unknown, SearchMutationVariables>;
+  maxAnswerLength: number;
 }
 
-function SearchState({ mutation }: SearchStateProps) {
+function SearchState({ mutation, maxAnswerLength }: SearchStateProps) {
   if (mutation.isPending) {
     return (
       <section className="result-state" aria-live="polite" aria-busy="true">
@@ -413,23 +415,29 @@ function SearchState({ mutation }: SearchStateProps) {
         </div>
       )}
 
-      <div className="result-preview__heading">
-        <div>
-          <p className="eyebrow eyebrow--dark">API response</p>
-          <h3>{mutation.data.results.length} candidates received</h3>
-        </div>
-        <span className="mini-badge">{mutation.data.query_type}</span>
-      </div>
-      <ol className="result-list" aria-label="Retrieved candidates">
-        {mutation.data.results.map((result) => (
-          <li key={result.result_id}>
-            <span>#{result.rank}</span>
-            <strong>{result.video_id}</strong>
-            <small>{result.result_id}</small>
-          </li>
-        ))}
-      </ol>
-      <p className="phase-note">Chi tiết, modal và sắp xếp candidate sẽ được bổ sung ở Phase 5.</p>
+      {mutation.data.query_type === "TRAKE" ? (
+        <>
+          <div className="result-preview__heading">
+            <div>
+              <p className="eyebrow eyebrow--dark">API response</p>
+              <h3>{mutation.data.results.length} candidates received</h3>
+            </div>
+            <span className="mini-badge">TRAKE</span>
+          </div>
+          <ol className="result-list" aria-label="Retrieved candidates">
+            {mutation.data.results.map((result) => (
+              <li key={result.result_id}>
+                <span>#{result.rank}</span>
+                <strong>{result.video_id}</strong>
+                <small>{result.result_id}</small>
+              </li>
+            ))}
+          </ol>
+          <p className="phase-note">TRAKE row inspector sẽ được bổ sung ở Phase 6.</p>
+        </>
+      ) : (
+        <SingleResultInspector response={mutation.data} maxAnswerLength={maxAnswerLength} />
+      )}
     </section>
   );
 }
