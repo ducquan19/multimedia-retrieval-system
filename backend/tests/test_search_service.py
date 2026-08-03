@@ -18,7 +18,7 @@ def test_hybrid_source_flags_pass_through_to_retrieval_engine() -> None:
     request = KISSearchRequest(
         query_type="KIS",
         query="query",
-        top_k=10,
+        top_k=5,
         search_sources=SearchSources(image=False, asr=True, object=True, ocr=True),
     )
 

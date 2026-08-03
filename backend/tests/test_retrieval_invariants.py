@@ -61,7 +61,7 @@ def test_fixture_engine_rejects_trake_event_from_another_video(tmp_path: Path) -
             TRAKEEventQuery(event_index=1, query="one"),
             TRAKEEventQuery(event_index=2, query="two"),
         ),
-        top_k=10,
+        top_k=5,
         search_sources=SearchSources(),
     )
 

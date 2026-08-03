@@ -20,7 +20,7 @@
 
 ```json
 {
-  "top_k_options": [10, 20, 50, 100],
+  "top_k_options": [1, 5, 20, 50, 100],
   "default_top_k": 20,
   "max_trake_events": 10,
   "retrieval_mode": "mock",
@@ -40,7 +40,7 @@ Common search sources:
 {"image":true,"asr":false,"object":false,"ocr":false}
 ```
 
-Ít nhất một field phải là `true`; top-k chỉ nhận một trong `10,20,50,100`.
+Ít nhất một field phải là `true`; top-k chỉ nhận một trong `1,5,20,50,100`.
 
 KIS request:
 

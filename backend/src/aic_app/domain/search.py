@@ -2,11 +2,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from aic_app.constants import TopK
+
 QueryText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=4_000),
 ]
-TopK = Literal[10, 20, 50, 100]
 
 
 class SearchSources(BaseModel):

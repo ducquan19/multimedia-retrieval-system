@@ -173,7 +173,7 @@ See [docs/API.md](docs/API.md) for the complete request and response contract.
 $searchBody = @{
   query_type = "KIS"
   query = "a person opening a laptop"
-  top_k = 10
+  top_k = 5
   enhance_query = $true
   search_sources = @{
     image = $true

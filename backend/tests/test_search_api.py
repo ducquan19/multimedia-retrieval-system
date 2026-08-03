@@ -23,12 +23,49 @@ def test_public_config_reports_mock_modes(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == {
-        "top_k_options": [10, 20, 50, 100],
+        "top_k_options": [1, 5, 20, 50, 100],
         "default_top_k": 20,
         "max_trake_events": 10,
         "retrieval_mode": "mock",
         "gemini_mode": "mock",
     }
+
+
+@pytest.mark.parametrize(("top_k", "expected_count"), [(1, 1), (5, 5)])
+def test_scoring_top_k_options_are_accepted(
+    client: TestClient, top_k: int, expected_count: int
+) -> None:
+    response = client.post(
+        "/api/search",
+        json={
+            "query_type": "KIS",
+            "query": "top-k contract",
+            "top_k": top_k,
+            "search_sources": sources(),
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["results"]) == expected_count
+
+
+def test_non_scoring_top_k_option_is_rejected(client: TestClient) -> None:
+    response = client.post(
+        "/api/search",
+        json={
+            "query_type": "KIS",
+            "query": "top-k contract",
+            "top_k": 10,
+            "search_sources": sources(),
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_default_top_k_must_use_a_scoring_option() -> None:
+    with pytest.raises(ValueError, match="default_top_k must be one of"):
+        Settings(default_top_k=10)
 
 
 @pytest.mark.parametrize(
@@ -38,7 +75,7 @@ def test_public_config_reports_mock_modes(client: TestClient) -> None:
             {
                 "query_type": "KIS",
                 "query": "người đang mở laptop",
-                "top_k": 10,
+                "top_k": 5,
                 "enhance_query": False,
                 "search_sources": sources(),
             },
@@ -48,7 +85,7 @@ def test_public_config_reports_mock_modes(client: TestClient) -> None:
             {
                 "query_type": "VQA",
                 "query": "người phụ nữ đang cầm ly màu gì?",
-                "top_k": 10,
+                "top_k": 5,
                 "enhance_query": False,
                 "search_sources": sources(asr=True),
             },
@@ -62,7 +99,7 @@ def test_public_config_reports_mock_modes(client: TestClient) -> None:
                     {"event_index": 1, "query": "giậm nhảy"},
                     {"event_index": 2, "query": "bay qua xà"},
                 ],
-                "top_k": 10,
+                "top_k": 5,
                 "enhance_query": False,
                 "search_sources": sources(),
             },
@@ -90,7 +127,7 @@ def test_kis_search_truncates_to_top_k_and_uses_manifest_frame_id(
         json={
             "query_type": "KIS",
             "query": "laptop",
-            "top_k": 10,
+            "top_k": 5,
             "enhance_query": False,
             "search_sources": sources(),
         },
@@ -98,8 +135,8 @@ def test_kis_search_truncates_to_top_k_and_uses_manifest_frame_id(
 
     assert response.status_code == 200
     results = response.json()["results"]
-    assert len(results) == 10
-    assert [result["rank"] for result in results] == list(range(1, 11))
+    assert len(results) == 5
+    assert [result["rank"] for result in results] == list(range(1, 6))
     assert results[0]["frame_id"] == 505
     assert results[0]["keyframe_url"] == "/media/keyframes/mock-frame.svg"
 
@@ -108,7 +145,7 @@ def test_enhance_query_is_deterministic_and_optional(client: TestClient) -> None
     base_payload = {
         "query_type": "KIS",
         "query": "  người đang mở laptop  ",
-        "top_k": 10,
+        "top_k": 5,
         "search_sources": sources(),
     }
 
@@ -127,7 +164,7 @@ def test_missing_optional_manifest_fields_are_normalized(client: TestClient) -> 
         json={
             "query_type": "KIS",
             "query": "fixture with missing fields",
-            "top_k": 10,
+            "top_k": 5,
             "enhance_query": False,
             "search_sources": sources(),
         },
@@ -151,7 +188,7 @@ def test_trake_response_preserves_event_invariants(client: TestClient) -> None:
                 {"event_index": 2, "query": "bay qua xà"},
                 {"event_index": 3, "query": "tiếp đất"},
             ],
-            "top_k": 10,
+            "top_k": 5,
             "enhance_query": False,
             "search_sources": sources(),
         },
@@ -170,7 +207,7 @@ def test_all_search_sources_disabled_is_rejected(client: TestClient) -> None:
         json={
             "query_type": "KIS",
             "query": "anything",
-            "top_k": 10,
+            "top_k": 5,
             "enhance_query": False,
             "search_sources": sources(image=False),
         },
@@ -184,20 +221,20 @@ def test_all_search_sources_disabled_is_rejected(client: TestClient) -> None:
     [
         {
             "query_type": "KIS",
-            "top_k": 10,
+            "top_k": 5,
             "search_sources": sources(),
         },
         {
             "query_type": "VQA",
             "query": "",
-            "top_k": 10,
+            "top_k": 5,
             "search_sources": sources(),
         },
         {
             "query_type": "TRAKE",
             "main_query": "sequence",
             "events": [{"event_index": 2, "query": "wrong index"}],
-            "top_k": 10,
+            "top_k": 5,
             "search_sources": sources(),
         },
     ],
@@ -220,7 +257,7 @@ def test_runtime_max_trake_events_is_enforced() -> None:
                 {"event_index": 1, "query": "one"},
                 {"event_index": 2, "query": "two"},
             ],
-            "top_k": 10,
+            "top_k": 5,
             "search_sources": sources(),
         },
     )

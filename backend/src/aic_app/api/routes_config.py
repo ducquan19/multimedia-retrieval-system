@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from aic_app.config import Settings
+from aic_app.constants import TOP_K_OPTIONS
 
 router = APIRouter(tags=["system"])
 
@@ -20,7 +21,7 @@ class PublicConfigResponse(BaseModel):
 async def public_config(request: Request) -> PublicConfigResponse:
     settings: Settings = request.app.state.settings
     return PublicConfigResponse(
-        top_k_options=settings.top_k_options,
+        top_k_options=TOP_K_OPTIONS,
         default_top_k=settings.default_top_k,
         max_trake_events=settings.max_trake_events,
         retrieval_mode="mock",

@@ -4,7 +4,7 @@ from pathlib import Path
 from pydantic import AnyHttpUrl, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-TOP_K_OPTIONS = (10, 20, 50, 100)
+from aic_app.constants import TOP_K_OPTIONS
 
 
 class Settings(BaseSettings):
@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     app_name: str = "AIC 2026 Retrieval Inspector API"
     data_root: Path = Path("./data")
     frontend_origin: AnyHttpUrl = "http://localhost:5173"
-    top_k_options: tuple[int, ...] = TOP_K_OPTIONS
     default_top_k: int = 20
     max_trake_events: int = 10
     retrieval_mode: str = "mock"
@@ -30,8 +29,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_public_config(self) -> "Settings":
-        if self.default_top_k not in self.top_k_options:
-            raise ValueError("default_top_k must be one of top_k_options")
+        if self.default_top_k not in TOP_K_OPTIONS:
+            raise ValueError(f"default_top_k must be one of {TOP_K_OPTIONS}")
         if self.max_trake_events < 1:
             raise ValueError("max_trake_events must be at least 1")
         if self.retrieval_mode != "mock" or self.gemini_mode != "mock":

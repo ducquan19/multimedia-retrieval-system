@@ -38,7 +38,7 @@ Semantic keyframe của TRAKE là khái niệm nội dung, không phải I-frame
 
 - Mỗi truy vấn được nộp tối đa 100 câu trả lời. **SOURCE-PDF**
 - Điểm cuối dùng R@k tại `k = 1, 5, 20, 50, 100`; vì vậy thứ tự candidate là dữ liệu nghiệp vụ. **SOURCE-PDF**
-- UI cho phép chọn top-k `10, 20, 50, 100`. **SOURCE-CSV + DECISION**
+- UI cho phép chọn top-k `1, 5, 20, 50, 100`, tương ứng các mốc đánh giá R@k. **SOURCE-PDF + DECISION**
 - Kéo thả hoặc Move up/Move down phải cập nhật thứ tự hiện tại; preview/download phải dùng chính thứ tự đó, không dùng `rank` cũ từ API. **SOURCE-CSV + DECISION**
 - MVP không tính R-Score vì không có ground truth. **ASSUMPTION**
 
