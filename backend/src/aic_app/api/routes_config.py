@@ -1,9 +1,9 @@
 from typing import Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel
 
-from aic_app.config import Settings
+from aic_app.api.dependencies import SettingsDependency
 from aic_app.constants import TOP_K_OPTIONS
 
 router = APIRouter(tags=["system"])
@@ -20,8 +20,7 @@ class PublicConfigResponse(BaseModel):
 
 
 @router.get("/config", response_model=PublicConfigResponse)
-async def public_config(request: Request) -> PublicConfigResponse:
-    settings: Settings = request.app.state.settings
+async def public_config(settings: SettingsDependency) -> PublicConfigResponse:
     return PublicConfigResponse(
         top_k_options=TOP_K_OPTIONS,
         default_top_k=settings.default_top_k,

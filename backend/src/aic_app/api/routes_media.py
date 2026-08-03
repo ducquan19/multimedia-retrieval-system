@@ -1,14 +1,14 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from aic_app.services.media_resolver import MediaNotFound, SafeMediaResolver, UnsafeMediaPath
+from aic_app.api.dependencies import MediaResolverDependency
+from aic_app.services.media_resolver import MediaNotFound, UnsafeMediaPath
 
 router = APIRouter(tags=["media"])
 
 
 @router.get("/media/{relative_path:path}", response_class=FileResponse)
-async def media(relative_path: str, request: Request) -> FileResponse:
-    resolver: SafeMediaResolver = request.app.state.media_resolver
+async def media(relative_path: str, resolver: MediaResolverDependency) -> FileResponse:
     try:
         path = resolver.resolve(relative_path)
     except UnsafeMediaPath as exc:

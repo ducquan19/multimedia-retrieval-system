@@ -1,7 +1,8 @@
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Response
 
+from aic_app.api.dependencies import SubmissionServiceDependency
 from aic_app.domain.submission import SubmissionRenderResponse, SubmissionRequest
 from aic_app.services.submission_service import (
     SubmissionService,
@@ -10,11 +11,6 @@ from aic_app.services.submission_service import (
 )
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
-
-
-def get_submission_service(request: Request) -> SubmissionService:
-    service: SubmissionService = request.app.state.submission_service
-    return service
 
 
 def render_or_422(
@@ -28,14 +24,16 @@ def render_or_422(
 
 @router.post("/render", response_model=SubmissionRenderResponse)
 async def render_submission(
-    payload: SubmissionRequest, request: Request
+    payload: SubmissionRequest, service: SubmissionServiceDependency
 ) -> SubmissionRenderResponse:
-    return render_or_422(payload, get_submission_service(request))
+    return render_or_422(payload, service)
 
 
 @router.post("/download")
-async def download_submission(payload: SubmissionRequest, request: Request) -> Response:
-    rendered = render_or_422(payload, get_submission_service(request))
+async def download_submission(
+    payload: SubmissionRequest, service: SubmissionServiceDependency
+) -> Response:
+    rendered = render_or_422(payload, service)
     ascii_fallback = ascii_filename_fallback(rendered.filename).replace('"', "_")
     encoded_filename = quote(rendered.filename, safe="")
     content_disposition = (
