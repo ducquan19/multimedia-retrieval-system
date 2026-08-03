@@ -3,14 +3,6 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from aic_app.config import Settings
-from aic_app.main import create_app
-
-
-@pytest.fixture
-def client() -> TestClient:
-    return TestClient(create_app(Settings()))
-
 
 def test_render_and_download_return_identical_utf8_content(client: TestClient) -> None:
     payload = {

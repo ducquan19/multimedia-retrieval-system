@@ -7,11 +7,6 @@ from aic_app.config import Settings
 from aic_app.main import create_app
 
 
-@pytest.fixture
-def client() -> TestClient:
-    return TestClient(create_app(Settings()))
-
-
 def sources(**overrides: bool) -> dict[str, bool]:
     values = {"image": True, "asr": False, "object": False, "ocr": False}
     values.update(overrides)
@@ -245,8 +240,9 @@ def test_invalid_request_for_each_query_type_is_rejected(
     assert client.post("/api/search", json=payload).status_code == 422
 
 
-def test_runtime_max_trake_events_is_enforced() -> None:
-    client = TestClient(create_app(Settings(max_trake_events=1)))
+def test_runtime_max_trake_events_is_enforced(app_settings: Settings) -> None:
+    settings = app_settings.model_copy(update={"max_trake_events": 1})
+    client = TestClient(create_app(settings))
 
     response = client.post(
         "/api/search",
