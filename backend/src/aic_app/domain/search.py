@@ -6,7 +6,7 @@ from aic_app.constants import TopK
 
 QueryText = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=1, max_length=4_000),
+    StringConstraints(strip_whitespace=True, min_length=1),
 ]
 
 

@@ -14,7 +14,12 @@ class RecordingRetrievalEngine:
 
 def test_hybrid_source_flags_pass_through_to_retrieval_engine() -> None:
     engine = RecordingRetrievalEngine()
-    service = SearchService(engine, MockQueryEnhancer(), max_trake_events=10)
+    service = SearchService(
+        engine,
+        MockQueryEnhancer(),
+        max_trake_events=10,
+        max_query_length=4_000,
+    )
     request = KISSearchRequest(
         query_type="KIS",
         query="query",

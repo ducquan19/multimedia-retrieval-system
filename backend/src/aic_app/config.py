@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AnyHttpUrl, model_validator
+from pydantic import AnyHttpUrl, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aic_app.constants import TOP_K_OPTIONS
@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     frontend_origin: AnyHttpUrl = "http://localhost:5173"
     default_top_k: int = 20
     max_trake_events: int = 10
+    max_query_length: int = Field(default=4_000, ge=1)
+    max_answer_length: int = Field(default=4_000, ge=1)
     retrieval_mode: str = "mock"
     gemini_mode: str = "mock"
     manifest_filename: str = "manifest.json"

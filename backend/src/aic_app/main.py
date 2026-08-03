@@ -36,9 +36,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         retrieval_engine,
         MockQueryEnhancer(),
         resolved_settings.max_trake_events,
+        resolved_settings.max_query_length,
     )
     app.state.media_resolver = SafeMediaResolver(resolved_settings.data_root)
-    app.state.submission_service = SubmissionService(CsvSubmissionFormatter())
+    app.state.submission_service = SubmissionService(
+        CsvSubmissionFormatter(), resolved_settings.max_answer_length
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[str(resolved_settings.frontend_origin).rstrip("/")],

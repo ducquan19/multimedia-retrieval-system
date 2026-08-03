@@ -25,8 +25,9 @@ class SubmissionValidationError(ValueError):
 
 
 class SubmissionService:
-    def __init__(self, formatter: SubmissionFormatter) -> None:
+    def __init__(self, formatter: SubmissionFormatter, max_answer_length: int) -> None:
         self._formatter = formatter
+        self._max_answer_length = max_answer_length
 
     def render(self, request: SubmissionRequest) -> SubmissionRenderResponse:
         self._validate_request(request)
@@ -39,8 +40,20 @@ class SubmissionService:
             warnings=warnings,
         )
 
-    @staticmethod
-    def _validate_request(request: SubmissionRequest) -> None:
+    def _validate_request(self, request: SubmissionRequest) -> None:
+        if isinstance(request, VQASubmissionRequest):
+            invalid_rows = [
+                index
+                for index, row in enumerate(request.rows, start=1)
+                if len(row.answer) > self._max_answer_length
+            ]
+            if invalid_rows:
+                row_list = ", ".join(str(index) for index in invalid_rows)
+                raise SubmissionValidationError(
+                    "VQA answers must contain at most "
+                    f"{self._max_answer_length} characters; invalid rows: {row_list}"
+                )
+            return
         if not isinstance(request, TRAKESubmissionRequest):
             return
         invalid_rows = [

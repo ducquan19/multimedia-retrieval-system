@@ -3,6 +3,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from aic_app.config import Settings
+from aic_app.main import create_app
+
 
 def test_render_and_download_return_identical_utf8_content(client: TestClient) -> None:
     payload = {
@@ -91,6 +94,26 @@ def test_trake_wrong_number_of_frames_returns_422(client: TestClient) -> None:
 
     assert response.status_code == 422
     assert "must each contain 3 frame IDs" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("endpoint", ["render", "download"])
+def test_runtime_answer_length_is_enforced(
+    app_settings: Settings, endpoint: str
+) -> None:
+    settings = app_settings.model_copy(update={"max_answer_length": 3})
+
+    with TestClient(create_app(settings)) as limited_client:
+        response = limited_client.post(
+            f"/api/submissions/{endpoint}",
+            json={
+                "query_type": "VQA",
+                "filename": "vqa.csv",
+                "rows": [{"video_id": "L01", "frame_id": 1, "answer": "four"}],
+            },
+        )
+
+    assert response.status_code == 422
+    assert "at most 3 characters" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(

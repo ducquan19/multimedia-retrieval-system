@@ -23,12 +23,17 @@
   "top_k_options": [1, 5, 20, 50, 100],
   "default_top_k": 20,
   "max_trake_events": 10,
+  "max_query_length": 4000,
+  "max_answer_length": 4000,
   "retrieval_mode": "mock",
   "gemini_mode": "mock"
 }
 ```
 
-`max_trake_events=10` là default triển khai, không phải giới hạn từ BTC.
+Ba giới hạn `max_trake_events=10`, `max_query_length=4000` và
+`max_answer_length=4000` là default triển khai, không phải giới hạn từ BTC. Có thể cấu hình
+chúng lần lượt qua `AIC_MAX_TRAKE_EVENTS`, `AIC_MAX_QUERY_LENGTH` và
+`AIC_MAX_ANSWER_LENGTH`; mọi giá trị phải là số nguyên dương.
 
 ## 3. Search
 
@@ -41,6 +46,8 @@ Common search sources:
 ```
 
 Ít nhất một field phải là `true`; top-k chỉ nhận một trong `1,5,20,50,100`.
+Mỗi `query`, `main_query` và query của từng TRAKE event không được vượt quá
+`max_query_length` mà `/api/config` công bố.
 
 KIS request:
 
@@ -194,7 +201,8 @@ Sanitization lấy basename sau cả `/` và `\\`, loại control/null byte cùn
 Validation:
 
 - KIS/VQA: `video_id` không rỗng, `frame_id` là non-negative integer.
-- VQA: `answer` là string tối đa 4.000 ký tự; cho phép rỗng kèm warning.
+- VQA: `answer` là string tối đa `max_answer_length` ký tự theo `/api/config`; cho phép
+  rỗng kèm warning.
 - TRAKE: `event_count >= 1`, mọi `frame_ids` có đúng `event_count` phần tử.
 - Rows tối đa 100.
 

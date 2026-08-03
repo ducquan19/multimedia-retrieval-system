@@ -7,7 +7,7 @@ VideoId = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
 ]
 Filename = Annotated[str, StringConstraints(max_length=255)]
-Answer = Annotated[str, StringConstraints(max_length=4_000)]
+Answer = str
 FrameId = Annotated[int, Field(ge=0)]
 
 

@@ -113,6 +113,8 @@ The defaults work for local development:
 | `AIC_FRONTEND_ORIGIN` | `http://localhost:5173` | Allowed frontend origin in development |
 | `AIC_DEFAULT_TOP_K` | `20` | Default number of search candidates |
 | `AIC_MAX_TRAKE_EVENTS` | `10` | Deployment-level TRAKE event limit |
+| `AIC_MAX_QUERY_LENGTH` | `4000` | Maximum characters in each search query or TRAKE event query |
+| `AIC_MAX_ANSWER_LENGTH` | `4000` | Maximum characters in each VQA submission answer |
 | `VITE_API_BASE_URL` | Empty | Optional API base URL used by the built frontend |
 | `VITE_DEV_API_TARGET` | `http://localhost:8000` | Vite development proxy target |
 | `GEMINI_API_KEY` | Placeholder | Reserved for future work and not read by the MVP |
@@ -159,7 +161,7 @@ During development, the frontend sends `/api` requests through the Vite proxy. P
 | Method | Endpoint | Description |
 | --- | --- | --- |
 | `GET` | `/api/health` | Process health check |
-| `GET` | `/api/config` | Public top-k, TRAKE, and mock-mode settings |
+| `GET` | `/api/config` | Public top-k, text limits, TRAKE, and mock-mode settings |
 | `POST` | `/api/search` | Deterministic mock search for KIS, VQA, or TRAKE |
 | `POST` | `/api/submissions/render` | Validate rows and return a CSV preview |
 | `POST` | `/api/submissions/download` | Return the same CSV content as an attachment |

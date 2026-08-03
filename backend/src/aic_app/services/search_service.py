@@ -24,12 +24,15 @@ class SearchService:
         retrieval_engine: RetrievalEngine,
         query_enhancer: QueryEnhancer,
         max_trake_events: int,
+        max_query_length: int,
     ) -> None:
         self._retrieval_engine = retrieval_engine
         self._query_enhancer = query_enhancer
         self._max_trake_events = max_trake_events
+        self._max_query_length = max_query_length
 
     def search(self, request: SearchRequest) -> SearchResponse:
+        self._validate_query_lengths(request)
         if isinstance(request, TRAKESearchRequest) and len(request.events) > self._max_trake_events:
             raise SearchValidationError(
                 f"TRAKE supports at most {self._max_trake_events} events in this deployment"
@@ -65,6 +68,20 @@ class SearchService:
             enhanced_query=enhanced_query,
             results=self._only_trake_results(results),
         )
+
+    def _validate_query_lengths(self, request: SearchRequest) -> None:
+        if isinstance(request, TRAKESearchRequest):
+            queries = (("main_query", request.main_query),) + tuple(
+                (f"events[{event.event_index}].query", event.query) for event in request.events
+            )
+        else:
+            queries = (("query", request.query),)
+
+        for field_name, query in queries:
+            if len(query) > self._max_query_length:
+                raise SearchValidationError(
+                    f"{field_name} must contain at most {self._max_query_length} characters"
+                )
 
     @staticmethod
     def _only_single_results(

@@ -21,6 +21,8 @@ def test_public_config_reports_mock_modes(client: TestClient) -> None:
         "top_k_options": [1, 5, 20, 50, 100],
         "default_top_k": 20,
         "max_trake_events": 10,
+        "max_query_length": 4_000,
+        "max_answer_length": 4_000,
         "retrieval_mode": "mock",
         "gemini_mode": "mock",
     }
@@ -61,6 +63,22 @@ def test_non_scoring_top_k_option_is_rejected(client: TestClient) -> None:
 def test_default_top_k_must_use_a_scoring_option() -> None:
     with pytest.raises(ValueError, match="default_top_k must be one of"):
         Settings(default_top_k=10)
+
+
+def test_text_limits_load_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AIC_MAX_QUERY_LENGTH", "123")
+    monkeypatch.setenv("AIC_MAX_ANSWER_LENGTH", "456")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.max_query_length == 123
+    assert settings.max_answer_length == 456
+
+
+@pytest.mark.parametrize("field_name", ["max_query_length", "max_answer_length"])
+def test_text_limits_must_be_positive(field_name: str) -> None:
+    with pytest.raises(ValueError):
+        Settings(**{field_name: 0})
 
 
 @pytest.mark.parametrize(
@@ -260,6 +278,53 @@ def test_runtime_max_trake_events_is_enforced(app_settings: Settings) -> None:
 
     assert response.status_code == 422
     assert "at most 1 events" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "query_type": "KIS",
+            "query": "four",
+            "top_k": 1,
+            "search_sources": sources(),
+        },
+        {
+            "query_type": "TRAKE",
+            "main_query": "one",
+            "events": [{"event_index": 1, "query": "four"}],
+            "top_k": 1,
+            "search_sources": sources(),
+        },
+    ],
+)
+def test_runtime_query_length_is_enforced(
+    app_settings: Settings, payload: dict[str, Any]
+) -> None:
+    settings = app_settings.model_copy(update={"max_query_length": 3})
+
+    with TestClient(create_app(settings)) as limited_client:
+        response = limited_client.post("/api/search", json=payload)
+
+    assert response.status_code == 422
+    assert "at most 3 characters" in response.json()["detail"]
+
+
+def test_runtime_query_length_can_exceed_default(app_settings: Settings) -> None:
+    settings = app_settings.model_copy(update={"max_query_length": 4_001})
+
+    with TestClient(create_app(settings)) as expanded_client:
+        response = expanded_client.post(
+            "/api/search",
+            json={
+                "query_type": "KIS",
+                "query": "q" * 4_001,
+                "top_k": 1,
+                "search_sources": sources(),
+            },
+        )
+
+    assert response.status_code == 200
 
 
 def test_media_endpoint_serves_only_existing_data_file(client: TestClient) -> None:

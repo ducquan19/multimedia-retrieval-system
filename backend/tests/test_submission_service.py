@@ -32,7 +32,7 @@ def test_filename_is_sanitized(raw_filename: str, expected: str) -> None:
 
 
 def test_service_reports_empty_vqa_answers_without_rejecting_them() -> None:
-    service = SubmissionService(CsvSubmissionFormatter())
+    service = SubmissionService(CsvSubmissionFormatter(), max_answer_length=4_000)
     request = VQASubmissionRequest(
         query_type="VQA",
         filename="answers.csv",
@@ -50,7 +50,7 @@ def test_service_reports_empty_vqa_answers_without_rejecting_them() -> None:
 
 
 def test_service_rejects_trake_rows_with_wrong_event_count() -> None:
-    service = SubmissionService(CsvSubmissionFormatter())
+    service = SubmissionService(CsvSubmissionFormatter(), max_answer_length=4_000)
     request = TRAKESubmissionRequest(
         query_type="TRAKE",
         event_count=3,
@@ -62,7 +62,7 @@ def test_service_rejects_trake_rows_with_wrong_event_count() -> None:
 
 
 def test_service_uses_array_order_instead_of_any_external_rank() -> None:
-    service = SubmissionService(CsvSubmissionFormatter())
+    service = SubmissionService(CsvSubmissionFormatter(), max_answer_length=4_000)
     request = KISSubmissionRequest(
         query_type="KIS",
         rows=(
