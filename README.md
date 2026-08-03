@@ -7,7 +7,7 @@ A local web application for inspecting video-retrieval results, manually reranki
 
 ## Project status
 
-The backend foundation is complete through Phase 3. The frontend currently provides an application shell and verifies connectivity to the API; the full search and result-inspection workspace will be implemented in the next phases.
+The backend foundation is complete through Phase 3, and the typed query workspace is complete through Phase 4. Result inspection, manual reranking, and submission controls remain for the next frontend phases.
 
 | Capability | Status |
 | --- | --- |
@@ -18,7 +18,9 @@ The backend foundation is complete through Phase 3. The frontend currently provi
 | Safe media serving | Available |
 | CSV submission preview and download | Available |
 | React application shell and API health check | Available |
-| Search forms and result inspector | Planned |
+| Typed KIS, VQA, and TRAKE query forms | Available |
+| Hybrid controls, request cancellation, and query states | Available |
+| Result inspector and detail modal | Planned |
 | Manual drag-and-drop reranking | Planned |
 | Submission controls in the UI | Planned |
 | Real AI retrieval and Gemini integration | Out of scope for the MVP |
