@@ -20,6 +20,8 @@ Tài liệu này chỉ ghi những điểm nguồn AIC 2026/CSV chưa quy địn
 | A-014 | `result_id` là stable unique identity của candidate | Cần giữ answer/reorder đúng candidate; nguồn không định nghĩa ID UI | fixture/response/frontend store |
 | A-015 | `npm` + `package-lock.json` dùng cho frontend | Repo chưa có package manager; npm phù hợp Vite và có sẵn cùng Node | scaffold/README |
 | A-016 | Preview/download không lưu file server-side | Chỉ cần render attachment, giảm rủi ro traversal | submission route |
+| A-017 | CSV dùng line ending CRLF theo Python `excel` dialect và không có BOM | BTC chưa công bố line ending/BOM; CRLF tương thích phổ biến và render/download dùng cùng bytes | `CsvSubmissionFormatter` |
+| A-018 | Filename input được rút về basename an toàn và luôn ép `.csv` | Filename chỉ là metadata attachment; không cho phép client chỉ định đường dẫn hoặc extension khác trong MVP | `SubmissionService` |
 
 ## Các điểm không phải giả định
 

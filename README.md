@@ -73,6 +73,8 @@ Các endpoint hiện có:
 - `GET /api/health`
 - `GET /api/config`
 - `POST /api/search`
+- `POST /api/submissions/render`
+- `POST /api/submissions/download`
 - `GET /media/{relative_path}`
 
 Ví dụ mock KIS search:
@@ -90,6 +92,23 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/search `
   -ContentType "application/json" -Body $body
 ```
 
+Ví dụ preview KIS submission theo đúng thứ tự `rows`:
+
+```powershell
+$submission = @{
+  query_type = "KIS"
+  filename = "kis-results.csv"
+  rows = @(
+    @{ video_id = "L02_V003"; frame_id = 910 },
+    @{ video_id = "L01_V001"; frame_id = 505 }
+  )
+} | ConvertTo-Json -Depth 3
+
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:8000/api/submissions/render `
+  -ContentType "application/json" -Body $submission
+```
+
 ## Cấu trúc
 
 - `backend/`: FastAPI, Pydantic settings, pytest và Ruff.
@@ -99,4 +118,4 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/search `
 
 ## Giới hạn hiện tại
 
-Backend search hiện chỉ đọc fixture deterministic; Gemini enhancement chỉ thêm marker `Mock` và hybrid flags chưa chạy vector search. Frontend search forms, result inspector, drag/drop và submission API/UI sẽ được bổ sung trong Prompt 3-7. Không có database, authentication hoặc SDK AI.
+Backend search hiện chỉ đọc fixture deterministic; Gemini enhancement chỉ thêm marker `Mock` và hybrid flags chưa chạy vector search. Submission render/download đã hoạt động ở backend, nhưng frontend search forms, result inspector, drag/drop và submission UX sẽ được bổ sung trong Prompt 4-7. Không có database, authentication hoặc SDK AI.

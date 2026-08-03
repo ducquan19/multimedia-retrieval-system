@@ -133,7 +133,7 @@ Khi enhance bật, `enhanced_query` chứa kết quả deterministic dễ nhận
 
 ## 4. Submission render/download
 
-Hai endpoint nhận discriminated union có ordered `rows`. Server bỏ qua mọi rank cũ; array order là thứ tự output.
+Hai endpoint nhận discriminated union có ordered `rows`. Row schema không nhận `rank`; array order là thứ tự output duy nhất.
 
 KIS example:
 
@@ -147,7 +147,30 @@ KIS example:
 }
 ```
 
-VQA row thêm `answer`; TRAKE request thêm `event_count` và mỗi row có `frame_ids` array đúng độ dài.
+VQA request:
+
+```json
+{
+  "query_type": "VQA",
+  "filename": "vqa.csv",
+  "rows": [
+    {"video_id":"L05_V005","frame_id":888,"answer":"màu xanh, đậm"}
+  ]
+}
+```
+
+TRAKE request:
+
+```json
+{
+  "query_type": "TRAKE",
+  "filename": "trake.csv",
+  "event_count": 4,
+  "rows": [
+    {"video_id":"L10_V010","frame_ids":[101,151,203,251]}
+  ]
+}
+```
 
 ### `POST /api/submissions/render`
 
@@ -160,18 +183,18 @@ VQA row thêm `answer`; TRAKE request thêm `event_count` và mỗi row có `fra
 }
 ```
 
-VQA answer rỗng tạo warning metadata nhưng vẫn render. Line ending do Python CSV writer tạo sẽ được giữ nhất quán giữa render và download.
+VQA answer rỗng tạo warning metadata nhưng vẫn render. Formatter dùng dialect CSV chuẩn với CRLF (`\r\n`); comma, quote và newline trong answer được quote/escape bởi Python `csv.writer`.
 
 ### `POST /api/submissions/download`
 
-Trả cùng bytes content với render, media type `text/csv; charset=utf-8`, và `Content-Disposition: attachment` với filename đã sanitize.
+Trả cùng UTF-8 bytes với `content` từ render, media type `text/csv; charset=utf-8`, và `Content-Disposition: attachment` với filename đã sanitize. Filename Unicode dùng thêm tham số RFC 5987 `filename*`.
 
-Sanitization loại `/`, `\\`, null byte, traversal components và ép extension `.csv`. Backend không ghi submission vào filesystem.
+Sanitization lấy basename sau cả `/` và `\\`, loại control/null byte cùng ký tự filename nguy hiểm, xử lý tên Windows reserved, giới hạn 255 ký tự và ép extension `.csv`. Ví dụ `../../evil.csv` trở thành `evil.csv`. Backend không ghi submission vào filesystem.
 
 Validation:
 
 - KIS/VQA: `video_id` không rỗng, `frame_id` là non-negative integer.
-- VQA: `answer` là string trong length limit.
+- VQA: `answer` là string tối đa 4.000 ký tự; cho phép rỗng kèm warning.
 - TRAKE: `event_count >= 1`, mọi `frame_ids` có đúng `event_count` phần tử.
 - Rows tối đa 100.
 
