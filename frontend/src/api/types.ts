@@ -95,6 +95,42 @@ export interface TRAKESearchResponse extends BaseSearchResponse {
 
 export type SearchResponse = KISSearchResponse | VQASearchResponse | TRAKESearchResponse;
 
+export interface KISSubmissionRequest {
+  query_type: "KIS";
+  filename: string;
+  rows: { video_id: string; frame_id: number }[];
+}
+
+export interface VQASubmissionRequest {
+  query_type: "VQA";
+  filename: string;
+  rows: { video_id: string; frame_id: number; answer: string }[];
+}
+
+export interface TRAKESubmissionRequest {
+  query_type: "TRAKE";
+  filename: string;
+  event_count: number;
+  rows: { video_id: string; frame_ids: number[] }[];
+}
+
+export type SubmissionRequest =
+  | KISSubmissionRequest
+  | VQASubmissionRequest
+  | TRAKESubmissionRequest;
+
+export interface SubmissionRenderResponse {
+  content: string;
+  filename: string;
+  row_count: number;
+  warnings: string[];
+}
+
+export interface SubmissionDownload {
+  blob: Blob;
+  filename: string;
+}
+
 export interface PublicConfig {
   top_k_options: TopK[];
   default_top_k: TopK;

@@ -19,8 +19,10 @@ import { CSS } from "@dnd-kit/utilities";
 import type {
   KISSearchResponse,
   SingleSearchResult,
+  SubmissionRequest,
   VQASearchResponse,
 } from "../../api/types";
+import { SubmissionActions } from "../submissions/SubmissionActions";
 import { ResultDetailModal, formatScore } from "./ResultDetailModal";
 import { ResultImage } from "./ResultImage";
 import { createResultEditorState, resultEditorReducer } from "./resultState";
@@ -66,6 +68,33 @@ export function SingleResultInspector({
   const orderChanged = state.order.some(
     (resultId, index) => resultId !== state.initialOrder[index],
   );
+  const emptyAnswerCount =
+    response.query_type === "VQA"
+      ? orderedResults.filter((result) => !(state.answers[result.result_id] ?? "").trim())
+          .length
+      : 0;
+
+  const buildSubmissionPayload = (filename: string): SubmissionRequest => {
+    if (response.query_type === "VQA") {
+      return {
+        query_type: "VQA",
+        filename,
+        rows: orderedResults.map((result) => ({
+          video_id: result.video_id,
+          frame_id: result.frame_id,
+          answer: state.answers[result.result_id] ?? "",
+        })),
+      };
+    }
+    return {
+      query_type: "KIS",
+      filename,
+      rows: orderedResults.map((result) => ({
+        video_id: result.video_id,
+        frame_id: result.frame_id,
+      })),
+    };
+  };
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
@@ -88,14 +117,6 @@ export function SingleResultInspector({
         </div>
         <div className="result-inspector__actions">
           <span className="mini-badge">{response.query_type}</span>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={!orderChanged}
-            onClick={() => dispatch({ type: "reset-order" })}
-          >
-            Reset order
-          </button>
         </div>
       </div>
 
@@ -124,6 +145,15 @@ export function SingleResultInspector({
           </ol>
         </SortableContext>
       </DndContext>
+
+      <SubmissionActions
+        queryType={response.query_type}
+        rowCount={orderedResults.length}
+        emptyAnswerCount={emptyAnswerCount}
+        orderChanged={orderChanged}
+        onResetOrder={() => dispatch({ type: "reset-order" })}
+        buildPayload={buildSubmissionPayload}
+      />
 
       {selected && <ResultDetailModal result={selected.result} onClose={closeDetail} />}
     </section>

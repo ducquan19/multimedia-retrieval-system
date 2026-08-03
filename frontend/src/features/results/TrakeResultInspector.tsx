@@ -27,7 +27,9 @@ import type {
   TRAKEEventResult,
   TRAKESearchResponse,
   TRAKESearchResult,
+  SubmissionRequest,
 } from "../../api/types";
+import { SubmissionActions } from "../submissions/SubmissionActions";
 import {
   type ResultDetail,
   ResultDetailModal,
@@ -83,6 +85,16 @@ export function TrakeResultInspector({
     (resultId, index) => resultId !== state.initialOrder[index],
   );
 
+  const buildSubmissionPayload = (filename: string): SubmissionRequest => ({
+    query_type: "TRAKE",
+    filename,
+    event_count: expectedEventCount,
+    rows: orderedResults.map((result) => ({
+      video_id: result.video_id,
+      frame_ids: result.events.map((event) => event.frame_id),
+    })),
+  });
+
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
     dispatch({ type: "move", activeId: String(active.id), overId: String(over.id) });
@@ -128,14 +140,6 @@ export function TrakeResultInspector({
         </div>
         <div className="result-inspector__actions">
           <span className="mini-badge">TRAKE</span>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={!orderChanged}
-            onClick={() => dispatch({ type: "reset-order" })}
-          >
-            Reset order
-          </button>
         </div>
       </div>
 
@@ -165,6 +169,14 @@ export function TrakeResultInspector({
           </SortableContext>
         </DndContext>
       </div>
+
+      <SubmissionActions
+        queryType="TRAKE"
+        rowCount={orderedResults.length}
+        orderChanged={orderChanged}
+        onResetOrder={() => dispatch({ type: "reset-order" })}
+        buildPayload={buildSubmissionPayload}
+      />
 
       {selected && <ResultDetailModal result={selected.result} onClose={closeDetail} />}
     </section>

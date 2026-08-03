@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
   KISSearchResponse,
@@ -76,6 +76,23 @@ function cardAt(index: number): HTMLElement {
   if (!card) throw new Error(`Expected result card at index ${index}`);
   return card;
 }
+
+function setupPreviewApi(content: string, filename = "submission.csv") {
+  const payloads: Record<string, unknown>[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+      payloads.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      return new Response(
+        JSON.stringify({ content, filename, row_count: results.length, warnings: [] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }),
+  );
+  return payloads;
+}
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("SingleResultInspector", () => {
   it("renders current rank, metadata and consistently formatted score", () => {
@@ -156,6 +173,48 @@ describe("SingleResultInspector", () => {
     await user.click(screen.getByRole("button", { name: "Reset order" }));
 
     expect(cardVideoOrder()).toEqual(["L01_V001", "L02_V002", "L03_V003"]);
+  });
+
+  it("previews KIS rows from the current reordered card state", async () => {
+    const payloads = setupPreviewApi("L02_V002,910\r\nL01_V001,505\r\nL03_V003,1240\r\n");
+    const user = userEvent.setup();
+    render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
+
+    await user.click(screen.getByRole("button", { name: "Move L02_V002 up" }));
+    await user.click(screen.getByRole("button", { name: "Preview submission" }));
+
+    expect(await screen.findByRole("dialog", { name: "submission.csv" })).toBeInTheDocument();
+    expect(payloads[0]).toMatchObject({
+      query_type: "KIS",
+      rows: [
+        { video_id: "L02_V002", frame_id: 910 },
+        { video_id: "L01_V001", frame_id: 505 },
+        { video_id: "L03_V003", frame_id: 1240 },
+      ],
+    });
+  });
+
+  it("keeps a Unicode VQA answer with commas attached after edit and reorder", async () => {
+    const answer = "màu xanh, đậm — Việt Nam";
+    const payloads = setupPreviewApi(`L02_V002,910,answer B\r\nL01_V001,505,"${answer}"\r\n`);
+    const user = userEvent.setup();
+    render(<SingleResultInspector response={response("VQA")} maxAnswerLength={4_000} />);
+
+    const firstCard = cardAt(0);
+    await user.clear(within(firstCard).getByLabelText("VQA answer"));
+    await user.type(within(firstCard).getByLabelText("VQA answer"), answer);
+    await user.click(within(firstCard).getByRole("button", { name: "Move L01_V001 down" }));
+    await user.click(screen.getByRole("button", { name: "Preview submission" }));
+
+    expect(await screen.findByTestId("submission-preview-content")).toHaveTextContent(answer);
+    expect(payloads[0]).toMatchObject({
+      query_type: "VQA",
+      rows: [
+        { video_id: "L02_V002", frame_id: 910, answer: "answer B" },
+        { video_id: "L01_V001", frame_id: 505, answer },
+        { video_id: "L03_V003", frame_id: 1240, answer: "answer C" },
+      ],
+    });
   });
 
   it("shows a stable placeholder when a keyframe image fails", () => {
