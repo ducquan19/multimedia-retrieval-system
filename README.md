@@ -7,7 +7,7 @@ A local web application for inspecting video-retrieval results, manually reranki
 
 ## Project status
 
-The backend foundation is complete through Phase 3, and the frontend is complete through the KIS/VQA result inspector in Phase 5. TRAKE inspection and submission controls remain for the next frontend phases.
+The backend foundation is complete through Phase 3, and the frontend is complete through the TRAKE result inspector in Phase 6. Submission controls remain for the next frontend phase.
 
 | Capability | Status |
 | --- | --- |
@@ -22,7 +22,7 @@ The backend foundation is complete through Phase 3, and the frontend is complete
 | Hybrid controls, request cancellation, and query states | Available |
 | KIS/VQA result inspector and detail modal | Available |
 | KIS/VQA drag-and-drop and accessible fallback reranking | Available |
-| TRAKE result inspector | Planned |
+| TRAKE row inspector, event modal, and accessible reranking | Available |
 | Submission controls in the UI | Planned |
 | Real AI retrieval and Gemini integration | Out of scope for the MVP |
 
@@ -297,10 +297,7 @@ The backend search engine reads deterministic fixture data. Gemini enhancement a
 
 Remaining MVP phases:
 
-1. Build typed frontend query forms and API integration.
-2. Add KIS/VQA result inspection, answer editing, modal viewing, and reranking.
-3. Add the TRAKE row workspace and row-level reranking.
-4. Connect the frontend to submission preview/download and add end-to-end tests.
-5. Complete the final security, performance, accessibility, and documentation audit.
+1. Connect the frontend to submission preview/download and add end-to-end tests.
+2. Complete the final security, performance, accessibility, and documentation audit.
 
 Real Gemini calls, embedding generation, vector databases, OCR/ASR inference, automatic VQA answers, automatic TRAKE alignment, user accounts, and production cloud deployment remain outside the current MVP scope.

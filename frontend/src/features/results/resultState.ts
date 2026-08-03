@@ -1,4 +1,7 @@
-import type { SingleSearchResult } from "../../api/types";
+interface IdentifiedResult {
+  result_id: string;
+  answer?: string;
+}
 
 export interface ResultEditorState {
   initialOrder: string[];
@@ -7,18 +10,20 @@ export interface ResultEditorState {
 }
 
 export type ResultEditorAction =
-  | { type: "initialize"; results: SingleSearchResult[] }
+  | { type: "initialize"; results: IdentifiedResult[] }
   | { type: "move"; activeId: string; overId: string }
   | { type: "move-by"; resultId: string; offset: -1 | 1 }
   | { type: "set-answer"; resultId: string; answer: string }
   | { type: "reset-order" };
 
-export function createResultEditorState(results: SingleSearchResult[]): ResultEditorState {
+export function createResultEditorState(results: IdentifiedResult[]): ResultEditorState {
   const order = results.map((result) => result.result_id);
   return {
     initialOrder: order,
     order,
-    answers: Object.fromEntries(results.map((result) => [result.result_id, result.answer])),
+    answers: Object.fromEntries(
+      results.map((result) => [result.result_id, result.answer ?? ""]),
+    ),
   };
 }
 

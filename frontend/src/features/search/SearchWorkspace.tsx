@@ -18,6 +18,7 @@ import {
   type TopK,
 } from "../../api/types";
 import { SingleResultInspector } from "../results/SingleResultInspector";
+import { TrakeResultInspector } from "../results/TrakeResultInspector";
 
 const QUERY_TYPE_LABELS: Record<QueryType, string> = {
   KIS: "Known Item Search",
@@ -423,6 +424,11 @@ function SearchState({ mutation, maxAnswerLength }: SearchStateProps) {
     );
   }
 
+  const submittedTrakeEventCount =
+    mutation.variables?.payload.query_type === "TRAKE"
+      ? mutation.variables.payload.events.length
+      : null;
+
   return (
     <section className="result-preview" aria-live="polite">
       {mutation.data.enhanced_query && (
@@ -445,25 +451,17 @@ function SearchState({ mutation, maxAnswerLength }: SearchStateProps) {
       )}
 
       {mutation.data.query_type === "TRAKE" ? (
-        <>
-          <div className="result-preview__heading">
-            <div>
-              <p className="eyebrow eyebrow--dark">API response</p>
-              <h3>{mutation.data.results.length} candidates received</h3>
-            </div>
-            <span className="mini-badge">TRAKE</span>
-          </div>
-          <ol className="result-list" aria-label="Retrieved candidates">
-            {mutation.data.results.map((result) => (
-              <li key={result.result_id}>
-                <span>#{result.rank}</span>
-                <strong>{result.video_id}</strong>
-                <small>{result.result_id}</small>
-              </li>
-            ))}
-          </ol>
-          <p className="phase-note">TRAKE row inspector sẽ được bổ sung ở Phase 6.</p>
-        </>
+        submittedTrakeEventCount === null ? (
+          <section className="trake-validation-error" role="alert">
+            <strong>Cannot display TRAKE results</strong>
+            <p>The submitted event count is unavailable for response validation.</p>
+          </section>
+        ) : (
+          <TrakeResultInspector
+            response={mutation.data}
+            expectedEventCount={submittedTrakeEventCount}
+          />
+        )
       ) : (
         <SingleResultInspector response={mutation.data} maxAnswerLength={maxAnswerLength} />
       )}

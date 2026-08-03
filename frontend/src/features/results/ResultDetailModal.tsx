@@ -1,11 +1,21 @@
 import { type MouseEvent, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import type { SingleSearchResult } from "../../api/types";
 import { ResultImage } from "./ResultImage";
 
+export interface ResultDetail {
+  video_id: string;
+  frame_id: number;
+  keyframe_url: string;
+  segment_id: string;
+  asr_text: string;
+  ocr_text: string;
+  objects: Record<string, unknown>[];
+  similarity_score: number;
+}
+
 interface ResultDetailModalProps {
-  result: SingleSearchResult;
+  result: ResultDetail;
   onClose: () => void;
 }
 
