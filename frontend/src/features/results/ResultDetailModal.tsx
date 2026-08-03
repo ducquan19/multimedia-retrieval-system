@@ -1,7 +1,8 @@
-import { type MouseEvent, useEffect, useRef } from "react";
+import { type MouseEvent, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { ResultImage } from "./ResultImage";
+import { useModalAccessibility } from "./useModalAccessibility";
 
 export interface ResultDetail {
   video_id: string;
@@ -25,21 +26,8 @@ export function formatScore(score: number): string {
 
 export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeButtonRef.current?.focus();
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [onClose]);
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalAccessibility({ dialogRef, initialFocusRef: closeButtonRef, onClose });
 
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) onClose();
@@ -48,10 +36,12 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
   return createPortal(
     <div className="modal-backdrop" onMouseDown={closeOnBackdrop}>
       <section
+        ref={dialogRef}
         className="detail-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="detail-modal-title"
+        tabIndex={-1}
       >
         <header className="detail-modal__header">
           <div>

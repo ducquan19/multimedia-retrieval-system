@@ -120,6 +120,8 @@ describe("SingleResultInspector", () => {
     expect(dialog).toHaveTextContent("AIC 2026");
     expect(dialog).toHaveTextContent("laptop");
     expect(screen.getByRole("button", { name: "Close keyframe detail" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Close keyframe detail" })).toHaveFocus();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

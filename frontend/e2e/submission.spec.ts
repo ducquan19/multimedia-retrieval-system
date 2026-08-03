@@ -172,18 +172,9 @@ async function installApiServer(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  const browserErrors: string[] = [];
-  page.on("pageerror", (error) => browserErrors.push(`pageerror: ${error.message}`));
-  page.on("response", (response) => {
-    if (!response.ok()) browserErrors.push(`${response.status()}: ${response.url()}`);
-  });
   await installApiServer(page);
   await page.goto("/");
-  await page.waitForTimeout(500);
-  if (!(await page.locator("body").innerText()).includes("AIC Retrieval Inspector")) {
-    throw new Error(`Application did not bootstrap: ${browserErrors.join(" | ")}`);
-  }
-  await expect(page.locator("body")).toContainText("AIC Retrieval Inspector");
+  await expect(page.getByRole("heading", { name: "AIC Retrieval Inspector" })).toBeVisible();
   await expect(page.getByText("Backend connected: ok")).toBeVisible({ timeout: 15_000 });
 });
 

@@ -298,9 +298,7 @@ def test_runtime_max_trake_events_is_enforced(app_settings: Settings) -> None:
         },
     ],
 )
-def test_runtime_query_length_is_enforced(
-    app_settings: Settings, payload: dict[str, Any]
-) -> None:
+def test_runtime_query_length_is_enforced(app_settings: Settings, payload: dict[str, Any]) -> None:
     settings = app_settings.model_copy(update={"max_query_length": 3})
 
     with TestClient(create_app(settings)) as limited_client:

@@ -73,6 +73,10 @@ export function SingleResultInspector({
       ? orderedResults.filter((result) => !(state.answers[result.result_id] ?? "").trim())
           .length
       : 0;
+  const submissionStateVersion = JSON.stringify({
+    order: state.order,
+    answers: response.query_type === "VQA" ? state.answers : undefined,
+  });
 
   const buildSubmissionPayload = (filename: string): SubmissionRequest => {
     if (response.query_type === "VQA") {
@@ -151,6 +155,7 @@ export function SingleResultInspector({
         rowCount={orderedResults.length}
         emptyAnswerCount={emptyAnswerCount}
         orderChanged={orderChanged}
+        stateVersion={submissionStateVersion}
         onResetOrder={() => dispatch({ type: "reset-order" })}
         buildPayload={buildSubmissionPayload}
       />

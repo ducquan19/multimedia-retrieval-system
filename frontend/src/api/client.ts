@@ -68,6 +68,7 @@ async function requestJson<T>(
 async function submissionResponse(
   path: string,
   payload: SubmissionRequest,
+  signal?: AbortSignal,
 ): Promise<Response> {
   let response: Response;
   try {
@@ -78,8 +79,10 @@ async function submissionResponse(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
+      signal,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiError("Không thể kết nối tới backend. Hãy kiểm tra API đang chạy.");
   }
 
@@ -98,16 +101,18 @@ async function submissionResponse(
 
 export function renderSubmission(
   payload: SubmissionRequest,
+  signal?: AbortSignal,
 ): Promise<SubmissionRenderResponse> {
-  return submissionResponse("/api/submissions/render", payload).then(
+  return submissionResponse("/api/submissions/render", payload, signal).then(
     (response) => response.json() as Promise<SubmissionRenderResponse>,
   );
 }
 
 export async function downloadSubmission(
   payload: SubmissionRequest,
+  signal?: AbortSignal,
 ): Promise<SubmissionDownload> {
-  const response = await submissionResponse("/api/submissions/download", payload);
+  const response = await submissionResponse("/api/submissions/download", payload, signal);
   return {
     blob: await response.blob(),
     filename: attachmentFilename(response.headers.get("Content-Disposition")),

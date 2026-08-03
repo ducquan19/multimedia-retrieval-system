@@ -174,6 +174,7 @@ export function TrakeResultInspector({
         queryType="TRAKE"
         rowCount={orderedResults.length}
         orderChanged={orderChanged}
+        stateVersion={JSON.stringify(state.order)}
         onResetOrder={() => dispatch({ type: "reset-order" })}
         buildPayload={buildSubmissionPayload}
       />

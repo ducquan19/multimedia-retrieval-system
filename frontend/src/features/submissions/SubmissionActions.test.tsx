@@ -59,6 +59,7 @@ describe("SubmissionActions", () => {
         queryType="KIS"
         rowCount={1}
         orderChanged={false}
+        stateVersion="initial"
         onResetOrder={() => undefined}
         buildPayload={buildPayload}
       />,
@@ -72,6 +73,7 @@ describe("SubmissionActions", () => {
     expect(await screen.findByRole("dialog", { name: "evil.csv" })).toBeInTheDocument();
     expect(screen.getByText(/Backend filename:/)).toHaveTextContent("evil.csv");
     await user.click(screen.getByRole("button", { name: "Close submission preview" }));
+    expect(screen.getByRole("button", { name: "Preview submission" })).toHaveFocus();
     await user.click(screen.getByRole("button", { name: "Download submission" }));
 
     expect(await screen.findByText(/Backend filename:/)).toHaveTextContent("evil.csv");
@@ -97,6 +99,7 @@ describe("SubmissionActions", () => {
         rowCount={1}
         emptyAnswerCount={1}
         orderChanged={false}
+        stateVersion="initial"
         onResetOrder={() => undefined}
         buildPayload={(filename) => ({
           query_type: "VQA",
@@ -109,5 +112,46 @@ describe("SubmissionActions", () => {
     expect(screen.getByText("1 empty VQA answer")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Download submission" }));
     expect(screen.getByRole("button", { name: "Downloading…" })).toBeDisabled();
+  });
+
+  it("cancels an in-flight preview when ordered result state changes", async () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init: RequestInit = {}) => {
+        const signal = init.signal as AbortSignal;
+        signals.push(signal);
+        return new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener("abort", () =>
+            reject(new DOMException("Request cancelled", "AbortError")),
+          );
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    const props = {
+      queryType: "KIS" as const,
+      rowCount: 1,
+      orderChanged: false,
+      onResetOrder: () => undefined,
+      buildPayload: (filename: string): SubmissionRequest => ({
+        query_type: "KIS",
+        filename,
+        rows: [{ video_id: "L01", frame_id: 1 }],
+      }),
+    };
+    const { rerender } = render(
+      <SubmissionActions {...props} stateVersion="order-a" />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Preview submission" }));
+    expect(screen.getByRole("button", { name: "Preparing preview…" })).toBeDisabled();
+
+    rerender(<SubmissionActions {...props} stateVersion="order-b" />);
+
+    expect(signals[0]?.aborted).toBe(true);
+    expect(screen.getByRole("button", { name: "Preview submission" })).toBeEnabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

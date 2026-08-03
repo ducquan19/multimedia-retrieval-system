@@ -7,12 +7,14 @@ import {
   renderSubmission,
 } from "../../api/client";
 import type { SubmissionRenderResponse, SubmissionRequest } from "../../api/types";
+import { useModalAccessibility } from "../results/useModalAccessibility";
 
 interface SubmissionActionsProps {
   queryType: SubmissionRequest["query_type"];
   rowCount: number;
   emptyAnswerCount?: number;
   orderChanged: boolean;
+  stateVersion: string;
   onResetOrder: () => void;
   buildPayload: (filename: string) => SubmissionRequest;
 }
@@ -28,6 +30,7 @@ export function SubmissionActions({
   rowCount,
   emptyAnswerCount = 0,
   orderChanged,
+  stateVersion,
   onResetOrder,
   buildPayload,
 }: SubmissionActionsProps) {
@@ -37,34 +40,68 @@ export function SubmissionActions({
   const [previewPending, setPreviewPending] = useState(false);
   const [downloadPending, setDownloadPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const previewController = useRef<AbortController | null>(null);
+  const downloadController = useRef<AbortController | null>(null);
+  const closePreview = useCallback(() => setPreview(null), []);
 
   useEffect(() => {
     setFilename(DEFAULT_FILENAMES[queryType]);
-    setPreview(null);
-    setFinalFilename(null);
   }, [queryType]);
 
+  useEffect(() => {
+    previewController.current?.abort();
+    downloadController.current?.abort();
+    previewController.current = null;
+    downloadController.current = null;
+    setPreview(null);
+    setFinalFilename(null);
+    setPreviewPending(false);
+    setDownloadPending(false);
+    setError(null);
+  }, [stateVersion]);
+
+  useEffect(
+    () => () => {
+      previewController.current?.abort();
+      downloadController.current?.abort();
+    },
+    [],
+  );
+
   const previewSubmission = async () => {
+    previewController.current?.abort();
+    const controller = new AbortController();
+    previewController.current = controller;
     setPreviewPending(true);
     setError(null);
     try {
-      const response = await renderSubmission(buildPayload(filename));
+      const response = await renderSubmission(buildPayload(filename), controller.signal);
+      if (previewController.current !== controller) return;
       setPreview(response);
       setFinalFilename(response.filename);
     } catch (requestError) {
+      if (requestError instanceof DOMException && requestError.name === "AbortError") return;
       setError(requestError);
     } finally {
-      setPreviewPending(false);
+      if (previewController.current === controller) {
+        previewController.current = null;
+        setPreviewPending(false);
+      }
     }
   };
 
   const downloadCurrentSubmission = async () => {
+    downloadController.current?.abort();
+    const controller = new AbortController();
+    downloadController.current = controller;
     setDownloadPending(true);
     setError(null);
     try {
       const { blob, filename: downloadedFilename } = await downloadSubmission(
         buildPayload(filename),
+        controller.signal,
       );
+      if (downloadController.current !== controller) return;
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
@@ -73,9 +110,13 @@ export function SubmissionActions({
       URL.revokeObjectURL(objectUrl);
       setFinalFilename(downloadedFilename);
     } catch (requestError) {
+      if (requestError instanceof DOMException && requestError.name === "AbortError") return;
       setError(requestError);
     } finally {
-      setDownloadPending(false);
+      if (downloadController.current === controller) {
+        downloadController.current = null;
+        setDownloadPending(false);
+      }
     }
   };
 
@@ -98,8 +139,16 @@ export function SubmissionActions({
           value={filename}
           maxLength={255}
           onChange={(event) => {
+            previewController.current?.abort();
+            downloadController.current?.abort();
+            previewController.current = null;
+            downloadController.current = null;
+            setPreviewPending(false);
+            setDownloadPending(false);
             setFilename(event.target.value);
+            setPreview(null);
             setFinalFilename(null);
+            setError(null);
           }}
         />
       </label>
@@ -145,7 +194,7 @@ export function SubmissionActions({
       {preview && (
         <SubmissionPreviewModal
           preview={preview}
-          onClose={() => setPreview(null)}
+          onClose={closePreview}
         />
       )}
     </aside>
@@ -159,28 +208,22 @@ interface SubmissionPreviewModalProps {
 
 function SubmissionPreviewModal({ preview, onClose }: SubmissionPreviewModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  const close = useCallback(onClose, [onClose]);
-  useEffect(() => {
-    closeButtonRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [close]);
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalAccessibility({ dialogRef, initialFocusRef: closeButtonRef, onClose });
 
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target === event.currentTarget) close();
+    if (event.target === event.currentTarget) onClose();
   };
 
   return createPortal(
     <div className="modal-backdrop" onMouseDown={closeOnBackdrop}>
       <section
+        ref={dialogRef}
         className="submission-preview-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="submission-preview-title"
+        tabIndex={-1}
       >
         <header className="detail-modal__header">
           <div>
@@ -191,7 +234,7 @@ function SubmissionPreviewModal({ preview, onClose }: SubmissionPreviewModalProp
             ref={closeButtonRef}
             className="modal-close"
             type="button"
-            onClick={close}
+            onClick={onClose}
             aria-label="Close submission preview"
           >
             ×
