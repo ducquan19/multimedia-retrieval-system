@@ -430,6 +430,25 @@ select:focus-visible {
   opacity: 0.65;
 }
 
+.query-shortcut-hint {
+  margin: -0.7rem 0 0;
+  color: #6c786f;
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.query-shortcut-hint kbd {
+  padding: 0.12rem 0.28rem;
+  color: #405247;
+  background: #eef2ee;
+  border: 1px solid #ccd6ce;
+  border-bottom-width: 2px;
+  border-radius: 0.25rem;
+  font-family: inherit;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
 .result-state,
 .result-preview {
   margin: 1.25rem clamp(1.25rem, 3vw, 2rem) clamp(1.25rem, 3vw, 2rem);

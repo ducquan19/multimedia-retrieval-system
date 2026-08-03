@@ -140,6 +140,26 @@ describe("App query workspace", () => {
     });
   });
 
+  it("uses Enter to search and Shift+Enter to insert a query newline", async () => {
+    const fetchMock = setupApi(() => jsonResponse(searchResponse("KIS", { empty: true })));
+    const user = userEvent.setup();
+    renderApp();
+
+    const query = await screen.findByLabelText(/^Query KIS/);
+    await user.type(query, "dòng một");
+    await user.keyboard("{Shift>}{Enter}{/Shift}dòng hai");
+
+    expect(query).toHaveValue("dòng một\ndòng hai");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/search"))).toBe(
+      false,
+    );
+
+    await user.keyboard("{Enter}");
+
+    await screen.findByText("Không tìm thấy candidate");
+    expect(searchPayload(fetchMock)).toMatchObject({ query: "dòng một\ndòng hai" });
+  });
+
   it("submits the typed VQA payload without an answer field", async () => {
     const fetchMock = setupApi(() => jsonResponse(searchResponse("VQA", { empty: true })));
     const user = userEvent.setup();

@@ -1,4 +1,10 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { type UseMutationResult, useMutation } from "@tanstack/react-query";
 
 import { friendlySearchError, search } from "../../api/client";
@@ -163,6 +169,18 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     searchMutation.mutate({ payload, signal: controller.signal });
   };
 
+  const submitQueryOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  };
+
   return (
     <section className="workspace" aria-labelledby="workspace-heading">
       <div className="workspace__intro">
@@ -211,6 +229,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 value={kisQuery}
                 maxLength={config.max_query_length}
                 onChange={(event) => setKisQuery(event.target.value)}
+                onKeyDown={submitQueryOnEnter}
+                aria-keyshortcuts="Enter Shift+Enter"
                 placeholder="Ví dụ: một người mở laptop trên bàn"
                 rows={6}
               />
@@ -226,6 +246,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 value={vqaQuery}
                 maxLength={config.max_query_length}
                 onChange={(event) => setVqaQuery(event.target.value)}
+                onKeyDown={submitQueryOnEnter}
+                aria-keyshortcuts="Enter Shift+Enter"
                 placeholder="Ví dụ: chiếc ly người phụ nữ đang cầm có màu gì?"
                 rows={6}
               />
@@ -242,6 +264,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                   value={trakeMainQuery}
                   maxLength={config.max_query_length}
                   onChange={(event) => setTrakeMainQuery(event.target.value)}
+                  onKeyDown={submitQueryOnEnter}
+                  aria-keyshortcuts="Enter Shift+Enter"
                   rows={4}
                 />
               </label>
@@ -272,6 +296,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                       value={query}
                       maxLength={config.max_query_length}
                       onChange={(event) => updateEventQuery(index, event.target.value)}
+                      onKeyDown={submitQueryOnEnter}
+                      aria-keyshortcuts="Enter Shift+Enter"
                       rows={3}
                     />
                   </label>
@@ -300,6 +326,9 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           <button className="search-button" type="submit">
             {searchMutation.isPending ? `Search ${activeType} again` : `Search ${activeType}`}
           </button>
+          <p className="query-shortcut-hint">
+            <kbd>Enter</kbd> Search <span aria-hidden="true">·</span> <kbd>Shift+Enter</kbd> New line
+          </p>
 
           <label className="toggle-row" htmlFor="enhance-query">
             <span>
