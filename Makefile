@@ -14,6 +14,7 @@ dev:
 
 lint:
 	python -m ruff check backend scripts
+	python -m ruff format --check backend scripts
 	npm --prefix frontend run lint
 
 typecheck:

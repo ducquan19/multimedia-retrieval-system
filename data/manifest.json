@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "keyframes": [
+    {
+      "keyframe_id": "L01_V001/0000",
+      "video_id": "L01_V001",
+      "frame_id": 505,
+      "image_path": "keyframes/mock-frame.svg",
+      "video_path": "videos/L01_V001.mp4",
+      "segment_id": "L01_V001_segment_000",
+      "asr_text": "Một người đang mở laptop trên bàn.",
+      "ocr_text": "AIC 2026",
+      "objects": [{"label": "laptop", "score": 0.97}]
+    },
+    {
+      "keyframe_id": "L02_V003/0000",
+      "video_id": "L02_V003",
+      "frame_id": 910,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L02_V003_segment_000",
+      "asr_text": "Diễn giả bắt đầu phần trình bày.",
+      "ocr_text": "",
+      "objects": []
+    },
+    {
+      "keyframe_id": "L03_V002/0000",
+      "video_id": "L03_V002",
+      "frame_id": 1240,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L03_V002_segment_000",
+      "asr_text": "Khán giả đang vỗ tay.",
+      "objects": [{"label": "person", "score": 0.91}]
+    },
+    {
+      "keyframe_id": "L04_V004/0000",
+      "video_id": "L04_V004",
+      "frame_id": 330,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L04_V004_segment_000"
+    },
+    {
+      "keyframe_id": "L05_V005/0000",
+      "video_id": "L05_V005",
+      "frame_id": 888,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L05_V005_segment_000",
+      "asr_text": "Người phụ nữ mặc váy đỏ đang cầm một chiếc ly.",
+      "ocr_text": "GALA",
+      "objects": [{"label": "wine glass", "score": 0.89}]
+    },
+    {
+      "keyframe_id": "L06_V007/0000",
+      "video_id": "L06_V007",
+      "frame_id": 111,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L06_V007_segment_000",
+      "asr_text": "Một nhóm người đang dùng bữa.",
+      "ocr_text": "",
+      "objects": []
+    },
+    {
+      "keyframe_id": "L07_V001/0000",
+      "video_id": "L07_V001",
+      "frame_id": 742,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L07_V001_segment_000",
+      "asr_text": "Xe buýt dừng trước nhà ga.",
+      "ocr_text": "BUS",
+      "objects": [{"label": "bus", "score": 0.95}]
+    },
+    {
+      "keyframe_id": "L08_V002/0000",
+      "video_id": "L08_V002",
+      "frame_id": 1660,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L08_V002_segment_000",
+      "asr_text": "Cầu thủ chuẩn bị sút bóng.",
+      "ocr_text": "",
+      "objects": [{"label": "football", "score": 0.93}]
+    },
+    {
+      "keyframe_id": "L09_V003/0000",
+      "video_id": "L09_V003",
+      "frame_id": 2050,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L09_V003_segment_000",
+      "asr_text": "Đầu bếp đặt món ăn lên bàn.",
+      "ocr_text": "",
+      "objects": []
+    },
+    {
+      "keyframe_id": "L11_V001/0000",
+      "video_id": "L11_V001",
+      "frame_id": 420,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L11_V001_segment_000",
+      "asr_text": "Tàu rời khỏi sân ga.",
+      "ocr_text": "",
+      "objects": [{"label": "train", "score": 0.94}]
+    },
+    {
+      "keyframe_id": "L12_V002/0000",
+      "video_id": "L12_V002",
+      "frame_id": 1375,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L12_V002_segment_000",
+      "asr_text": "Một em bé đang chơi trong công viên.",
+      "ocr_text": "",
+      "objects": []
+    },
+    {
+      "keyframe_id": "L13_V004/0000",
+      "video_id": "L13_V004",
+      "frame_id": 2600,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L13_V004_segment_000",
+      "asr_text": "Pháo hoa xuất hiện trên bầu trời.",
+      "ocr_text": "",
+      "objects": []
+    },
+    {
+      "keyframe_id": "L10_V010/0001",
+      "video_id": "L10_V010",
+      "frame_id": 101,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L10_V010_segment_001",
+      "asr_text": "Vận động viên bắt đầu giậm nhảy.",
+      "ocr_text": "",
+      "objects": [{"label": "person", "score": 0.98}]
+    },
+    {
+      "keyframe_id": "L10_V010/0002",
+      "video_id": "L10_V010",
+      "frame_id": 151,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L10_V010_segment_002",
+      "asr_text": "Vận động viên bay qua xà.",
+      "ocr_text": "",
+      "objects": [{"label": "person", "score": 0.98}]
+    },
+    {
+      "keyframe_id": "L10_V010/0003",
+      "video_id": "L10_V010",
+      "frame_id": 203,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L10_V010_segment_003",
+      "asr_text": "Vận động viên tiếp đất trên đệm.",
+      "ocr_text": "",
+      "objects": [{"label": "person", "score": 0.98}]
+    },
+    {
+      "keyframe_id": "L10_V010/0004",
+      "video_id": "L10_V010",
+      "frame_id": 251,
+      "image_path": "keyframes/mock-frame.svg",
+      "segment_id": "L10_V010_segment_004",
+      "asr_text": "Vận động viên đứng dậy.",
+      "ocr_text": "",
+      "objects": [{"label": "person", "score": 0.98}]
+    }
+  ]
+}

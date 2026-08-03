@@ -54,6 +54,7 @@ Frontend gọi đường dẫn `/api` qua Vite proxy trong development. Khi depl
 
 ```powershell
 python -m ruff check backend scripts
+python -m ruff format --check backend scripts
 python -m pytest backend
 npm --prefix frontend run lint
 npm --prefix frontend run typecheck
@@ -65,7 +66,29 @@ Các target tương đương: `make lint`, `make typecheck`, `make test`, `make 
 
 ## Data
 
-Tất cả runtime data nằm dưới `AIC_DATA_ROOT`, mặc định `./data`. Manifest normalized và fixture sẽ được triển khai ở Prompt 2. Xem [định dạng dữ liệu](docs/DATA_FORMAT.md) và [API contract](docs/API.md).
+Tất cả runtime data nằm dưới `AIC_DATA_ROOT`, mặc định `./data`. Phase 2 cung cấp normalized `data/manifest.json`, deterministic fixture cho KIS/VQA/TRAKE và một mock keyframe SVG hợp lệ. Xem [định dạng dữ liệu](docs/DATA_FORMAT.md) và [API contract](docs/API.md).
+
+Các endpoint hiện có:
+
+- `GET /api/health`
+- `GET /api/config`
+- `POST /api/search`
+- `GET /media/{relative_path}`
+
+Ví dụ mock KIS search:
+
+```powershell
+$body = @{
+  query_type = "KIS"
+  query = "người đang mở laptop"
+  top_k = 10
+  enhance_query = $true
+  search_sources = @{ image = $true; asr = $false; object = $false; ocr = $false }
+} | ConvertTo-Json -Depth 3
+
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/search `
+  -ContentType "application/json" -Body $body
+```
 
 ## Cấu trúc
 
@@ -76,4 +99,4 @@ Tất cả runtime data nằm dưới `AIC_DATA_ROOT`, mặc định `./data`. M
 
 ## Giới hạn hiện tại
 
-Prompt 1 chỉ cung cấp scaffold, health endpoint và app shell kiểm tra kết nối. Search, fixture data, result inspector, drag/drop và submission API/UI sẽ được bổ sung lần lượt trong Prompt 2-7. Không có database, authentication hoặc SDK AI.
+Backend search hiện chỉ đọc fixture deterministic; Gemini enhancement chỉ thêm marker `Mock` và hybrid flags chưa chạy vector search. Frontend search forms, result inspector, drag/drop và submission API/UI sẽ được bổ sung trong Prompt 3-7. Không có database, authentication hoặc SDK AI.

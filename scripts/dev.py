@@ -51,5 +51,6 @@ def main() -> int:
             except subprocess.TimeoutExpired:
                 process.kill()
 
+
 if __name__ == "__main__":
     raise SystemExit(main())
