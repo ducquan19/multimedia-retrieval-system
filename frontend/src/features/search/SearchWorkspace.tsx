@@ -62,6 +62,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     object: false,
     ocr: false,
   });
+  const [modelChoice, setModelChoice] = useState<"siglip" | "beit3" | "hybrid">("hybrid");
   const [kisQuery, setKisQuery] = useState("");
   const [vqaQuery, setVqaQuery] = useState("");
   const [trakeMainQuery, setTrakeMainQuery] = useState("");
@@ -120,6 +121,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       top_k: topK,
       enhance_query: enhanceQuery,
       search_sources: sources,
+      model_choice: modelChoice,
     };
 
     let payload: SearchRequest;
@@ -192,7 +194,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
         </div>
         <div className="mode-note">
           <span className="mode-note__dot" aria-hidden="true" />
-          Fixture data · no AI inference
+          Live AI Search
         </div>
       </div>
 
@@ -324,6 +326,19 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             </select>
           </label>
 
+          <label className="field field--compact" htmlFor="model-choice">
+            <span>Model</span>
+            <select
+              id="model-choice"
+              value={modelChoice}
+              onChange={(event) => setModelChoice(event.target.value as "siglip" | "beit3" | "hybrid")}
+            >
+              <option value="hybrid">Hybrid (RRF)</option>
+              <option value="siglip">SigLIP Only</option>
+              <option value="beit3">BEiT-3 Only</option>
+            </select>
+          </label>
+
           <button className="search-button" type="submit">
             {searchMutation.isPending ? `Search ${activeType} again` : `Search ${activeType}`}
           </button>
@@ -390,7 +405,7 @@ function SearchState({ mutation, maxAnswerLength }: SearchStateProps) {
       <section className="result-state" aria-live="polite" aria-busy="true">
         <span className="spinner" aria-hidden="true" />
         <div>
-          <strong>Đang tìm trong fixture…</strong>
+          <strong>Đang tìm kiếm…</strong>
           <p>Request trước đã được hủy nếu vẫn đang chạy.</p>
         </div>
       </section>

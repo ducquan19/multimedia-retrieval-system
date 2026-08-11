@@ -21,7 +21,7 @@ def main() -> int:
             sys.executable,
             "-m",
             "uvicorn",
-            "aic_app.main:app",
+            "main:app",
             "--app-dir",
             "backend/src",
             "--reload",

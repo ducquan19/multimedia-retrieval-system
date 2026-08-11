@@ -1,6 +1,6 @@
-from aic_app.adapters.query_enhancer import MockQueryEnhancer
-from aic_app.domain.search import KISSearchRequest, SearchRequest, SearchSources
-from aic_app.services.search_service import SearchService
+from adapters.query_enhancer import MockQueryEnhancer
+from domain.search import KISSearchRequest, SearchRequest, SearchSources
+from services.search_service import SearchService
 
 
 class RecordingRetrievalEngine:

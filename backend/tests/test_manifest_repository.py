@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from aic_app.repositories.manifest_repository import ManifestError, ManifestRepository
+from repositories.manifest_repository import ManifestError, ManifestRepository
 
 
 def manifest_json(*, image_path: str = "keyframes/frame.jpg") -> str:

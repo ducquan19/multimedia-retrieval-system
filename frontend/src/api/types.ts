@@ -14,6 +14,7 @@ interface BaseSearchRequest {
   top_k: TopK;
   enhance_query: boolean;
   search_sources: SearchSources;
+  model_choice: "siglip" | "beit3" | "hybrid";
 }
 
 export interface KISSearchRequest extends BaseSearchRequest {

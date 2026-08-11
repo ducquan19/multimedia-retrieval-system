@@ -234,10 +234,6 @@ function SortableResultCard({
               <dt>Segment</dt>
               <dd>{result.segment_id || "—"}</dd>
             </div>
-            <div>
-              <dt>Result ID</dt>
-              <dd>{result.result_id}</dd>
-            </div>
           </dl>
 
           {isVqa && (
