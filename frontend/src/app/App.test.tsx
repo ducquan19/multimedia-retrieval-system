@@ -97,17 +97,8 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    expect(screen.getByRole("heading", { name: "AIC Retrieval Inspector" })).toBeInTheDocument();
-    expect(screen.getByText("Mock retrieval")).toBeInTheDocument();
-    expect(await screen.findByText("Backend connected: ok")).toBeInTheDocument();
     expect(await screen.findByLabelText(/^Query KIS/)).toBeInTheDocument();
-    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
-      "1",
-      "5",
-      "20",
-      "50",
-      "100",
-    ]);
+    expect(screen.getByLabelText("Top-K")).toHaveAttribute("type", "number");
 
     await user.click(screen.getByRole("tab", { name: /VQA/ }));
     expect(screen.getByLabelText(/^Câu hỏi VQA/)).toBeInTheDocument();
@@ -119,16 +110,30 @@ describe("App query workspace", () => {
     expect(screen.getByLabelText("Event 2")).toBeInTheDocument();
   });
 
+  it("focuses Top-K only when its input is clicked", async () => {
+    setupApi();
+    const user = userEvent.setup();
+    renderApp();
+
+    const topKInput = await screen.findByLabelText("Top-K");
+    await user.click(screen.getByText("Top-K"));
+    expect(topKInput).not.toHaveFocus();
+
+    await user.click(topKInput);
+    expect(topKInput).toHaveFocus();
+  });
+
   it("submits the typed KIS payload with shared controls", async () => {
     const fetchMock = setupApi(() => jsonResponse(searchResponse("KIS", { empty: true })));
     const user = userEvent.setup();
     renderApp();
 
     await user.type(await screen.findByLabelText(/^Query KIS/), "người mở laptop");
-    await user.selectOptions(screen.getByLabelText("Top K"), "5");
+    await user.clear(screen.getByLabelText("Top-K"));
+    await user.type(screen.getByLabelText("Top-K"), "5");
     await user.click(screen.getByLabelText(/^Enhance query/));
     await user.click(screen.getByLabelText("ASR"));
-    await user.click(screen.getByRole("button", { name: "Search KIS" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     await screen.findByText("Không tìm thấy candidate");
     expect(searchPayload(fetchMock)).toEqual({
@@ -167,7 +172,7 @@ describe("App query workspace", () => {
 
     await user.click(await screen.findByRole("tab", { name: /VQA/ }));
     await user.type(screen.getByLabelText(/^Câu hỏi VQA/), "chiếc ly màu gì?");
-    await user.click(screen.getByRole("button", { name: "Search VQA" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     await screen.findByText("Không tìm thấy candidate");
     expect(searchPayload(fetchMock)).toEqual({
@@ -197,7 +202,7 @@ describe("App query workspace", () => {
 
     await user.selectOptions(screen.getByLabelText("Event count"), "3");
     await user.type(screen.getByLabelText("Event 3"), "tiếp đất");
-    await user.click(screen.getByRole("button", { name: "Search TRAKE" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     await screen.findByText("Không tìm thấy candidate");
     expect(searchPayload(fetchMock)).toMatchObject({
@@ -218,7 +223,7 @@ describe("App query workspace", () => {
 
     await user.type(await screen.findByLabelText(/^Query KIS/), "query hợp lệ");
     await user.click(screen.getByLabelText("Image"));
-    await user.click(screen.getByRole("button", { name: "Search KIS" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent("Chọn ít nhất một nguồn tìm kiếm");
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/search"))).toBe(
@@ -233,7 +238,7 @@ describe("App query workspace", () => {
 
     await user.type(await screen.findByLabelText(/^Query KIS/), "original query");
     await user.click(screen.getByLabelText(/^Enhance query/));
-    await user.click(screen.getByRole("button", { name: "Search KIS" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     const callout = await screen.findByLabelText("Enhanced query");
     expect(callout).toHaveTextContent("Original");
@@ -255,7 +260,7 @@ describe("App query workspace", () => {
     renderApp();
 
     await user.type(await screen.findByLabelText(/^Query KIS/), "query");
-    await user.click(screen.getByRole("button", { name: "Search KIS" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
     expect(await screen.findByText("Đang tìm trong fixture…")).toBeInTheDocument();
 
     rejectSearch?.(new TypeError("Network error"));
@@ -270,7 +275,7 @@ describe("App query workspace", () => {
     renderApp();
 
     await user.type(await screen.findByLabelText(/^Query KIS/), "không có kết quả");
-    await user.click(screen.getByRole("button", { name: "Search KIS" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     expect(await screen.findByText("Không tìm thấy candidate")).toBeInTheDocument();
   });
@@ -293,12 +298,12 @@ describe("App query workspace", () => {
 
     const query = await screen.findByLabelText(/^Query KIS/);
     await user.type(query, "first query");
-    await user.click(screen.getByRole("button", { name: "Search KIS" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
     await screen.findByText("Đang tìm trong fixture…");
 
     await user.clear(query);
     await user.type(query, "second query");
-    await user.click(screen.getByRole("button", { name: "Search KIS again" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
 
     await waitFor(() => expect(signals[0]?.aborted).toBe(true));
     expect(await screen.findByText("Không tìm thấy candidate")).toBeInTheDocument();

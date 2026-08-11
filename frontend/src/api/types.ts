@@ -1,7 +1,7 @@
 export const QUERY_TYPES = ["KIS", "VQA", "TRAKE"] as const;
 export type QueryType = (typeof QUERY_TYPES)[number];
 
-export type TopK = 1 | 5 | 20 | 50 | 100;
+export type TopK = number;
 
 export interface SearchSources {
   image: boolean;

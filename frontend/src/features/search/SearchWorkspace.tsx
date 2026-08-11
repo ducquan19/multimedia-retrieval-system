@@ -15,16 +15,9 @@ import {
   type SearchRequest,
   type SearchResponse,
   type SearchSources,
-  type TopK,
 } from "../../api/types";
 import { SingleResultInspector } from "../results/SingleResultInspector";
 import { TrakeResultInspector } from "../results/TrakeResultInspector";
-
-const QUERY_TYPE_LABELS: Record<QueryType, string> = {
-  KIS: "Known Item Search",
-  VQA: "Visual Question Answering",
-  TRAKE: "Temporal event search",
-};
 
 const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
   { key: "image", label: "Image" },
@@ -54,7 +47,7 @@ function queryLengthError(label: string, query: string, maxLength: number): stri
 
 export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [activeType, setActiveType] = useState<QueryType>("KIS");
-  const [topK, setTopK] = useState<TopK>(config.default_top_k);
+  const [topK, setTopK] = useState(String(config.default_top_k));
   const [enhanceQuery, setEnhanceQuery] = useState(false);
   const [sources, setSources] = useState<SearchSources>({
     image: true,
@@ -113,12 +106,16 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
 
   const buildPayload = (): SearchRequest | null => {
     const errors: string[] = [];
+    const parsedTopK = Number(topK);
+    if (!Number.isInteger(parsedTopK) || parsedTopK < 1 || parsedTopK > 100) {
+      errors.push("Top-K phải là số nguyên từ 1 đến 100.");
+    }
     if (!Object.values(sources).some(Boolean)) {
       errors.push("Chọn ít nhất một nguồn tìm kiếm.");
     }
 
     const common = {
-      top_k: topK,
+      top_k: parsedTopK,
       enhance_query: enhanceQuery,
       search_sources: sources,
       model_choice: modelChoice,
@@ -185,38 +182,28 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   };
 
   return (
-    <section className="workspace" aria-labelledby="workspace-heading">
-      <div className="workspace__intro">
-        <div>
-          <p className="eyebrow eyebrow--dark">Query workspace</p>
-          <h2 id="workspace-heading">Inspect retrieval candidates</h2>
-          <p>Chọn loại truy vấn, cấu hình nguồn tìm kiếm và gửi tới mock API.</p>
-        </div>
-        <div className="mode-note">
-          <span className="mode-note__dot" aria-hidden="true" />
-          Live AI Search
-        </div>
-      </div>
+    <section className="workspace" aria-label="Retrieval workspace">
+      <aside className="workspace__sidebar" aria-label="Query controls">
+        <header className="workspace__brand">AIC Retrieval Inspector</header>
 
-      <div className="query-tabs" role="tablist" aria-label="Query type">
-        {QUERY_TYPES.map((queryType) => (
-          <button
-            key={queryType}
-            id={`tab-${queryType}`}
-            type="button"
-            role="tab"
-            aria-selected={activeType === queryType}
-            aria-controls={`panel-${queryType}`}
-            className="query-tab"
-            onClick={() => changeTab(queryType)}
-          >
-            <strong>{queryType}</strong>
-            <span>{QUERY_TYPE_LABELS[queryType]}</span>
-          </button>
-        ))}
-      </div>
+        <div className="query-tabs" role="tablist" aria-label="Query type">
+          {QUERY_TYPES.map((queryType) => (
+            <button
+              key={queryType}
+              id={`tab-${queryType}`}
+              type="button"
+              role="tab"
+              aria-selected={activeType === queryType}
+              aria-controls={`panel-${queryType}`}
+              className="query-tab"
+              onClick={() => changeTab(queryType)}
+            >
+              <strong>{queryType}</strong>
+            </button>
+          ))}
+        </div>
 
-      <form className="search-layout" onSubmit={submitSearch} noValidate>
+        <form id="search-form" className="search-layout" onSubmit={submitSearch} noValidate>
         <div
           id={`panel-${activeType}`}
           role="tabpanel"
@@ -224,9 +211,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           className="query-panel"
         >
           {activeType === "KIS" && (
-            <label className="field" htmlFor="kis-query">
+            <label className="field field--query-only" htmlFor="kis-query">
               <span>Query KIS</span>
-              <small>Mô tả khoảnh khắc hoặc sự kiện cần tìm.</small>
               <textarea
                 id="kis-query"
                 value={kisQuery}
@@ -310,46 +296,24 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           )}
         </div>
 
-        <aside className="control-panel" aria-label="Search controls">
-          <label className="field field--compact" htmlFor="top-k">
-            <span>Top K</span>
-            <select
+        <div className="control-panel">
+          <div className="top-k-row">
+            <span id="top-k-label">Top-K</span>
+            <input
               id="top-k"
+              aria-labelledby="top-k-label"
+              type="number"
+              min={1}
+              max={100}
+              step={1}
               value={topK}
-              onChange={(event) => setTopK(Number(event.target.value) as TopK)}
-            >
-              {config.top_k_options.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="field field--compact" htmlFor="model-choice">
-            <span>Model</span>
-            <select
-              id="model-choice"
-              value={modelChoice}
-              onChange={(event) => setModelChoice(event.target.value as "siglip" | "beit3" | "hybrid")}
-            >
-              <option value="hybrid">Hybrid (RRF)</option>
-              <option value="siglip">SigLIP Only</option>
-              <option value="beit3">BEiT-3 Only</option>
-            </select>
-          </label>
-
-          <button className="search-button" type="submit">
-            {searchMutation.isPending ? `Search ${activeType} again` : `Search ${activeType}`}
-          </button>
-          <p className="query-shortcut-hint">
-            <kbd>Enter</kbd> Search <span aria-hidden="true">·</span> <kbd>Shift+Enter</kbd> New line
-          </p>
+              onChange={(event) => setTopK(event.target.value)}
+            />
+          </div>
 
           <label className="toggle-row" htmlFor="enhance-query">
             <span>
               <strong>Enhance query</strong>
-              <small>Mock Gemini enhancement</small>
             </span>
             <input
               id="enhance-query"
@@ -386,10 +350,19 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             </div>
           )}
 
-        </aside>
-      </form>
+        </div>
+        </form>
 
-      <SearchState mutation={searchMutation} maxAnswerLength={config.max_answer_length} />
+        <footer className="workspace__footer">
+          <button className="search-button" type="submit" form="search-form">
+            Search
+          </button>
+        </footer>
+      </aside>
+
+      <div className="workspace__results" aria-label="Search results">
+        <SearchState mutation={searchMutation} maxAnswerLength={config.max_answer_length} />
+      </div>
     </section>
   );
 }

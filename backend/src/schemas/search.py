@@ -2,8 +2,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from core.constants import TopK
-
 QueryText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1),
@@ -28,7 +26,7 @@ class SearchSources(BaseModel):
 class BaseSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    top_k: TopK = 20
+    top_k: int = Field(default=20, ge=1, le=100)
     enhance_query: bool = False
     search_sources: SearchSources = Field(default_factory=SearchSources)
     model_choice: Literal["siglip", "beit3", "hybrid"] = "hybrid"

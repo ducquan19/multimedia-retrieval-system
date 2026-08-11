@@ -46,7 +46,7 @@ def test_scoring_top_k_options_are_accepted(
     assert len(response.json()["results"]) == expected_count
 
 
-def test_non_scoring_top_k_option_is_rejected(client: TestClient) -> None:
+def test_manually_entered_top_k_is_accepted(client: TestClient) -> None:
     response = client.post(
         "/api/search",
         json={
@@ -57,7 +57,8 @@ def test_non_scoring_top_k_option_is_rejected(client: TestClient) -> None:
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert len(response.json()["results"]) <= 10
 
 
 def test_default_top_k_must_use_a_scoring_option() -> None:
