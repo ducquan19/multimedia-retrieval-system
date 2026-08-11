@@ -26,3 +26,6 @@ frontend/test-results/
 .vscode/
 .DS_Store
 Thumbs.db
+
+data/
+logs/

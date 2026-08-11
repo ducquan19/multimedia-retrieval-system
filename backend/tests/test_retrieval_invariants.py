@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from aic_app.adapters.retrieval import FixtureRetrievalEngine, RetrievalDataError
-from aic_app.domain.search import SearchSources, TRAKEEventQuery, TRAKESearchRequest
-from aic_app.repositories.manifest_repository import ManifestRepository
+from adapters.retrieval import FixtureRetrievalEngine, RetrievalDataError
+from domain.search import SearchSources, TRAKEEventQuery, TRAKESearchRequest
+from repositories.manifest_repository import ManifestRepository
 
 
 def test_fixture_engine_rejects_trake_event_from_another_video(tmp_path: Path) -> None:

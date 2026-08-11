@@ -55,6 +55,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     object: false,
     ocr: false,
   });
+  const [modelChoice, setModelChoice] = useState<"siglip" | "beit3" | "hybrid">("hybrid");
   const [kisQuery, setKisQuery] = useState("");
   const [vqaQuery, setVqaQuery] = useState("");
   const [trakeMainQuery, setTrakeMainQuery] = useState("");
@@ -117,6 +118,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       top_k: parsedTopK,
       enhance_query: enhanceQuery,
       search_sources: sources,
+      model_choice: modelChoice,
     };
 
     let payload: SearchRequest;
@@ -376,7 +378,7 @@ function SearchState({ mutation, maxAnswerLength }: SearchStateProps) {
       <section className="result-state" aria-live="polite" aria-busy="true">
         <span className="spinner" aria-hidden="true" />
         <div>
-          <strong>Đang tìm trong fixture…</strong>
+          <strong>Đang tìm kiếm…</strong>
           <p>Request trước đã được hủy nếu vẫn đang chạy.</p>
         </div>
       </section>

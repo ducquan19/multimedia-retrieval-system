@@ -3,8 +3,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from aic_app.config import Settings
-from aic_app.main import create_app
+from core.config import Settings
+from main import create_app
 
 
 def sources(**overrides: bool) -> dict[str, bool]:

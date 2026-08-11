@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from aic_app.config import Settings
-from aic_app.main import create_app
+from config import Settings
+from main import create_app
 
 
 def test_health_endpoint() -> None:

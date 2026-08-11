@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from aic_app.services.media_resolver import MediaNotFound, SafeMediaResolver, UnsafeMediaPath
+from services.media_resolver import MediaNotFound, SafeMediaResolver, UnsafeMediaPath
 
 
 def test_media_resolver_returns_existing_file_inside_data_root(tmp_path: Path) -> None:
