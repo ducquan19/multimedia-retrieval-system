@@ -150,7 +150,7 @@ The frontend should display `Backend connected: ok` when both services are avail
 To run each service in a separate terminal:
 
 ```powershell
-python -m uvicorn aic_app.main:app --app-dir backend/src --reload --port 8000
+python -m uvicorn main:app --app-dir backend/src --reload --port 8000
 ```
 
 ```powershell
@@ -218,13 +218,42 @@ Submission output is UTF-8 CSV without a header. VQA answers containing commas, 
 
 All runtime data lives below one data root, configured by `AIC_DATA_ROOT` and defaulting to `./data`.
 
+> [!IMPORTANT]
+> The `data/` directory is not pushed to the GitHub repository because it contains large datasets and model files. You must download the embeddings and models from the Kaggle dataset: [Kaggle Dataset](https://kaggle.com/datasets/4328e5dacc910e9120972e28ee600a180dbede5fc52a19b72b6e50052981c83c) and extract them into the `data/` directory before running the application.
+>
+> **Note:** The Kaggle dataset only contains the raw `.npy` embeddings, not the FAISS indexing files. After downloading, you must run the indexing script to build the `.index` files:
+> ```powershell
+> python scripts/build_faiss_index.py
+> ```
+>
+> **Keyframes manifest:** The `keyframes.json` manifest is required for the web application to serve images. After extracting the keyframes into `data/keyframes/`, run the following script to generate the manifest:
+> ```powershell
+> python scripts/generate_manifest.py
+> ```
+>
+> **BEiT-3 Checkpoint:** The BEiT-3 retrieval model requires its pre-trained weights and tokenizer. Create a `checkpoint` folder in `data/` (`data/checkpoint/`) and place the files `beit3.spm` and `beit3_base_patch16_384_coco_retrieval.pth` inside it. These files can be found in the Kaggle dataset, or you can download them directly by following the instructions at [microsoft/unilm/beit3/README.md](https://github.com/microsoft/unilm/blob/master/beit3/README.md).
+
 ```text
 data/
-├── manifest.json
-├── fixtures/
-│   └── search_results.json
+├── keyframes.json
 ├── keyframes/
-├── videos/
+│   ├── L01_V001/
+│   │   ├── S00001/
+│   │   │   ├── F00001.jpg
+│   │   │   └── ...
+│   │   └── ...
+│   └── ...
+├── embeddings/
+│   ├── siglip/
+│   │   ├── L01_V001.npy
+│   │   └── ...
+│   └── beit3/
+│       ├── L01_V001.npy
+│       └── ...
+├── indexing/
+│   ├── siglip.index
+│   └── beit3.index
+├── checkpoint/
 ├── metadata/
 ├── asr/
 ├── ocr/
