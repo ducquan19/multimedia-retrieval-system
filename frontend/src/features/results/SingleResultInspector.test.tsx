@@ -95,14 +95,12 @@ function setupPreviewApi(content: string, filename = "submission.csv") {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("SingleResultInspector", () => {
-  it("renders current rank, metadata and consistently formatted score", () => {
+  it("renders essential metadata and a consistently formatted score", () => {
     render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
 
     const firstCard = cardAt(0);
-    expect(firstCard).toHaveTextContent("#1");
     expect(firstCard).toHaveTextContent("L01_V001");
     expect(firstCard).toHaveTextContent("Frame 505");
-    expect(firstCard).toHaveTextContent("segment-a");
     expect(firstCard).toHaveTextContent("98.21%");
   });
 
@@ -135,8 +133,8 @@ describe("SingleResultInspector", () => {
     await user.click(screen.getByRole("button", { name: "Move L02_V002 up" }));
 
     expect(cardVideoOrder()).toEqual(["L02_V002", "L01_V001", "L03_V003"]);
-    expect(cardAt(0)).toHaveTextContent("#1");
-    expect(cardAt(1)).toHaveTextContent("#2");
+    expect(within(cardAt(0)).getByRole("article")).toHaveAccessibleName("Rank 1, L02_V002");
+    expect(within(cardAt(1)).getByRole("article")).toHaveAccessibleName("Rank 2, L01_V001");
   });
 
   it("reorders IDs through the same reducer path used by drag end", () => {

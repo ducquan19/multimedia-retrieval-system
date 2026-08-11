@@ -117,7 +117,6 @@ export function SingleResultInspector({
         <div>
           <p className="eyebrow eyebrow--dark">Editable result order</p>
           <h3 id="result-inspector-heading">{orderedResults.length} candidates</h3>
-          <p>Drag cards or use the movement buttons to adjust the current rank.</p>
         </div>
         <div className="result-inspector__actions">
           <span className="mini-badge">{response.query_type}</span>
@@ -215,9 +214,6 @@ function SortableResultCard({
               className="result-card__image"
             />
           </button>
-          <span className="rank-badge" aria-label={`Current rank ${rank}`}>
-            #{rank}
-          </span>
         </div>
 
         <div className="result-card__body">
@@ -228,17 +224,6 @@ function SortableResultCard({
             </div>
             <span className="score-badge">{formatScore(result.similarity_score)}</span>
           </div>
-
-          <dl className="card-metadata">
-            <div>
-              <dt>Segment</dt>
-              <dd>{result.segment_id || "—"}</dd>
-            </div>
-            <div>
-              <dt>Result ID</dt>
-              <dd>{result.result_id}</dd>
-            </div>
-          </dl>
 
           {isVqa && (
             <label className="answer-field" htmlFor={`answer-${result.result_id}`}>
