@@ -7,7 +7,7 @@ A local web application for inspecting video-retrieval results, manually reranki
 
 ## Project status
 
-The backend foundation is complete through Phase 3. The frontend currently provides an application shell and verifies connectivity to the API; the full search and result-inspection workspace will be implemented in the next phases.
+The backend foundation is complete through Phase 3, and the frontend is complete through the TRAKE result inspector in Phase 6. Submission controls remain for the next frontend phase.
 
 | Capability | Status |
 | --- | --- |
@@ -18,8 +18,11 @@ The backend foundation is complete through Phase 3. The frontend currently provi
 | Safe media serving | Available |
 | CSV submission preview and download | Available |
 | React application shell and API health check | Available |
-| Search forms and result inspector | Planned |
-| Manual drag-and-drop reranking | Planned |
+| Typed KIS, VQA, and TRAKE query forms | Available |
+| Hybrid controls, request cancellation, and query states | Available |
+| KIS/VQA result inspector and detail modal | Available |
+| KIS/VQA drag-and-drop and accessible fallback reranking | Available |
+| TRAKE row inspector, event modal, and accessible reranking | Available |
 | Submission controls in the UI | Planned |
 | Real AI retrieval and Gemini integration | Out of scope for the MVP |
 
@@ -147,7 +150,7 @@ The frontend should display `Backend connected: ok` when both services are avail
 To run each service in a separate terminal:
 
 ```powershell
-python -m uvicorn aic_app.main:app --app-dir backend/src --reload --port 8000
+python -m uvicorn main:app --app-dir backend/src --reload --port 8000
 ```
 
 ```powershell
@@ -215,13 +218,42 @@ Submission output is UTF-8 CSV without a header. VQA answers containing commas, 
 
 All runtime data lives below one data root, configured by `AIC_DATA_ROOT` and defaulting to `./data`.
 
+> [!IMPORTANT]
+> The `data/` directory is not pushed to the GitHub repository because it contains large datasets and model files. You must download the embeddings and models from the Kaggle dataset: [Kaggle Dataset](https://kaggle.com/datasets/4328e5dacc910e9120972e28ee600a180dbede5fc52a19b72b6e50052981c83c) and extract them into the `data/` directory before running the application.
+>
+> **Note:** The Kaggle dataset only contains the raw `.npy` embeddings, not the FAISS indexing files. After downloading, you must run the indexing script to build the `.index` files:
+> ```powershell
+> python scripts/build_faiss_index.py
+> ```
+>
+> **Keyframes manifest:** The `keyframes.json` manifest is required for the web application to serve images. After extracting the keyframes into `data/keyframes/`, run the following script to generate the manifest:
+> ```powershell
+> python scripts/generate_manifest.py
+> ```
+>
+> **BEiT-3 Checkpoint:** The BEiT-3 retrieval model requires its pre-trained weights and tokenizer. Create a `checkpoint` folder in `data/` (`data/checkpoint/`) and place the files `beit3.spm` and `beit3_base_patch16_384_coco_retrieval.pth` inside it. These files can be found in the Kaggle dataset, or you can download them directly by following the instructions at [microsoft/unilm/beit3/README.md](https://github.com/microsoft/unilm/blob/master/beit3/README.md).
+
 ```text
 data/
-├── manifest.json
-├── fixtures/
-│   └── search_results.json
+├── keyframes.json
 ├── keyframes/
-├── videos/
+│   ├── L01_V001/
+│   │   ├── S00001/
+│   │   │   ├── F00001.jpg
+│   │   │   └── ...
+│   │   └── ...
+│   └── ...
+├── embeddings/
+│   ├── siglip/
+│   │   ├── L01_V001.npy
+│   │   └── ...
+│   └── beit3/
+│       ├── L01_V001.npy
+│       └── ...
+├── indexing/
+│   ├── siglip.index
+│   └── beit3.index
+├── checkpoint/
 ├── metadata/
 ├── asr/
 ├── ocr/
@@ -294,10 +326,7 @@ The backend search engine reads deterministic fixture data. Gemini enhancement a
 
 Remaining MVP phases:
 
-1. Build typed frontend query forms and API integration.
-2. Add KIS/VQA result inspection, answer editing, modal viewing, and reranking.
-3. Add the TRAKE row workspace and row-level reranking.
-4. Connect the frontend to submission preview/download and add end-to-end tests.
-5. Complete the final security, performance, accessibility, and documentation audit.
+1. Connect the frontend to submission preview/download and add end-to-end tests.
+2. Complete the final security, performance, accessibility, and documentation audit.
 
 Real Gemini calls, embedding generation, vector databases, OCR/ASR inference, automatic VQA answers, automatic TRAKE alignment, user accounts, and production cloud deployment remain outside the current MVP scope.

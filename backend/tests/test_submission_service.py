@@ -1,7 +1,7 @@
 import pytest
 
-from aic_app.adapters.submission_csv import CsvSubmissionFormatter
-from aic_app.domain.submission import (
+from adapters.submission_csv import CsvSubmissionFormatter
+from domain.submission import (
     KISSubmissionRequest,
     KISSubmissionRow,
     TRAKESubmissionRequest,
@@ -9,7 +9,7 @@ from aic_app.domain.submission import (
     VQASubmissionRequest,
     VQASubmissionRow,
 )
-from aic_app.services.submission_service import (
+from services.submission_service import (
     SubmissionService,
     SubmissionValidationError,
     sanitize_filename,

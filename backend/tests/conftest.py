@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from aic_app.config import Settings
-from aic_app.main import create_app
+from config import Settings
+from main import create_app
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _SESSION_TEMP_ROOT: Path | None = None

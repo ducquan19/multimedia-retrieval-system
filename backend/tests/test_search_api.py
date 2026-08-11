@@ -3,8 +3,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from aic_app.config import Settings
-from aic_app.main import create_app
+from core.config import Settings
+from main import create_app
 
 
 def sources(**overrides: bool) -> dict[str, bool]:
@@ -298,9 +298,7 @@ def test_runtime_max_trake_events_is_enforced(app_settings: Settings) -> None:
         },
     ],
 )
-def test_runtime_query_length_is_enforced(
-    app_settings: Settings, payload: dict[str, Any]
-) -> None:
+def test_runtime_query_length_is_enforced(app_settings: Settings, payload: dict[str, Any]) -> None:
     settings = app_settings.model_copy(update={"max_query_length": 3})
 
     with TestClient(create_app(settings)) as limited_client:

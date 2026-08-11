@@ -13,11 +13,16 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_DEV_API_TARGET || "http://localhost:8000",
           changeOrigin: true,
         },
+        "/media": {
+          target: env.VITE_DEV_API_TARGET || "http://localhost:8000",
+          changeOrigin: true,
+        },
       },
     },
     test: {
       environment: "jsdom",
       setupFiles: "./src/test/setup.ts",
+      include: ["src/**/*.test.{ts,tsx}"],
       css: true,
     },
   };

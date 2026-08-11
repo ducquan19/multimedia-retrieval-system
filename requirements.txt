@@ -1,0 +1,10 @@
+faiss-cpu
+torch
+Pillow
+transformers
+elasticsearch
+sentencepiece
+timm
+torchscale
+tensorboardX
+torchmetrics

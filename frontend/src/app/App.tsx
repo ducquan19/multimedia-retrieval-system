@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { getPublicConfig } from "../api/client";
 import { getHealth } from "../api/health";
+import { SearchWorkspace } from "../features/search/SearchWorkspace";
 
 import "./app.css";
 
@@ -32,6 +34,12 @@ function HealthStatus() {
 }
 
 export function App() {
+  const configQuery = useQuery({
+    queryKey: ["public-config"],
+    queryFn: ({ signal }) => getPublicConfig(signal),
+    retry: false,
+  });
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -39,21 +47,24 @@ export function App() {
           <p className="eyebrow">HCMC AI Challenge 2026</p>
           <h1>AIC Retrieval Inspector</h1>
         </div>
-        <span className="badge">Mock retrieval</span>
+        <div className="header-status">
+          <HealthStatus />
+          <span className="badge">Mock retrieval</span>
+        </div>
       </header>
 
       <main className="app-main">
-        <section className="welcome-panel" aria-labelledby="welcome-heading">
-          <div>
-            <p className="eyebrow">Developer baseline</p>
-            <h2 id="welcome-heading">Workspace đã sẵn sàng</h2>
-            <p className="welcome-copy">
-              Search forms và result inspector sẽ được bổ sung ở các milestone tiếp theo.
-              Scaffold hiện chỉ kiểm tra kết nối local tới FastAPI.
-            </p>
-          </div>
-          <HealthStatus />
-        </section>
+        {configQuery.isPending && (
+          <section className="bootstrap-state" aria-live="polite">
+            Đang tải cấu hình workspace…
+          </section>
+        )}
+        {configQuery.isError && (
+          <section className="bootstrap-state bootstrap-state--error" role="alert">
+            Không tải được cấu hình tìm kiếm. Hãy kiểm tra backend và thử tải lại trang.
+          </section>
+        )}
+        {configQuery.data && <SearchWorkspace config={configQuery.data} />}
       </main>
     </div>
   );
