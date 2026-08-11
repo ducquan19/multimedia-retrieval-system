@@ -83,7 +83,9 @@ describe("TrakeResultInspector", () => {
         within(cell).getByText(/^(305|390|480)$/).textContent,
       ),
     ).toEqual(["305", "390", "480"]);
-    expect(within(rows()[0]!).getByLabelText("Current rank 1")).toBeInTheDocument();
+    expect(
+      within(rows()[0]!).getByRole("article", { name: "Rank 1, L02_V002" }),
+    ).toBeInTheDocument();
   });
 
   it("uses result_id for the drag reorder state", () => {

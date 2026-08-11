@@ -221,9 +221,6 @@ function SortableTrakeRow({
       data-testid="trake-row"
     >
       <article className="trake-row__identity" aria-label={`Rank ${rank}, ${result.video_id}`}>
-        <div className="trake-row__rank" aria-label={`Current rank ${rank}`}>
-          #{rank}
-        </div>
         <div className="trake-row__video">
           <strong>{result.video_id}</strong>
           <small>{result.result_id}</small>
