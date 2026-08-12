@@ -16,7 +16,7 @@ def build_faiss_index(
 ):
     """
     Builds a FAISS index from video-level .npy files (N, D).
-    To ensure the faiss_id exactly matches the global keyframe index in manifest.json:
+    To ensure the faiss_id exactly matches the global keyframe index in keyframes.json:
     1. Group manifest keyframes by video_id.
     2. Sort them by keyframe_id (matching the alphabetical sort used during extraction).
     3. Map row `i` of video_id.npy to the `global_index` of the sorted manifest keyframe.
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data_root = Path(args.data_root)
-    manifest_path = data_root / "manifest.json"
+    manifest_path = data_root / "keyframes.json"
 
     # Build SigLIP Index
     siglip_dir = data_root / "embeddings" / "siglip"
