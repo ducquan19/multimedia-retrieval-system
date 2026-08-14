@@ -221,40 +221,15 @@ function SortableTrakeRow({
       data-testid="trake-row"
     >
       <article className="trake-row__identity" aria-label={`Rank ${rank}, ${result.video_id}`}>
-        <div className="trake-row__video">
+        <div 
+          className="trake-row__video"
+          {...attributes}
+          {...listeners}
+          style={{ cursor: 'grab' }}
+        >
           <strong>{result.video_id}</strong>
           <small>{result.result_id}</small>
           <span>Row score {formatScore(result.similarity_score)}</span>
-        </div>
-        <div className="trake-row__controls">
-          <button
-            type="button"
-            className="drag-handle"
-            aria-label={`Drag result ${result.result_id}`}
-            {...attributes}
-            {...listeners}
-          >
-            <span aria-hidden="true">⠿</span>
-            Drag row
-          </button>
-          <div className="move-actions" aria-label={`Move result ${result.result_id}`}>
-            <button
-              type="button"
-              disabled={!canMoveUp}
-              onClick={() => onMove(-1)}
-              aria-label={`Move result ${result.result_id} up`}
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              disabled={!canMoveDown}
-              onClick={() => onMove(1)}
-              aria-label={`Move result ${result.result_id} down`}
-            >
-              ↓
-            </button>
-          </div>
         </div>
       </article>
 
