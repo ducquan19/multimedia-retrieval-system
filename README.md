@@ -221,11 +221,19 @@ All runtime data lives below one data root, configured by `AIC_DATA_ROOT` and de
 > [!IMPORTANT]
 > The `data/` directory is not pushed to the GitHub repository because it contains large datasets and model files. You must download the embeddings and models from the Kaggle dataset: [Embedding](https://kaggle.com/datasets/4328e5dacc910e9120972e28ee600a180dbede5fc52a19b72b6e50052981c83c) and extract them into the `data/` directory before running the application.
 >
-> Then download they keyframe from the Kaggle dataset: [Keyframes](https://kaggle.com/datasets/f6e43dae6bac933014eb004ae691fa652168994855a67a4e1f3850d9182478e3) and extract them into the `data/` directory before running the application.
+> Then download the keyframes from the Kaggle dataset: [Keyframes](https://kaggle.com/datasets/f6e43dae6bac933014eb004ae691fa652168994855a67a4e1f3850d9182478e3) and extract them into the `data/` directory.
+>
+> Finally, download the ASR transcripts from the Kaggle dataset: [ASR Data](https://kaggle.com/datasets/e2642647173eb4867e6f7ca12b592843b60e5ddb16dc76f08288fd816c6d0fd5) and extract them into the `data/` directory.
 >
 > **Note:** The Kaggle dataset only contains the raw `.npy` embeddings, not the FAISS indexing files. After downloading, you must run the indexing script to build the `.index` files:
 > ```powershell
 > python scripts/build_faiss_index.py
+> ```
+>
+> **Elasticsearch BM25:** To support ASR text search, run Elasticsearch using Docker and then build the metadata index (ensure you have generated `keyframes.json` first):
+> ```powershell
+> docker compose up -d
+> python scripts/build_es_index.py
 > ```
 >
 > **Keyframes manifest:** The `keyframes.json` manifest is required for the web application to serve images. After extracting the keyframes into `data/keyframes/`, run the following script to generate the manifest:
