@@ -2,7 +2,7 @@ faiss-cpu
 torch
 Pillow
 transformers
-elasticsearch
+elasticsearch>=8.11.0,<9.0.0
 sentencepiece
 timm
 torchscale
