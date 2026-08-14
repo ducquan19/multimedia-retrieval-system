@@ -44,7 +44,7 @@ class RetrievalService:
             return self._retrieve_trake(request)
         return self._retrieve_single(request)
 
-    def _search_candidates(self, query: str, model_choice: str, fetch_k: int) -> list[ScoredCandidate]:
+    def _search_candidates(self, query: str, model_choice: str, fetch_k: int, search_sources=None) -> list[ScoredCandidate]:
         if model_choice == "siglip":
             query_vector = self._embedding_service.get_siglip_embedding(query)
             candidates = self._siglip_repo.search(query_vector, fetch_k)
@@ -58,7 +58,10 @@ class RetrievalService:
 
             siglip_candidates = self._siglip_repo.search(siglip_vector, fetch_k)
             beit3_candidates = self._beit3_repo.search(beit3_vector, fetch_k)
-            es_candidates = self._text_repository.search_metadata(query, None, fetch_k)
+            
+            es_candidates = []
+            if search_sources and getattr(search_sources, "asr", False):
+                es_candidates = self._text_repository.search_metadata(query, None, fetch_k)
 
             def get_rrf(cands: list['ScoredCandidate'], k=60) -> dict[str, float]:
                 return {c.image_path: 1.0 / (k + rank) for rank, c in enumerate(cands, start=1)}
@@ -96,26 +99,11 @@ class RetrievalService:
         model_choice = getattr(request, "model_choice", "hybrid")
         fetch_k = request.top_k * 5
 
-        candidates = self._search_candidates(request.query, model_choice, fetch_k)
+        search_sources = getattr(request, "search_sources", None)
 
-        # Normalize scores to 0-1 for UI display purposes
-        if candidates:
-            max_score = candidates[0].similarity_score
-            min_score = candidates[-1].similarity_score
-            score_range = max_score - min_score
+        candidates = self._search_candidates(request.query, model_choice, fetch_k, search_sources)
 
-            scaled_candidates = []
-            if score_range > 1e-9:
-                for c in candidates:
-                    scaled_candidates.append(
-                        c.model_copy(update={"similarity_score": (c.similarity_score - min_score) / score_range})
-                    )
-            else:
-                for c in candidates:
-                    scaled_candidates.append(
-                        c.model_copy(update={"similarity_score": 1.0})
-                    )
-            candidates = scaled_candidates
+
 
         results = []
         for rank, candidate in enumerate(candidates[: request.top_k], start=1):
@@ -147,8 +135,9 @@ class RetrievalService:
         model_choice = getattr(request, "model_choice", "hybrid")
 
         # Stage 1: Get top-K for the first event
+        search_sources = getattr(request, "search_sources", None)
         first_event_query = request.events[0].query
-        first_candidates = self._search_candidates(first_event_query, model_choice, beam_width)
+        first_candidates = self._search_candidates(first_event_query, model_choice, beam_width, search_sources)
 
         if not first_candidates:
             return tuple()
@@ -160,7 +149,7 @@ class RetrievalService:
 
         # Stages 2..N
         for event in request.events[1:]:
-            candidates = self._search_candidates(event.query, model_choice, min(beam_width * 20, 200))
+            candidates = self._search_candidates(event.query, model_choice, min(beam_width * 20, 200), search_sources)
             next_beams: list[tuple[float, list[ScoredCandidate]]] = []
 
             for total_score, seq in beams:

@@ -207,6 +207,9 @@ function SortableResultCard({
             className="thumbnail-button"
             onClick={(event) => onOpenDetail(event.currentTarget)}
             aria-label={`Open details for ${result.video_id}, frame ${result.frame_id}`}
+            {...attributes}
+            {...listeners}
+            style={{ cursor: 'grab' }}
           >
             <ResultImage
               src={result.keyframe_url}
@@ -239,36 +242,6 @@ function SortableResultCard({
             </label>
           )}
 
-          <div className="card-actions">
-            <button
-              type="button"
-              className="drag-handle"
-              aria-label={`Drag ${result.video_id}`}
-              {...attributes}
-              {...listeners}
-            >
-              <span aria-hidden="true">⠿</span>
-              Drag
-            </button>
-            <div className="move-actions" aria-label={`Move ${result.video_id}`}>
-              <button
-                type="button"
-                disabled={!canMoveUp}
-                onClick={() => onMove(-1)}
-                aria-label={`Move ${result.video_id} up`}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                disabled={!canMoveDown}
-                onClick={() => onMove(1)}
-                aria-label={`Move ${result.video_id} down`}
-              >
-                ↓
-              </button>
-            </div>
-          </div>
         </div>
       </article>
     </li>

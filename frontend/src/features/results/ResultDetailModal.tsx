@@ -21,7 +21,7 @@ interface ResultDetailModalProps {
 }
 
 export function formatScore(score: number): string {
-  return `${(score * 100).toFixed(2)}%`;
+  return score.toFixed(4);
 }
 
 export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
