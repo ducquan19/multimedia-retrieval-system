@@ -51,6 +51,8 @@ class SearchService:
         if enhanced_queries:
             enhanced_query_str = "\n".join(f"- {q}" for q in enhanced_queries)
             
+        model_choices = getattr(request, "model_choices", [])
+        
         results = self._retrieval_engine.retrieve(request, enhanced_queries)
 
         if isinstance(request, KISSearchRequest):
@@ -58,6 +60,7 @@ class SearchService:
                 query_type="KIS",
                 original_query=original_query,
                 enhanced_query=enhanced_query_str,
+                model_choices=model_choices,
                 results=self._only_single_results(results),
             )
         if isinstance(request, VQASearchRequest):
@@ -65,12 +68,14 @@ class SearchService:
                 query_type="VQA",
                 original_query=original_query,
                 enhanced_query=enhanced_query_str,
+                model_choices=model_choices,
                 results=self._only_single_results(results),
             )
         return TRAKESearchResponse(
             query_type="TRAKE",
             original_query=original_query,
             enhanced_query=enhanced_query_str,
+            model_choices=model_choices,
             results=self._only_trake_results(results),
         )
 

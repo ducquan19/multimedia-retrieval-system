@@ -26,11 +26,13 @@ class SearchSources(BaseModel):
 class BaseSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    top_k: int = Field(default=20, ge=1, le=100)
+    top_k: int = Field(default=50, ge=1, le=100)
     enhance_query: bool = False
     use_reranking: bool = False
     search_sources: SearchSources = Field(default_factory=SearchSources)
-    model_choice: Literal["siglip", "beit3", "hybrid"] = "hybrid"
+    model_choices: list[Literal["siglip", "beit3"]] = Field(
+        default_factory=lambda: ["siglip", "beit3"]
+    )
 
 
 class KISSearchRequest(BaseSearchRequest):
@@ -113,7 +115,7 @@ class KISSearchResponse(BaseModel):
     query_type: Literal["KIS"]
     original_query: str
     enhanced_query: str | None
-    retrieval_mode: Literal["hybrid", "siglip", "beit3"] = "hybrid"
+    model_choices: list[str] = Field(default_factory=list)
     results: tuple[SingleSearchResult, ...]
 
 
@@ -121,7 +123,7 @@ class VQASearchResponse(BaseModel):
     query_type: Literal["VQA"]
     original_query: str
     enhanced_query: str | None
-    retrieval_mode: Literal["hybrid", "siglip", "beit3"] = "hybrid"
+    model_choices: list[str] = Field(default_factory=list)
     results: tuple[SingleSearchResult, ...]
 
 
@@ -129,7 +131,7 @@ class TRAKESearchResponse(BaseModel):
     query_type: Literal["TRAKE"]
     original_query: str
     enhanced_query: str | None
-    retrieval_mode: Literal["hybrid", "siglip", "beit3"] = "hybrid"
+    model_choices: list[str] = Field(default_factory=list)
     results: tuple[TRAKESearchResult, ...]
 
 

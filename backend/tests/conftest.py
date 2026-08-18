@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from config import Settings
+from core.config import Settings
 from main import create_app
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]

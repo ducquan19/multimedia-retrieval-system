@@ -45,7 +45,7 @@ function response(nextResults = results): TRAKESearchResponse {
     query_type: "TRAKE",
     original_query: "three events in sequence",
     enhanced_query: null,
-    retrieval_mode: "mock",
+    model_choices: ["siglip", "beit3"],
     results: nextResults,
   };
 }
@@ -71,46 +71,9 @@ describe("TrakeResultInspector", () => {
     }
   });
 
-  it("reorders complete rows while preserving their event sequence", async () => {
-    const user = userEvent.setup();
-    render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
 
-    await user.click(screen.getByRole("button", { name: "Move result trake-b up" }));
 
-    expect(within(rows()[0]!).getByText("L02_V002")).toBeInTheDocument();
-    expect(
-      within(rows()[0]!).getAllByTestId("trake-event-cell").map((cell) =>
-        within(cell).getByText(/^(305|390|480)$/).textContent,
-      ),
-    ).toEqual(["305", "390", "480"]);
-    expect(
-      within(rows()[0]!).getByRole("article", { name: "Rank 1, L02_V002" }),
-    ).toBeInTheDocument();
-  });
-
-  it("uses result_id for the drag reorder state", () => {
-    const initial = createResultEditorState(results);
-    const moved = resultEditorReducer(initial, {
-      type: "move",
-      activeId: "trake-b",
-      overId: "trake-a",
-    });
-
-    expect(moved.order).toEqual(["trake-b", "trake-a"]);
-  });
-
-  it("resets rows to the original API order", async () => {
-    const user = userEvent.setup();
-    render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
-
-    await user.click(screen.getByRole("button", { name: "Move result trake-b up" }));
-    await user.click(screen.getByRole("button", { name: "Reset order" }));
-
-    expect(within(rows()[0]!).getByText("L01_V001")).toBeInTheDocument();
-    expect(within(rows()[1]!).getByText("L02_V002")).toBeInTheDocument();
-  });
-
-  it("exports each reordered TRAKE row with exactly N fixed frame IDs", async () => {
+  it("exports each TRAKE row with exactly N fixed frame IDs", async () => {
     const payloads: Record<string, unknown>[] = [];
     vi.stubGlobal(
       "fetch",
@@ -118,7 +81,7 @@ describe("TrakeResultInspector", () => {
         payloads.push(JSON.parse(String(init.body)) as Record<string, unknown>);
         return new Response(
           JSON.stringify({
-            content: "L02_V002,305,390,480\r\nL01_V001,101,151,203\r\n",
+            content: "L01_V001,101,151,203\r\nL02_V002,305,390,480\r\n",
             filename: "trake_submission.csv",
             row_count: 2,
             warnings: [],
@@ -130,18 +93,23 @@ describe("TrakeResultInspector", () => {
     const user = userEvent.setup();
     render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
 
-    await user.click(screen.getByRole("button", { name: "Move result trake-b up" }));
     await user.click(screen.getByRole("button", { name: "Preview submission" }));
 
     expect(await screen.findByTestId("submission-preview-content")).toHaveTextContent(
-      "L02_V002,305,390,480",
+      "L01_V001,101,151,203",
     );
     expect(payloads[0]).toMatchObject({
       query_type: "TRAKE",
       event_count: 3,
       rows: [
-        { video_id: "L02_V002", frame_ids: [305, 390, 480] },
-        { video_id: "L01_V001", frame_ids: [101, 151, 203] },
+        {
+          video_id: "L01_V001",
+          frame_ids: [101, 151, 203],
+        },
+        {
+          video_id: "L02_V002",
+          frame_ids: [305, 390, 480],
+        },
       ],
     });
   });

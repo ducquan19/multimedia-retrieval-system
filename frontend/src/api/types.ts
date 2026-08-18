@@ -77,7 +77,7 @@ export interface TRAKESearchResult {
 interface BaseSearchResponse {
   original_query: string;
   enhanced_query: string | null;
-  retrieval_mode: "mock";
+  model_choices: string[];
 }
 
 export interface KISSearchResponse extends BaseSearchResponse {
@@ -134,10 +134,10 @@ export interface SubmissionDownload {
 }
 
 export interface PublicConfig {
-  top_k_options: TopK[];
-  default_top_k: TopK;
+  min_top_k: number;
+  max_top_k: number;
+  default_top_k: number;
   max_trake_events: number;
   max_query_length: number;
   max_answer_length: number;
-  retrieval_mode: "mock" | "hybrid" | "siglip" | "beit3";
 }

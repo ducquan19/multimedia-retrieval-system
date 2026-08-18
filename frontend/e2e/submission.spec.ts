@@ -1,12 +1,13 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 const config = {
-  top_k_options: [1, 5, 20, 50, 100],
+  min_top_k: 1,
+  max_top_k: 100,
   default_top_k: 20,
   max_trake_events: 4,
   max_query_length: 4_000,
   max_answer_length: 4_000,
-  retrieval_mode: "mock",
+  model_choices: ["siglip", "beit3"],
 };
 
 interface SubmissionPayload {
@@ -50,7 +51,7 @@ function singleResults(queryType: "KIS" | "VQA") {
     query_type: queryType,
     original_query: "fixture query",
     enhanced_query: null,
-    retrieval_mode: "mock",
+    model_choices: ["siglip", "beit3"],
     results: [
       {
         result_id: `${queryType.toLowerCase()}-a`,
@@ -97,7 +98,7 @@ function trakeResults() {
     query_type: "TRAKE",
     original_query: "fixture sequence",
     enhanced_query: null,
-    retrieval_mode: "mock",
+    model_choices: ["siglip", "beit3"],
     results: [
       {
         result_id: "trake-a",

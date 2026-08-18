@@ -21,7 +21,7 @@ router = APIRouter(tags=["search"])
     
     **Parameters:**
     - **query**: The search text query (e.g. "a person walking").
-    - **model_choice**: The retrieval model to use ("siglip", "beit3", or "hybrid").
+    - **model_choices**: List of retrieval models to use (e.g. ["siglip", "beit3"]). If multiple, RRF is used.
     - **top_k**: Maximum number of results to return.
     
     **Returns:**

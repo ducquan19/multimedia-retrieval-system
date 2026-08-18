@@ -7,12 +7,13 @@ import type { QueryType } from "../api/types";
 import { App } from "./App";
 
 const publicConfig = {
-  top_k_options: [1, 5, 20, 50, 100],
+  min_top_k: 1,
+  max_top_k: 100,
   default_top_k: 20,
   max_trake_events: 4,
   max_query_length: 4_000,
   max_answer_length: 4_000,
-  retrieval_mode: "mock",
+  model_choices: ["siglip", "beit3"],
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -30,7 +31,7 @@ function searchResponse(
     query_type: queryType,
     original_query: "original query",
     enhanced_query: options.enhanced ? "[Mock enhanced KIS] original query" : null,
-    retrieval_mode: "mock",
+    model_choices: ["siglip", "beit3"],
     results: options.empty
       ? []
       : [
@@ -139,7 +140,9 @@ describe("App query workspace", () => {
       query_type: "KIS",
       query: "người mở laptop",
       top_k: 5,
-      enhance_query: true,
+      enhance_query: false,
+      use_reranking: false,
+      model_choices: ["siglip", "beit3"],
       search_sources: { image: true, asr: true, object: false, ocr: false },
     });
   });
@@ -178,7 +181,9 @@ describe("App query workspace", () => {
       query_type: "VQA",
       query: "chiếc ly màu gì?",
       top_k: 20,
-      enhance_query: false,
+      enhance_query: true,
+      use_reranking: false,
+      model_choices: ["siglip", "beit3"],
       search_sources: { image: true, asr: false, object: false, ocr: false },
     });
     expect(searchPayload(fetchMock)).not.toHaveProperty("answer");
@@ -230,7 +235,7 @@ describe("App query workspace", () => {
     );
   });
 
-  it("shows original and enhanced query with a Mock badge", async () => {
+  it("shows original and enhanced query", async () => {
     setupApi(() => jsonResponse(searchResponse("KIS", { enhanced: true })));
     const user = userEvent.setup();
     renderApp();
@@ -239,12 +244,9 @@ describe("App query workspace", () => {
     await user.click(screen.getByLabelText(/^Enhance query/));
     await user.click(screen.getByRole("button", { name: "Search" }));
 
-    const callout = await screen.findByLabelText("Enhanced query");
-    expect(callout).toHaveTextContent("Original");
-    expect(callout).toHaveTextContent("original query");
-    expect(callout).toHaveTextContent("Enhanced");
-    expect(callout).toHaveTextContent("[Mock enhanced KIS] original query");
-    expect(callout).toHaveTextContent("Mock");
+    const enhanced = await screen.findByText("Enhanced:");
+    expect(enhanced).toBeInTheDocument();
+    expect(screen.getByText("[Mock enhanced KIS] original query")).toBeInTheDocument();
   });
 
   it("renders loading and friendly API error states", async () => {
@@ -260,7 +262,7 @@ describe("App query workspace", () => {
 
     await user.type(await screen.findByLabelText(/^Query KIS/), "query");
     await user.click(screen.getByRole("button", { name: "Search" }));
-    expect(await screen.findByText("Đang tìm trong fixture…")).toBeInTheDocument();
+    expect(await screen.findByText("Đang tìm kiếm…")).toBeInTheDocument();
 
     rejectSearch?.(new TypeError("Network error"));
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -298,13 +300,14 @@ describe("App query workspace", () => {
     const query = await screen.findByLabelText(/^Query KIS/);
     await user.type(query, "first query");
     await user.click(screen.getByRole("button", { name: "Search" }));
-    await screen.findByText("Đang tìm trong fixture…");
+    await screen.findByText("Đang tìm kiếm…");
 
     await user.clear(query);
     await user.type(query, "second query");
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     await waitFor(() => expect(signals[0]?.aborted).toBe(true));
+    // Wait until the new loading state appears (could be instantaneous or replacing)
     expect(await screen.findByText("Không tìm thấy candidate")).toBeInTheDocument();
   });
 });

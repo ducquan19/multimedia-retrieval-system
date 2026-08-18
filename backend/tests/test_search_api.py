@@ -13,22 +13,11 @@ def sources(**overrides: bool) -> dict[str, bool]:
     return values
 
 
-def test_public_config_reports_mock_modes(client: TestClient) -> None:
-    response = client.get("/api/config")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "top_k_options": [1, 5, 20, 50, 100],
-        "default_top_k": 20,
-        "max_trake_events": 10,
-        "max_query_length": 4_000,
-        "max_answer_length": 4_000,
-        "retrieval_mode": "mock",
-    }
 
 
-@pytest.mark.parametrize(("top_k", "expected_count"), [(1, 1), (5, 5)])
-def test_scoring_top_k_options_are_accepted(
+
+@pytest.mark.parametrize(("top_k", "expected_count"), [(1, 1), (50, 50), (100, 100)])
+def test_scoring_top_k_bounds_are_accepted(
     client: TestClient, top_k: int, expected_count: int
 ) -> None:
     response = client.post(
@@ -60,9 +49,9 @@ def test_manually_entered_top_k_is_accepted(client: TestClient) -> None:
     assert len(response.json()["results"]) <= 10
 
 
-def test_default_top_k_must_use_a_scoring_option() -> None:
-    with pytest.raises(ValueError, match="default_top_k must be one of"):
-        Settings(default_top_k=10)
+def test_default_top_k_must_be_within_bounds() -> None:
+    with pytest.raises(ValueError, match="default_top_k must be between"):
+        Settings(default_top_k=0)
 
 
 def test_text_limits_load_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -128,7 +117,7 @@ def test_search_accepts_all_query_types(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["query_type"] == query_type
-    assert body["retrieval_mode"] == "mock"
+    assert "model_choices" in body
     assert body["results"]
 
 

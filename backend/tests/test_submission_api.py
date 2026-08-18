@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from config import Settings
+from core.config import Settings
 from main import create_app
 
 

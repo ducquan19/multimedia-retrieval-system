@@ -45,19 +45,19 @@ class RetrievalService:
         return self._retrieve_single(request, enhanced_queries)
 
     def _search_candidates(
-        self, query: str, model_choice: str, fetch_k: int, search_sources=None, enhanced_queries: list[str] | None = None, use_reranking: bool = False
+        self, query: str, model_choices: list[str], fetch_k: int, search_sources=None, enhanced_queries: list[str] | None = None, use_reranking: bool = False
     ) -> list[ScoredCandidate]:
         visual_queries = enhanced_queries if enhanced_queries else [query]
 
         siglip_candidates_lists = []
         beit3_candidates_lists = []
 
-        if model_choice in ["siglip", "hybrid"]:
+        if "siglip" in model_choices:
             for vq in visual_queries:
                 query_vector = self._embedding_service.get_siglip_embedding(vq)
                 siglip_candidates_lists.append(self._siglip_repo.search(query_vector, fetch_k))
                 
-        if model_choice in ["beit3", "hybrid"]:
+        if "beit3" in model_choices:
             for vq in visual_queries:
                 query_vector = self._embedding_service.get_beit3_embedding(vq)
                 beit3_candidates_lists.append(self._beit3_repo.search(query_vector, fetch_k))
@@ -109,12 +109,12 @@ class RetrievalService:
         return candidates
 
     def _retrieve_single(self, request: SearchRequest, enhanced_queries: list[str] | None = None) -> tuple[SingleSearchResult, ...]:
-        model_choice = getattr(request, "model_choice", "hybrid")
+        model_choices = getattr(request, "model_choices", ["siglip", "beit3"])
         fetch_k = request.top_k * 5
 
         search_sources = getattr(request, "search_sources", None)
 
-        candidates = self._search_candidates(request.query, model_choice, fetch_k, search_sources, enhanced_queries, getattr(request, "use_reranking", False))
+        candidates = self._search_candidates(request.query, model_choices, fetch_k, search_sources, enhanced_queries, getattr(request, "use_reranking", False))
 
 
 
@@ -145,7 +145,7 @@ class RetrievalService:
 
         beam_width = min(request.top_k * 5, 100)
         max_kf_gap = getattr(request, "max_kf_gap", 200) # Defaults to 200 gap if not provided
-        model_choice = getattr(request, "model_choice", "hybrid")
+        model_choices = getattr(request, "model_choices", ["siglip", "beit3"])
 
         # Stage 1: Get top-K for the first event
         search_sources = getattr(request, "search_sources", None)
@@ -153,7 +153,7 @@ class RetrievalService:
         # TODO: TRAKE events are individual queries. Currently we only have one set of enhanced_queries for the main query.
         # If TRAKE is used with enhance, it's ambiguous. For now, pass enhanced_queries only to the first event if it matches the main query.
         first_event_enhanced = enhanced_queries if first_event_query == request.main_query else None
-        first_candidates = self._search_candidates(first_event_query, model_choice, beam_width, search_sources, first_event_enhanced)
+        first_candidates = self._search_candidates(first_event_query, model_choices, beam_width, search_sources, first_event_enhanced)
 
         if not first_candidates:
             return tuple()
@@ -165,7 +165,7 @@ class RetrievalService:
 
         # Stages 2..N
         for event in request.events[1:]:
-            candidates = self._search_candidates(event.query, model_choice, min(beam_width * 20, 200), search_sources)
+            candidates = self._search_candidates(event.query, model_choices, min(beam_width * 20, 200), search_sources)
             next_beams: list[tuple[float, list[ScoredCandidate]]] = []
 
             for total_score, seq in beams:

@@ -4,7 +4,7 @@ from pathlib import Path
 from pydantic import AnyHttpUrl, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.constants import TOP_K_OPTIONS
+from core.constants import MAX_TOP_K, MIN_TOP_K
 
 
 class Settings(BaseSettings):
@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     max_trake_events: int = 10
     max_query_length: int = Field(default=2_000, ge=1)
     max_answer_length: int = Field(default=2_000, ge=1)
-    retrieval_mode: str = "hybrid"
 
     gemini_api_key: str | None = None
     keyframes_filename: str = "keyframes.json"
@@ -50,12 +49,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_public_config(self) -> "Settings":
-        if self.default_top_k not in TOP_K_OPTIONS:
-            raise ValueError(f"default_top_k must be one of {TOP_K_OPTIONS}")
+        if not (MIN_TOP_K <= self.default_top_k <= MAX_TOP_K):
+            raise ValueError(f"default_top_k must be between {MIN_TOP_K} and {MAX_TOP_K}")
         if self.max_trake_events < 1:
             raise ValueError("max_trake_events must be at least 1")
-        if self.retrieval_mode not in ["hybrid", "siglip", "beit3"]:
-            raise ValueError("retrieval_mode must be 'hybrid', 'siglip', or 'beit3'")
         return self
 
 

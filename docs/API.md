@@ -20,7 +20,8 @@
 
 ```json
 {
-  "top_k_options": [1, 5, 20, 50, 100],
+  "min_top_k": 1,
+  "max_top_k": 100,
   "default_top_k": 20,
   "max_trake_events": 10,
   "max_query_length": 4000,

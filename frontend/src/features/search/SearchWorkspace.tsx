@@ -48,15 +48,15 @@ function queryLengthError(label: string, query: string, maxLength: number): stri
 export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [activeType, setActiveType] = useState<QueryType>("KIS");
   const [topK, setTopK] = useState(String(config.default_top_k));
-  const [enhanceQuery, setEnhanceQuery] = useState(false);
+  const [enhanceQuery, setEnhanceQuery] = useState(true);
   const [useReranking, setUseReranking] = useState(false);
   const [sources, setSources] = useState<SearchSources>({
     image: true,
     asr: false,
-    object: false,
     ocr: false,
+    object: false,
   });
-  const [modelChoice, setModelChoice] = useState<"siglip" | "beit3" | "hybrid">("hybrid");
+  const [modelChoices, setModelChoices] = useState<Array<"siglip" | "beit3">>(["siglip", "beit3"]);
   const [kisQuery, setKisQuery] = useState("");
   const [vqaQuery, setVqaQuery] = useState("");
   const [trakeMainQuery, setTrakeMainQuery] = useState("");
@@ -114,13 +114,16 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     if (!Object.values(sources).some(Boolean)) {
       errors.push("Chọn ít nhất một nguồn tìm kiếm.");
     }
+    if (modelChoices.length === 0) {
+      errors.push("Chọn ít nhất một model.");
+    }
 
     const common = {
       top_k: parsedTopK,
       enhance_query: enhanceQuery,
       use_reranking: useReranking,
       search_sources: sources,
-      model_choice: modelChoice,
+      model_choices: modelChoices,
     };
 
     let payload: SearchRequest;
@@ -305,8 +308,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
               id="top-k"
               aria-labelledby="top-k-label"
               type="number"
-              min={1}
-              max={100}
+              min={config.min_top_k}
+              max={config.max_top_k}
               step={1}
               value={topK}
               onChange={(event) => setTopK(event.target.value)}
@@ -349,33 +352,31 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             <legend>Embedding Model</legend>
             <label>
               <input
-                type="radio"
-                name="model-choice"
-                value="hybrid"
-                checked={modelChoice === "hybrid"}
-                onChange={() => setModelChoice("hybrid")}
+                type="checkbox"
+                checked={modelChoices.includes("siglip")}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setModelChoices(prev => [...prev, "siglip"]);
+                  } else {
+                    setModelChoices(prev => prev.filter(m => m !== "siglip"));
+                  }
+                }}
               />
-              <span>Hybrid</span>
+              SigLIP-2
             </label>
             <label>
               <input
-                type="radio"
-                name="model-choice"
-                value="siglip"
-                checked={modelChoice === "siglip"}
-                onChange={() => setModelChoice("siglip")}
+                type="checkbox"
+                checked={modelChoices.includes("beit3")}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setModelChoices(prev => [...prev, "beit3"]);
+                  } else {
+                    setModelChoices(prev => prev.filter(m => m !== "beit3"));
+                  }
+                }}
               />
-              <span>SigLIP-2</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="model-choice"
-                value="beit3"
-                checked={modelChoice === "beit3"}
-                onChange={() => setModelChoice("beit3")}
-              />
-              <span>BEiT-3</span>
+              BEiT-3
             </label>
           </fieldset>
 
