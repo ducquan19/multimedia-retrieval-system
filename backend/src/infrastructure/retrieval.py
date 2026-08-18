@@ -12,6 +12,6 @@ class RetrievalDataError(RuntimeError):
 
 
 class RetrievalEngine(Protocol):
-    def retrieve(
-        self, request: SearchRequest
-    ) -> tuple[SingleSearchResult | TRAKESearchResult, ...]: ...
+    """Protocol for abstracting the concrete retrieval service from domain logic."""
+
+    def retrieve(self, request: SearchRequest, enhanced_queries: list[str] | None = None) -> tuple[SingleSearchResult | TRAKESearchResult, ...]: ...

@@ -24,7 +24,6 @@ def test_public_config_reports_mock_modes(client: TestClient) -> None:
         "max_query_length": 4_000,
         "max_answer_length": 4_000,
         "retrieval_mode": "mock",
-        "gemini_mode": "mock",
     }
 
 
