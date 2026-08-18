@@ -11,7 +11,7 @@ from infrastructure.blip2_reranker import BLIP2Reranker
 from services.retrieval_service import RetrievalService
 from services.search_service import SearchService
 from services.submission_service import SubmissionService
-from infrastructure.query_enhancer import MockQueryEnhancer
+
 from infrastructure.submission_csv import CsvSubmissionFormatter
 
 logger = SimpleLogger(__name__)
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
         blip2_reranker = BLIP2Reranker(resolved_settings.data_root, resolved_settings.enable_reranking)
         
         # 6. Core Services
-        logger.info("Initializing Retrieval & Search Services...")
+        logger.info("Initializing Retrieval Service...")
         retrieval_service = RetrievalService(
             siglip_vector_repo=siglip_vector_repo,
             beit3_vector_repo=beit3_vector_repo,
@@ -71,11 +71,18 @@ async def lifespan(app: FastAPI):
             embedding_service=embedding_service
         )
         
+        # 7. Query Enhancer
+        logger.info("Initializing Query Enhancer...")
+        from infrastructure.query_enhancer import GeminiQueryEnhancer
+        query_enhancer = GeminiQueryEnhancer(api_key=resolved_settings.gemini_api_key)
+        
+        # 8. Search Service
+        logger.info("Initializing Search Service...")
         search_service = SearchService(
-            retrieval_service,
-            MockQueryEnhancer(),
-            resolved_settings.retrieval_mode,
-            resolved_settings.max_query_length,
+            retrieval_engine=retrieval_service,
+            query_enhancer=query_enhancer,
+            max_trake_events=resolved_settings.max_trake_events,
+            max_query_length=resolved_settings.max_query_length
         )
         
         logger.info("Initializing Submission Service...")

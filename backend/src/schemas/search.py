@@ -28,6 +28,7 @@ class BaseSearchRequest(BaseModel):
 
     top_k: int = Field(default=20, ge=1, le=100)
     enhance_query: bool = False
+    use_reranking: bool = False
     search_sources: SearchSources = Field(default_factory=SearchSources)
     model_choice: Literal["siglip", "beit3", "hybrid"] = "hybrid"
 

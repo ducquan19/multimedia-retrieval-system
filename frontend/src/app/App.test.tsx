@@ -13,7 +13,6 @@ const publicConfig = {
   max_query_length: 4_000,
   max_answer_length: 4_000,
   retrieval_mode: "mock",
-  gemini_mode: "mock",
 };
 
 function jsonResponse(body: unknown, status = 200): Response {

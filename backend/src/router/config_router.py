@@ -14,7 +14,6 @@ class PublicConfigResponse(BaseModel):
     max_query_length: int
     max_answer_length: int
     retrieval_mode: str
-    gemini_mode: str
 
 
 @router.get("/config", response_model=PublicConfigResponse)
@@ -26,5 +25,4 @@ async def public_config(settings: SettingsDependency) -> PublicConfigResponse:
         max_query_length=settings.max_query_length,
         max_answer_length=settings.max_answer_length,
         retrieval_mode=settings.retrieval_mode,
-        gemini_mode=settings.gemini_mode,
     )

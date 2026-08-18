@@ -38,70 +38,83 @@ class RetrievalService:
         self._embedding_service = embedding_service
 
     def retrieve(
-        self, request: SearchRequest
+        self, request: SearchRequest, enhanced_queries: list[str] | None = None
     ) -> tuple[SingleSearchResult | TRAKESearchResult, ...]:
         if isinstance(request, TRAKESearchRequest):
-            return self._retrieve_trake(request)
-        return self._retrieve_single(request)
+            return self._retrieve_trake(request, enhanced_queries)
+        return self._retrieve_single(request, enhanced_queries)
 
-    def _search_candidates(self, query: str, model_choice: str, fetch_k: int, search_sources=None) -> list[ScoredCandidate]:
-        if model_choice == "siglip":
-            query_vector = self._embedding_service.get_siglip_embedding(query)
-            candidates = self._siglip_repo.search(query_vector, fetch_k)
-        elif model_choice == "beit3":
-            query_vector = self._embedding_service.get_beit3_embedding(query)
-            candidates = self._beit3_repo.search(query_vector, fetch_k)
-        else:
-            # Hybrid search
-            siglip_vector = self._embedding_service.get_siglip_embedding(query)
-            beit3_vector = self._embedding_service.get_beit3_embedding(query)
+    def _search_candidates(
+        self, query: str, model_choice: str, fetch_k: int, search_sources=None, enhanced_queries: list[str] | None = None, use_reranking: bool = False
+    ) -> list[ScoredCandidate]:
+        visual_queries = enhanced_queries if enhanced_queries else [query]
 
-            siglip_candidates = self._siglip_repo.search(siglip_vector, fetch_k)
-            beit3_candidates = self._beit3_repo.search(beit3_vector, fetch_k)
-            
-            es_candidates = []
-            if search_sources and getattr(search_sources, "asr", False):
-                es_candidates = self._text_repository.search_metadata(query, None, fetch_k)
+        siglip_candidates_lists = []
+        beit3_candidates_lists = []
 
-            def get_rrf(cands: list['ScoredCandidate'], k=60) -> dict[str, float]:
-                return {c.image_path: 1.0 / (k + rank) for rank, c in enumerate(cands, start=1)}
+        if model_choice in ["siglip", "hybrid"]:
+            for vq in visual_queries:
+                query_vector = self._embedding_service.get_siglip_embedding(vq)
+                siglip_candidates_lists.append(self._siglip_repo.search(query_vector, fetch_k))
+                
+        if model_choice in ["beit3", "hybrid"]:
+            for vq in visual_queries:
+                query_vector = self._embedding_service.get_beit3_embedding(vq)
+                beit3_candidates_lists.append(self._beit3_repo.search(query_vector, fetch_k))
 
-            siglip_rrf = get_rrf(siglip_candidates)
-            beit3_rrf = get_rrf(beit3_candidates)
-            es_rrf = get_rrf(es_candidates)
+        es_candidates = []
+        if search_sources and getattr(search_sources, "asr", False):
+            # ASR strictly uses original query
+            es_candidates = self._text_repository.search_metadata(query, None, fetch_k)
 
-            siglip_raw = {c.image_path: c.similarity_score for c in siglip_candidates}
-            beit3_raw = {c.image_path: c.similarity_score for c in beit3_candidates}
-            es_raw = {c.image_path: c.similarity_score for c in es_candidates}
+        def add_to_rrf(cands: list['ScoredCandidate'], rrf_dict: dict[str, float], k=60):
+            for rank, c in enumerate(cands, start=1):
+                rrf_dict[c.image_path] = rrf_dict.get(c.image_path, 0.0) + 1.0 / (k + rank)
 
-            all_paths = set(siglip_rrf.keys()) | set(beit3_rrf.keys()) | set(es_rrf.keys())
-            fused = {}
-            for path in all_paths:
-                fused[path] = siglip_rrf.get(path, 0.0) + beit3_rrf.get(path, 0.0) + es_rrf.get(path, 0.0)
+        fused = {}
+        siglip_raw = {}
+        beit3_raw = {}
+        es_raw = {}
+        cmap = {}
 
-            top_paths = sorted(fused.keys(), key=lambda x: fused[x], reverse=True)[:fetch_k]
+        for cands in siglip_candidates_lists:
+            add_to_rrf(cands, fused)
+            for c in cands:
+                siglip_raw[c.image_path] = max(siglip_raw.get(c.image_path, 0.0), c.similarity_score)
+                cmap[c.image_path] = c
+                
+        for cands in beit3_candidates_lists:
+            add_to_rrf(cands, fused)
+            for c in cands:
+                beit3_raw[c.image_path] = max(beit3_raw.get(c.image_path, 0.0), c.similarity_score)
+                cmap[c.image_path] = c
 
-            cmap = {c.image_path: c for c in siglip_candidates + beit3_candidates + es_candidates}
-            candidates = []
-            for path in top_paths:
-                c = cmap[path]
-                # Keep RRF for ranking, but show the max raw similarity score for UI
-                max_raw_score = max(siglip_raw.get(path, 0.0), beit3_raw.get(path, 0.0), es_raw.get(path, 0.0))
-                candidates.append(c.model_copy(update={"similarity_score": max_raw_score}))
+        add_to_rrf(es_candidates, fused)
+        for c in es_candidates:
+            es_raw[c.image_path] = max(es_raw.get(c.image_path, 0.0), c.similarity_score)
+            cmap[c.image_path] = c
+
+        top_paths = sorted(fused.keys(), key=lambda x: fused[x], reverse=True)[:fetch_k]
+
+        candidates = []
+        for path in top_paths:
+            c = cmap[path]
+            max_raw_score = max(siglip_raw.get(path, 0.0), beit3_raw.get(path, 0.0), es_raw.get(path, 0.0))
+            candidates.append(c.model_copy(update={"similarity_score": max_raw_score}))
 
         # 3. BLIP-2 Reranking
-        if self._blip2_reranker.enable:
+        if self._blip2_reranker.enable and use_reranking:
             candidates = self._blip2_reranker.rerank(query, candidates)
 
         return candidates
 
-    def _retrieve_single(self, request: SearchRequest) -> tuple[SingleSearchResult, ...]:
+    def _retrieve_single(self, request: SearchRequest, enhanced_queries: list[str] | None = None) -> tuple[SingleSearchResult, ...]:
         model_choice = getattr(request, "model_choice", "hybrid")
         fetch_k = request.top_k * 5
 
         search_sources = getattr(request, "search_sources", None)
 
-        candidates = self._search_candidates(request.query, model_choice, fetch_k, search_sources)
+        candidates = self._search_candidates(request.query, model_choice, fetch_k, search_sources, enhanced_queries, getattr(request, "use_reranking", False))
 
 
 
@@ -126,7 +139,7 @@ class RetrievalService:
 
         return tuple(results)
 
-    def _retrieve_trake(self, request: TRAKESearchRequest) -> tuple[TRAKESearchResult, ...]:
+    def _retrieve_trake(self, request: TRAKESearchRequest, enhanced_queries: list[str] | None = None) -> tuple[TRAKESearchResult, ...]:
         if not request.events:
             return tuple()
 
@@ -137,7 +150,10 @@ class RetrievalService:
         # Stage 1: Get top-K for the first event
         search_sources = getattr(request, "search_sources", None)
         first_event_query = request.events[0].query
-        first_candidates = self._search_candidates(first_event_query, model_choice, beam_width, search_sources)
+        # TODO: TRAKE events are individual queries. Currently we only have one set of enhanced_queries for the main query.
+        # If TRAKE is used with enhance, it's ambiguous. For now, pass enhanced_queries only to the first event if it matches the main query.
+        first_event_enhanced = enhanced_queries if first_event_query == request.main_query else None
+        first_candidates = self._search_candidates(first_event_query, model_choice, beam_width, search_sources, first_event_enhanced)
 
         if not first_candidates:
             return tuple()

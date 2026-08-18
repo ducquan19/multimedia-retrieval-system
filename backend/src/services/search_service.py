@@ -41,31 +41,36 @@ class SearchService:
         original_query = (
             request.main_query if isinstance(request, TRAKESearchRequest) else request.query
         )
-        enhanced_query = (
+        enhanced_queries = (
             self._query_enhancer.enhance(original_query, request.query_type)
             if request.enhance_query
             else None
         )
-        results = self._retrieval_engine.retrieve(request)
+        
+        enhanced_query_str = None
+        if enhanced_queries:
+            enhanced_query_str = "\n".join(f"- {q}" for q in enhanced_queries)
+            
+        results = self._retrieval_engine.retrieve(request, enhanced_queries)
 
         if isinstance(request, KISSearchRequest):
             return KISSearchResponse(
                 query_type="KIS",
                 original_query=original_query,
-                enhanced_query=enhanced_query,
+                enhanced_query=enhanced_query_str,
                 results=self._only_single_results(results),
             )
         if isinstance(request, VQASearchRequest):
             return VQASearchResponse(
                 query_type="VQA",
                 original_query=original_query,
-                enhanced_query=enhanced_query,
+                enhanced_query=enhanced_query_str,
                 results=self._only_single_results(results),
             )
         return TRAKESearchResponse(
             query_type="TRAKE",
             original_query=original_query,
-            enhanced_query=enhanced_query,
+            enhanced_query=enhanced_query_str,
             results=self._only_trake_results(results),
         )
 

@@ -7,7 +7,6 @@ const config = {
   max_query_length: 4_000,
   max_answer_length: 4_000,
   retrieval_mode: "mock",
-  gemini_mode: "mock",
 };
 
 interface SubmissionPayload {

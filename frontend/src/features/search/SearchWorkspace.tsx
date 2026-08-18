@@ -49,6 +49,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [activeType, setActiveType] = useState<QueryType>("KIS");
   const [topK, setTopK] = useState(String(config.default_top_k));
   const [enhanceQuery, setEnhanceQuery] = useState(false);
+  const [useReranking, setUseReranking] = useState(false);
   const [sources, setSources] = useState<SearchSources>({
     image: true,
     asr: false,
@@ -117,6 +118,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     const common = {
       top_k: parsedTopK,
       enhance_query: enhanceQuery,
+      use_reranking: useReranking,
       search_sources: sources,
       model_choice: modelChoice,
     };
@@ -311,20 +313,74 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             />
           </div>
 
-          <label className="toggle-row" htmlFor="enhance-query">
+          <div className="enhance-query-container">
+            <label className="toggle-row" htmlFor="enhance-query">
+              <span>
+                <strong>Enhance query</strong>
+              </span>
+              <input
+                id="enhance-query"
+                type="checkbox"
+                checked={enhanceQuery}
+                onChange={(event) => setEnhanceQuery(event.target.checked)}
+              />
+            </label>
+            {searchMutation.data?.enhanced_query && (
+              <div className="sidebar-enhanced-query">
+                <small><strong>Enhanced:</strong></small>
+                <p>{searchMutation.data.enhanced_query.replace("- ", "")}</p>
+              </div>
+            )}
+          </div>
+
+          <label className="toggle-row" htmlFor="use-reranking">
             <span>
-              <strong>Enhance query</strong>
+              <strong>Rerank (BLIP-2)</strong>
             </span>
             <input
-              id="enhance-query"
+              id="use-reranking"
               type="checkbox"
-              checked={enhanceQuery}
-              onChange={(event) => setEnhanceQuery(event.target.checked)}
+              checked={useReranking}
+              onChange={(event) => setUseReranking(event.target.checked)}
             />
           </label>
 
           <fieldset className="source-options">
-            <legend>Search sources</legend>
+            <legend>Embedding Model</legend>
+            <label>
+              <input
+                type="radio"
+                name="model-choice"
+                value="hybrid"
+                checked={modelChoice === "hybrid"}
+                onChange={() => setModelChoice("hybrid")}
+              />
+              <span>Hybrid</span>
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="model-choice"
+                value="siglip"
+                checked={modelChoice === "siglip"}
+                onChange={() => setModelChoice("siglip")}
+              />
+              <span>SigLIP-2</span>
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="model-choice"
+                value="beit3"
+                checked={modelChoice === "beit3"}
+                onChange={() => setModelChoice("beit3")}
+              />
+              <span>BEiT-3</span>
+            </label>
+          </fieldset>
+
+          <fieldset className="source-options">
+            <legend>Sources</legend>
             {SOURCE_OPTIONS.map(({ key, label }) => (
               <label key={key}>
                 <input
@@ -398,7 +454,7 @@ function SearchState({ mutation, maxAnswerLength }: SearchStateProps) {
     return (
       <section className="result-state result-state--idle">
         <strong>Chưa có kết quả</strong>
-        <p>Kết quả từ API sẽ xuất hiện tại đây sau khi tìm kiếm.</p>
+        <p>Kết quả sẽ xuất hiện tại đây sau khi tìm kiếm.</p>
       </section>
     );
   }
@@ -419,25 +475,6 @@ function SearchState({ mutation, maxAnswerLength }: SearchStateProps) {
 
   return (
     <section className="result-preview" aria-live="polite">
-      {mutation.data.enhanced_query && (
-        <div className="enhanced-callout" aria-label="Enhanced query">
-          <div className="enhanced-callout__heading">
-            <strong>Query enhancement</strong>
-            <span className="mini-badge">Mock</span>
-          </div>
-          <dl>
-            <div>
-              <dt>Original</dt>
-              <dd>{mutation.data.original_query}</dd>
-            </div>
-            <div>
-              <dt>Enhanced</dt>
-              <dd>{mutation.data.enhanced_query}</dd>
-            </div>
-          </dl>
-        </div>
-      )}
-
       {mutation.data.query_type === "TRAKE" ? (
         submittedTrakeEventCount === null ? (
           <section className="trake-validation-error" role="alert">
