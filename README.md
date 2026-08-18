@@ -114,13 +114,13 @@ The defaults work for local development:
 | --- | --- | --- |
 | `AIC_DATA_ROOT` | `./data` | Root directory for manifests, fixtures, and media |
 | `AIC_FRONTEND_ORIGIN` | `http://localhost:5173` | Allowed frontend origin in development |
-| `AIC_DEFAULT_TOP_K` | `20` | Default number of search candidates |
+| `AIC_DEFAULT_TOP_K` | `50` | Default number of search candidates |
 | `AIC_MAX_TRAKE_EVENTS` | `10` | Deployment-level TRAKE event limit |
 | `AIC_MAX_QUERY_LENGTH` | `4000` | Maximum characters in each search query or TRAKE event query |
 | `AIC_MAX_ANSWER_LENGTH` | `4000` | Maximum characters in each VQA submission answer |
 | `VITE_API_BASE_URL` | Empty | Optional API base URL used by the built frontend |
 | `VITE_DEV_API_TARGET` | `http://localhost:8000` | Vite development proxy target |
-| `GEMINI_API_KEY` | Placeholder | Reserved for future work and not read by the MVP |
+| `AIC_GEMINI_API_KEY` | None | API Key to use Gemini for query enhancement |
 
 Do not commit `.env` or real credentials.
 
