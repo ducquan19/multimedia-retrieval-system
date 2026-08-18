@@ -6,7 +6,7 @@
 - Validation errors dùng HTTP 422; media không tồn tại dùng 404; path không an toàn không được tiết lộ path tuyệt đối.
 - `query_type` là discriminator: `KIS`, `VQA`, `TRAKE`.
 - Query/answer length limits và CORS origins lấy từ settings.
-- API hiện là contract của mock MVP; `retrieval_mode` và `gemini_mode` phải ghi rõ `mock`.
+- API hiện là contract của mock MVP; `retrieval_mode` phải ghi rõ `mock`.
 
 ## 2. Health và public config
 
@@ -25,8 +25,7 @@
   "max_trake_events": 10,
   "max_query_length": 4000,
   "max_answer_length": 4000,
-  "retrieval_mode": "mock",
-  "gemini_mode": "mock"
+  "retrieval_mode": "mock"
 }
 ```
 

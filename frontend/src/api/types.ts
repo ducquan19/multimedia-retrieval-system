@@ -13,6 +13,7 @@ export interface SearchSources {
 interface BaseSearchRequest {
   top_k: TopK;
   enhance_query: boolean;
+  use_reranking: boolean;
   search_sources: SearchSources;
   model_choice: "siglip" | "beit3" | "hybrid";
 }
@@ -138,6 +139,5 @@ export interface PublicConfig {
   max_trake_events: number;
   max_query_length: number;
   max_answer_length: number;
-  retrieval_mode: "mock";
-  gemini_mode: "mock";
+  retrieval_mode: "mock" | "hybrid" | "siglip" | "beit3";
 }

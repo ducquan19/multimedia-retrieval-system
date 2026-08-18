@@ -20,12 +20,13 @@ class Settings(BaseSettings):
     app_name: str = "AIC 2026 Retrieval Inspector API"
     data_root: Path = Path("./data")
     frontend_origin: AnyHttpUrl = "http://localhost:5173"
-    default_top_k: int = 20
+    default_top_k: int = 50
     max_trake_events: int = 10
     max_query_length: int = Field(default=2_000, ge=1)
     max_answer_length: int = Field(default=2_000, ge=1)
     retrieval_mode: str = "hybrid"
-    gemini_mode: str = "mock"
+
+    gemini_api_key: str | None = None
     keyframes_filename: str = "keyframes.json"
 
     # Hybrid Retrieval settings
@@ -55,8 +56,6 @@ class Settings(BaseSettings):
             raise ValueError("max_trake_events must be at least 1")
         if self.retrieval_mode not in ["hybrid", "siglip", "beit3"]:
             raise ValueError("retrieval_mode must be 'hybrid', 'siglip', or 'beit3'")
-        if self.gemini_mode not in ["mock", "gemini"]:
-            raise ValueError("gemini_mode must be 'mock' or 'gemini'")
         return self
 
 
