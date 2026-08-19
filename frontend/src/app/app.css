@@ -1042,8 +1042,7 @@ select:focus-visible {
 .trake-row-list {
   display: grid;
   gap: 0.75rem;
-  width: 100%;
-  min-width: max-content;
+  width: max-content;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1051,7 +1050,7 @@ select:focus-visible {
 
 .trake-row {
   display: grid;
-  grid-template-columns: 15rem repeat(var(--event-count), minmax(13rem, 1fr));
+  grid-template-columns: 8rem repeat(var(--event-count), 13.5rem);
   overflow: clip;
   background: #fff;
   border: 1px solid #cedbd1;
