@@ -102,8 +102,12 @@ def build_faiss_index(
             missing_videos += 1
 
     # 4. Normalize L2 (required for Inner Product to act as Cosine Similarity)
-    logger.info("Normalizing all vectors (L2)...")
-    faiss.normalize_L2(all_vectors)
+    # Note: The extraction scripts should have already normalized the vectors.
+    # However, to be safe, we re-normalize. We must avoid dividing by zero for missing frames (which are all zeros).
+    logger.info("Normalizing valid vectors (L2) to prevent NaNs...")
+    norms = np.linalg.norm(all_vectors, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0  # Avoid division by zero for missing frames
+    all_vectors = all_vectors / norms
 
     # 5. Build FAISS Index
     logger.info("Building FAISS FlatIP index...")
