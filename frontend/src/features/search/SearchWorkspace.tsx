@@ -60,7 +60,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [kisQuery, setKisQuery] = useState("");
   const [vqaQuery, setVqaQuery] = useState("");
   const [trakeMainQuery, setTrakeMainQuery] = useState("");
-  const initialEventCount = Math.min(2, config.max_trake_events);
+  const initialEventCount = Math.min(4, config.max_trake_events);
   const [eventCount, setEventCount] = useState(initialEventCount);
   const [eventQueries, setEventQueries] = useState<string[]>(() =>
     Array.from({ length: initialEventCount }, () => ""),
@@ -229,9 +229,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           )}
 
           {activeType === "VQA" && (
-            <label className="field" htmlFor="vqa-query">
-              <span>Câu hỏi VQA</span>
-              <small>Ứng dụng chỉ tìm keyframe; câu trả lời không được tự động tạo.</small>
+            <label className="field field--query-only" htmlFor="vqa-query">
+              <span>Query VQA</span>
               <textarea
                 id="vqa-query"
                 value={vqaQuery}
@@ -249,7 +248,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             <div className="trake-fields">
               <label className="field" htmlFor="trake-main-query">
                 <span>Main query TRAKE</span>
-                <small>Mô tả toàn bộ chuỗi sự kiện theo trình tự thời gian (tùy chọn).</small>
+                <small>Mô tả toàn bộ chuỗi sự kiện theo trình tự thời gian.</small>
                 <textarea
                   id="trake-main-query"
                   value={trakeMainQuery}
@@ -326,10 +325,29 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 onChange={(event) => setEnhanceQuery(event.target.checked)}
               />
             </label>
+            
+            {searchMutation.data?.warnings?.length ? (
+              <div className="sidebar-warning">
+                <small><strong>Warning</strong></small>
+                {searchMutation.data.warnings.map((w, i) => <p key={i}>⚠️ {w}</p>)}
+              </div>
+            ) : null}
+
             {searchMutation.data?.enhanced_query && (
               <div className="sidebar-enhanced-query">
                 <small><strong>Enhanced:</strong></small>
                 <p>{searchMutation.data.enhanced_query.replace("- ", "")}</p>
+              </div>
+            )}
+            
+            {searchMutation.data?.applied_weights && (
+              <div className="sidebar-weights">
+                <small><strong>Weights Applied:</strong></small>
+                <p>
+                  <span>VIS: {searchMutation.data.applied_weights.w_vis.toFixed(2)}</span>
+                  <span>OCR: {searchMutation.data.applied_weights.w_ocr.toFixed(2)}</span>
+                  <span>ASR: {searchMutation.data.applied_weights.w_asr.toFixed(2)}</span>
+                </p>
               </div>
             )}
           </div>

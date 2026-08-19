@@ -47,6 +47,8 @@ export function SingleResultInspector({
     createResultEditorState,
   );
   const [selected, setSelected] = useState<SelectedResult | null>(null);
+  const [globalVQAAnswer, setGlobalVQAAnswer] = useState("");
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -55,6 +57,7 @@ export function SingleResultInspector({
   useEffect(() => {
     dispatch({ type: "initialize", results: response.results });
     setSelected(null);
+    setGlobalVQAAnswer("");
   }, [response.results]);
 
   const resultsById = useMemo(
@@ -69,13 +72,11 @@ export function SingleResultInspector({
     (resultId, index) => resultId !== state.initialOrder[index],
   );
   const emptyAnswerCount =
-    response.query_type === "VQA"
-      ? orderedResults.filter((result) => !(state.answers[result.result_id] ?? "").trim())
-          .length
-      : 0;
+    response.query_type === "VQA" && !globalVQAAnswer.trim() ? orderedResults.length : 0;
+
   const submissionStateVersion = JSON.stringify({
     order: state.order,
-    answers: response.query_type === "VQA" ? state.answers : undefined,
+    globalVQAAnswer,
   });
 
   const buildSubmissionPayload = (filename: string): SubmissionRequest => {
@@ -86,7 +87,7 @@ export function SingleResultInspector({
         rows: orderedResults.map((result) => ({
           video_id: result.video_id,
           frame_id: result.frame_id,
-          answer: state.answers[result.result_id] ?? "",
+          answer: globalVQAAnswer.trim(),
         })),
       };
     }
@@ -123,6 +124,22 @@ export function SingleResultInspector({
         </div>
       </div>
 
+      {response.query_type === "VQA" && (
+        <div style={{ marginBottom: "1rem" }}>
+          <label className="field" htmlFor="global-vqa-answer">
+            <span>VQA Answer</span>
+            <textarea
+              id="global-vqa-answer"
+              value={globalVQAAnswer}
+              maxLength={maxAnswerLength}
+              onChange={(e) => setGlobalVQAAnswer(e.target.value)}
+              placeholder="Nhập câu trả lời VQA vào đây..."
+              rows={3}
+            />
+          </label>
+        </div>
+      )}
+
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={state.order} strategy={rectSortingStrategy}>
           <ol className="result-card-grid" aria-label="Retrieved candidates">
@@ -131,16 +148,10 @@ export function SingleResultInspector({
                 key={result.result_id}
                 result={result}
                 rank={index + 1}
-                isVqa={response.query_type === "VQA"}
-                answer={state.answers[result.result_id] ?? ""}
-                maxAnswerLength={maxAnswerLength}
                 canMoveUp={index > 0}
                 canMoveDown={index < orderedResults.length - 1}
                 onMove={(offset) =>
                   dispatch({ type: "move-by", resultId: result.result_id, offset })
-                }
-                onAnswerChange={(answer) =>
-                  dispatch({ type: "set-answer", resultId: result.result_id, answer })
                 }
                 onOpenDetail={(trigger) => setSelected({ result, trigger })}
               />
@@ -167,26 +178,18 @@ export function SingleResultInspector({
 interface SortableResultCardProps {
   result: SingleSearchResult;
   rank: number;
-  isVqa: boolean;
-  answer: string;
-  maxAnswerLength: number;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMove: (offset: -1 | 1) => void;
-  onAnswerChange: (answer: string) => void;
   onOpenDetail: (trigger: HTMLButtonElement) => void;
 }
 
 function SortableResultCard({
   result,
   rank,
-  isVqa,
-  answer,
-  maxAnswerLength,
   canMoveUp,
   canMoveDown,
   onMove,
-  onAnswerChange,
   onOpenDetail,
 }: SortableResultCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -227,21 +230,6 @@ function SortableResultCard({
             </div>
             <span className="score-badge">{formatScore(result.similarity_score)}</span>
           </div>
-
-          {isVqa && (
-            <label className="answer-field" htmlFor={`answer-${result.result_id}`}>
-              <span>VQA answer</span>
-              <textarea
-                id={`answer-${result.result_id}`}
-                value={answer}
-                maxLength={maxAnswerLength}
-                rows={2}
-                onPointerDown={(event) => event.stopPropagation()}
-                onChange={(event) => onAnswerChange(event.target.value)}
-              />
-            </label>
-          )}
-
         </div>
       </article>
     </li>
