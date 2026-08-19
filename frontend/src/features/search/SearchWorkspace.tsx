@@ -136,12 +136,9 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       if (queryError) errors.push(queryError);
       payload = { query_type: "VQA", query: vqaQuery.trim(), ...common };
     } else {
-      const mainQueryError = queryLengthError(
-        "Main query TRAKE",
-        trakeMainQuery,
-        config.max_query_length,
-      );
-      if (mainQueryError) errors.push(mainQueryError);
+      if (trakeMainQuery.trim() && trakeMainQuery.trim().length > config.max_query_length) {
+        errors.push(`Main query TRAKE không được vượt quá ${config.max_query_length} ký tự.`);
+      }
       const events = eventQueries.slice(0, eventCount).map((query, index) => {
         const eventError = queryLengthError(
           `Event ${index + 1}`,
@@ -153,7 +150,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       });
       payload = {
         query_type: "TRAKE",
-        main_query: trakeMainQuery.trim(),
+        main_query: trakeMainQuery.trim() || undefined,
         events,
         ...common,
       };
@@ -252,7 +249,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             <div className="trake-fields">
               <label className="field" htmlFor="trake-main-query">
                 <span>Main query TRAKE</span>
-                <small>Mô tả toàn bộ chuỗi sự kiện theo trình tự thời gian.</small>
+                <small>Mô tả toàn bộ chuỗi sự kiện theo trình tự thời gian (tùy chọn).</small>
                 <textarea
                   id="trake-main-query"
                   value={trakeMainQuery}
@@ -264,12 +261,13 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 />
               </label>
 
-              <label className="field field--compact" htmlFor="event-count">
+              <label className="top-k-row" htmlFor="event-count">
                 <span>Event count</span>
                 <select
                   id="event-count"
                   value={eventCount}
                   onChange={(event) => changeEventCount(Number(event.target.value))}
+                  style={{ width: "6rem", padding: "0.45rem 0.6rem" }}
                 >
                   {Array.from({ length: config.max_trake_events }, (_, index) => index + 1).map(
                     (count) => (
