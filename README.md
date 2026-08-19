@@ -2,30 +2,6 @@
 
 A local web application for inspecting video-retrieval results, manually reranking candidates, and building submissions for the HCMC AI Challenge 2026.
 
-> [!IMPORTANT]
-> Retrieval and Gemini query enhancement currently run in **mock mode**. The application does not call Gemini, generate embeddings, query a vector database, or perform AI inference.
-
-## Project status
-
-The backend foundation is complete through Phase 3, and the frontend is complete through the TRAKE result inspector in Phase 6. Submission controls remain for the next frontend phase.
-
-| Capability | Status |
-| --- | --- |
-| FastAPI health and public configuration | Available |
-| Validated KIS, VQA, and TRAKE search contracts | Available |
-| Cached normalized manifest loader | Available |
-| Deterministic fixture retrieval | Available |
-| Safe media serving | Available |
-| CSV submission preview and download | Available |
-| React application shell and API health check | Available |
-| Typed KIS, VQA, and TRAKE query forms | Available |
-| Hybrid controls, request cancellation, and query states | Available |
-| KIS/VQA result inspector and detail modal | Available |
-| KIS/VQA drag-and-drop and accessible fallback reranking | Available |
-| TRAKE row inspector, event modal, and accessible reranking | Available |
-| Submission controls in the UI | Planned |
-| Real AI retrieval and Gemini integration | Out of scope for the MVP |
-
 ## Supported query types
 
 - **KIS — Textual Known Item Search:** submit `<video_id>,<frame_id>`.
@@ -159,61 +135,6 @@ npm --prefix frontend run dev
 
 During development, the frontend sends `/api` requests through the Vite proxy. Production API URLs are not hardcoded in the client.
 
-## API overview
-
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `GET` | `/api/health` | Process health check |
-| `GET` | `/api/config` | Public top-k, text limits, TRAKE, and mock-mode settings |
-| `POST` | `/api/search` | Deterministic mock search for KIS, VQA, or TRAKE |
-| `POST` | `/api/submissions/render` | Validate rows and return a CSV preview |
-| `POST` | `/api/submissions/download` | Return the same CSV content as an attachment |
-| `GET` | `/media/{relative_path}` | Safely serve a file below `AIC_DATA_ROOT` |
-
-See [docs/API.md](docs/API.md) for the complete request and response contract.
-
-### Example: mock KIS search
-
-```powershell
-$searchBody = @{
-  query_type = "KIS"
-  query = "a person opening a laptop"
-  top_k = 5
-  enhance_query = $true
-  search_sources = @{
-    image = $true
-    asr = $false
-    object = $false
-    ocr = $false
-  }
-} | ConvertTo-Json -Depth 3
-
-Invoke-RestMethod -Method Post `
-  -Uri http://localhost:8000/api/search `
-  -ContentType "application/json" `
-  -Body $searchBody
-```
-
-### Example: render an ordered KIS submission
-
-```powershell
-$submissionBody = @{
-  query_type = "KIS"
-  filename = "kis-results.csv"
-  rows = @(
-    @{ video_id = "L02_V003"; frame_id = 910 },
-    @{ video_id = "L01_V001"; frame_id = 505 }
-  )
-} | ConvertTo-Json -Depth 3
-
-Invoke-RestMethod -Method Post `
-  -Uri http://localhost:8000/api/submissions/render `
-  -ContentType "application/json" `
-  -Body $submissionBody
-```
-
-Submission output is UTF-8 CSV without a header. VQA answers containing commas, quotes, newlines, or Unicode are escaped with Python's `csv.writer`. Download filenames are reduced to safe basenames and forced to use the `.csv` extension.
-
 ## Data layout
 
 All runtime data lives below one data root, configured by `AIC_DATA_ROOT` and defaulting to `./data`.
@@ -320,23 +241,3 @@ Important documentation:
 - [Data format](docs/DATA_FORMAT.md)
 - [API contract](docs/API.md)
 - [Assumptions](docs/ASSUMPTIONS.md)
-
-## Security boundaries
-
-- Manifest and media paths must remain below `AIC_DATA_ROOT`.
-- Absolute paths, traversal components, and unsafe media paths are rejected.
-- Submission filenames are never used to write server-side files.
-- Development CORS is limited to the configured local frontend origin.
-- Secrets are not logged or returned to the client.
-- The MVP has no authentication because it is intended as a local, single-team tool.
-
-## Current limitations and roadmap
-
-The backend search engine reads deterministic fixture data. Gemini enhancement adds a visible mock marker, and hybrid source flags are validated and passed through without performing vector search.
-
-Remaining MVP phases:
-
-1. Connect the frontend to submission preview/download and add end-to-end tests.
-2. Complete the final security, performance, accessibility, and documentation audit.
-
-Real Gemini calls, embedding generation, vector databases, OCR/ASR inference, automatic VQA answers, automatic TRAKE alignment, user accounts, and production cloud deployment remain outside the current MVP scope.
