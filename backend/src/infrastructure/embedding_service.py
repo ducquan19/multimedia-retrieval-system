@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class EmbeddingService:
         # Load SigLIP (Supports Vietnamese via WebLI multilingual pre-training)
         logger.info(f"Loading SigLIP model: {siglip_model_id} on {self.device}")
         try:
-            self.siglip_tokenizer = AutoTokenizer.from_pretrained(siglip_model_id)
+            self.siglip_processor = AutoProcessor.from_pretrained(siglip_model_id)
             self.siglip_model = AutoModel.from_pretrained(
                 siglip_model_id,
                 trust_remote_code=True,
@@ -90,7 +90,7 @@ class EmbeddingService:
             return np.zeros((1, 1152), dtype='float32')
 
         logger.debug("Generating SigLIP embedding for: %s", text)
-        inputs = self.siglip_tokenizer([text], padding="max_length", truncation=True, return_tensors="pt").to(self.device)
+        inputs = self.siglip_processor(text=[text], padding="max_length", truncation=True, return_tensors="pt").to(self.device)
         with torch.no_grad():
             text_outputs = self.siglip_model.text_model(**inputs)
             vector = text_outputs.pooler_output  # (1, 1152)

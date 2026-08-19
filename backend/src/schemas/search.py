@@ -54,7 +54,7 @@ class TRAKEEventQuery(BaseModel):
 
 class TRAKESearchRequest(BaseSearchRequest):
     query_type: Literal["TRAKE"]
-    main_query: QueryText
+    main_query: str | None = None
     events: tuple[TRAKEEventQuery, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -80,6 +80,7 @@ class SingleSearchResult(BaseModel):
     video_id: str
     frame_id: int = Field(ge=0)
     keyframe_url: str
+    image_path: str
     segment_id: str
     asr_text: str
     ocr_text: str
@@ -129,7 +130,7 @@ class VQASearchResponse(BaseModel):
 
 class TRAKESearchResponse(BaseModel):
     query_type: Literal["TRAKE"]
-    original_query: str
+    original_query: str | None = None
     enhanced_query: str | None
     model_choices: list[str] = Field(default_factory=list)
     results: tuple[TRAKESearchResult, ...]
