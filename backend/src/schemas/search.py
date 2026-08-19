@@ -8,6 +8,24 @@ QueryText = Annotated[
 ]
 
 
+class QueryVariants(BaseModel):
+    variants: list[str] = Field(
+        description="Exactly 1 highly descriptive English variation of the original query.",
+        min_length=1,
+        max_length=1
+    )
+    w_vis: float = Field(default=1.0, description="Weight for visual search (e.g. objects, colors, actions). Value from 0.0 to 1.0.")
+    w_ocr: float = Field(default=0.0, description="Weight for OCR text search (e.g. exact text on screen, signs). Value from 0.0 to 1.0.")
+    w_asr: float = Field(default=0.0, description="Weight for ASR speech search (e.g. spoken dialog, conversations). Value from 0.0 to 1.0.")
+
+class BatchVariantResult(BaseModel):
+    event_index: int
+    result: QueryVariants
+
+class QueryVariantsBatch(BaseModel):
+    results: list[BatchVariantResult] = Field(description="List of enhanced query variants for each event.")
+
+
 class SearchSources(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -117,6 +135,8 @@ class KISSearchResponse(BaseModel):
     original_query: str
     enhanced_query: str | None
     model_choices: list[str] = Field(default_factory=list)
+    applied_weights: dict[str, float] | None = None
+    warnings: list[str] = Field(default_factory=list)
     results: tuple[SingleSearchResult, ...]
 
 
@@ -125,6 +145,8 @@ class VQASearchResponse(BaseModel):
     original_query: str
     enhanced_query: str | None
     model_choices: list[str] = Field(default_factory=list)
+    applied_weights: dict[str, float] | None = None
+    warnings: list[str] = Field(default_factory=list)
     results: tuple[SingleSearchResult, ...]
 
 
@@ -133,6 +155,8 @@ class TRAKESearchResponse(BaseModel):
     original_query: str | None = None
     enhanced_query: str | None
     model_choices: list[str] = Field(default_factory=list)
+    applied_weights: dict[str, float] | None = None
+    warnings: list[str] = Field(default_factory=list)
     results: tuple[TRAKESearchResult, ...]
 
 

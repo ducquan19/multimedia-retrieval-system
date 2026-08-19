@@ -4,6 +4,7 @@ from schemas.search import (
     SearchRequest,
     SingleSearchResult,
     TRAKESearchResult,
+    QueryVariants,
 )
 
 
@@ -14,4 +15,7 @@ class RetrievalDataError(RuntimeError):
 class RetrievalEngine(Protocol):
     """Protocol for abstracting the concrete retrieval service from domain logic."""
 
-    def retrieve(self, request: SearchRequest, enhanced_queries: list[str] | dict[int, list[str]] | None = None) -> tuple[SingleSearchResult | TRAKESearchResult, ...]: ...
+    def retrieve(
+        self, request: SearchRequest, enhanced_queries: QueryVariants | dict[int, QueryVariants] | None = None
+    ) -> tuple[SingleSearchResult | TRAKESearchResult, ...]:
+        ...
