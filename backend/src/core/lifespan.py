@@ -82,7 +82,8 @@ async def lifespan(app: FastAPI):
             retrieval_engine=retrieval_service,
             query_enhancer=query_enhancer,
             max_trake_events=resolved_settings.max_trake_events,
-            max_query_length=resolved_settings.max_query_length
+            max_query_length=resolved_settings.max_query_length,
+            data_root=resolved_settings.data_root
         )
         
         logger.info("Initializing Submission Service...")
