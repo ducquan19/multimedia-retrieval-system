@@ -219,7 +219,7 @@ Submission output is UTF-8 CSV without a header. VQA answers containing commas, 
 All runtime data lives below one data root, configured by `AIC_DATA_ROOT` and defaulting to `./data`.
 
 > [!IMPORTANT]
-> The `data/` directory is not pushed to the GitHub repository because it contains large datasets and model files. You must download the embeddings and models from the Kaggle dataset: [Embedding](https://kaggle.com/datasets/4328e5dacc910e9120972e28ee600a180dbede5fc52a19b72b6e50052981c83c) and extract them into the `data/` directory before running the application.
+> The `data/` directory is not pushed to the GitHub repository because it contains large datasets and model files. You must download the embeddings and models from the Kaggle dataset: [Embedding](https://kaggle.com/datasets/c7b426cfb41d654ce995b9e35eb3a108167d65a6640caf0cd6af82e18d58b89a) and extract them into the `data/` directory before running the application.
 >
 > Then download the keyframes from the Kaggle dataset: [Keyframes](https://kaggle.com/datasets/f6e43dae6bac933014eb004ae691fa652168994855a67a4e1f3850d9182478e3) and extract them into the `data/` directory.
 >
