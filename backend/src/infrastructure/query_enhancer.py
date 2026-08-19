@@ -7,10 +7,13 @@ try:
 except ImportError:
     genai = None
 
+from pathlib import Path
+
 logger = logging.getLogger(__name__)
 
 class QueryEnhancer(Protocol):
     def enhance(self, query: str, query_type: str) -> list[str]: ...
+    def answer_vqa(self, question: str, image_path: Path) -> str: ...
 
 
 
@@ -37,15 +40,22 @@ class GeminiQueryEnhancer:
             logger.warning("google-genai is not installed or client failed to initialize. Falling back.")
             return []
 
-        prompt = f"""
-        You are an expert prompt engineer for contrastive vision-language models like CLIP, SigLIP, and BEiT-3.
-        The user has provided a search query in Vietnamese: "{query}".
-        
-        Your task:
-        1. Translate and expand this query into exactly 1 highly descriptive English variation.
-        2. Focus strictly on concrete visual elements (objects, colors, actions, settings) that would physically appear in an image or video frame.
-        3. Do not use abstract concepts. Be as visually explicit as possible.
-        """
+        if query_type == "VQA":
+            prompt = f"""
+            The user has provided a question about a video in Vietnamese: "{query}".
+            Your task is to convert this question into a declarative visual search query (in English) that describes what a frame containing the answer would look like. 
+            Do not answer the question. Only describe the concrete visual elements (objects, actions, settings) required to find the answer.
+            """
+        else:
+            prompt = f"""
+            You are an expert prompt engineer for contrastive vision-language models like CLIP, SigLIP, and BEiT-3.
+            The user has provided a search query in Vietnamese: "{query}".
+            
+            Your task:
+            1. Translate and expand this query into exactly 1 highly descriptive English variation.
+            2. Focus strictly on concrete visual elements (objects, colors, actions, settings) that would physically appear in an image or video frame.
+            3. Do not use abstract concepts. Be as visually explicit as possible.
+            """
 
         try:
             response = self.client.models.generate_content(
@@ -71,3 +81,29 @@ class GeminiQueryEnhancer:
         except Exception as e:
             logger.warning(f"Failed to enhance query with Gemini: {e}")
             return []
+
+    def answer_vqa(self, question: str, image_path: Path) -> str:
+        if not self.client:
+            logger.warning("google-genai is not installed or client failed to initialize. Falling back.")
+            return ""
+
+        from PIL import Image
+
+        try:
+            image = Image.open(image_path).convert("RGB")
+            
+            prompt = f"""
+            Based on the provided image, answer the following question accurately and concisely in Vietnamese:
+            Question: {question}
+            """
+            
+            response = self.client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[prompt, image],
+            )
+            
+            return response.text.strip()
+            
+        except Exception as e:
+            logger.warning(f"Failed to answer VQA with Gemini: {e}")
+            return ""
