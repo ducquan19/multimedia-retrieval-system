@@ -102,6 +102,7 @@ Because datasets and models are large, they are excluded from Git.
    - [Embeddings](https://kaggle.com/datasets/c7b426cfb41d654ce995b9e35eb3a108167d65a6640caf0cd6af82e18d58b89a)
    - [Keyframes](https://kaggle.com/datasets/f6e43dae6bac933014eb004ae691fa652168994855a67a4e1f3850d9182478e3)
    - [ASR Data](https://kaggle.com/datasets/e2642647173eb4867e6f7ca12b592843b60e5ddb16dc76f08288fd816c6d0fd5)
+   - [BEiT-3 checkpoint](https://kaggle.com/datasets/d41406373d9f714c275a2fd01c5222f46437b426c357abf603195a41eafa3228)
 2. **Build FAISS Index**: The Kaggle dataset only contains raw `.npy` embeddings. Run the indexing script to build `.index` files:
    ```powershell
    python scripts/build_faiss_index.py
