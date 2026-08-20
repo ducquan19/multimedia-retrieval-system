@@ -28,6 +28,18 @@ const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
 ];
 
 type GroupSort = "score" | "time";
+const DARK_MODE_STORAGE_KEY = "aic-retrieval-theme";
+
+function prefersDarkMode(): boolean {
+  try {
+    const storedTheme = window.localStorage.getItem(DARK_MODE_STORAGE_KEY);
+    if (storedTheme === "dark") return true;
+    if (storedTheme === "light") return false;
+  } catch {
+    // Fall through to the operating-system preference when storage is unavailable.
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+}
 
 interface SearchMutationVariables {
   payload: SearchRequest;
@@ -49,6 +61,7 @@ function queryLengthError(label: string, query: string, maxLength: number): stri
 }
 
 export function SearchWorkspace({ config }: SearchWorkspaceProps) {
+  const [isDarkMode, setIsDarkMode] = useState(prefersDarkMode);
   const [activeType, setActiveType] = useState<QueryType>("KIS");
   const [topK, setTopK] = useState(String(config.default_top_k));
   const [enhanceQuery, setEnhanceQuery] = useState(false);
@@ -83,6 +96,16 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     },
     [],
   );
+
+  useEffect(() => {
+    const theme = isDarkMode ? "dark" : "light";
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(DARK_MODE_STORAGE_KEY, theme);
+    } catch {
+      // The visual preference still applies for this session when storage is unavailable.
+    }
+  }, [isDarkMode]);
 
   const changeTab = (queryType: QueryType) => {
     activeController.current?.abort();
@@ -193,7 +216,22 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   return (
     <section className="workspace" aria-label="Retrieval workspace">
       <aside className="workspace__sidebar" aria-label="Query controls">
-        <header className="workspace__brand">AIC Retrieval Inspector</header>
+        <header className="workspace__brand">
+          <span>AIC Retrieval Inspector</span>
+          <label className="theme-switch">
+            <span className="visually-hidden">Dark mode</span>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Dark mode"
+              checked={isDarkMode}
+              onChange={(event) => setIsDarkMode(event.target.checked)}
+            />
+            <span className="theme-switch__track" aria-hidden="true">
+              <span className="theme-switch__thumb" />
+            </span>
+          </label>
+        </header>
 
         <div className="query-tabs" role="tablist" aria-label="Query type">
           {QUERY_TYPES.map((queryType) => (
@@ -357,7 +395,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             />
           </label>
 
-          <fieldset className="source-options">
+          <fieldset className="source-options embedding-model-options">
             <legend>Embedding Model</legend>
             <label>
               <input

@@ -89,6 +89,8 @@ function searchPayload(fetchMock: ReturnType<typeof setupApi>): Record<string, u
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  window.localStorage.clear();
+  document.documentElement.removeAttribute("data-theme");
 });
 
 describe("App query workspace", () => {
@@ -120,6 +122,21 @@ describe("App query workspace", () => {
     expect(topKInput).toHaveValue(50);
     expect(topKInput.closest(".workspace__footer")).not.toBeNull();
     expect(screen.queryByText("Top-K")).not.toBeInTheDocument();
+  });
+
+  it("toggles and remembers dark mode from the brand switch", async () => {
+    setupApi();
+    const user = userEvent.setup();
+    renderApp();
+
+    const themeSwitch = await screen.findByRole("switch", { name: "Dark mode" });
+    expect(themeSwitch).not.toBeChecked();
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+
+    await user.click(themeSwitch);
+    expect(themeSwitch).toBeChecked();
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(window.localStorage.getItem("aic-retrieval-theme")).toBe("dark");
   });
 
   it("keeps result controls and video lookup in one shared header", async () => {
