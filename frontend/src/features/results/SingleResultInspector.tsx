@@ -239,7 +239,7 @@ function SortableResultCard({
           <div className="result-card__title-row">
             <div>
               <strong>{result.video_id}</strong>
-              <span>Frame {result.frame_id}</span>
+              <span>{result.frame_id}</span>
             </div>
             <span className="score-badge">{formatScore(result.similarity_score)}</span>
           </div>

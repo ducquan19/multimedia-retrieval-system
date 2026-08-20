@@ -28,7 +28,7 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   useModalAccessibility({ dialogRef, initialFocusRef: closeButtonRef, onClose });
-  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
 
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) onClose();
@@ -49,6 +49,15 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
     }
   };
 
+  const copyVideoAndFrame = async () => {
+    try {
+      await navigator.clipboard.writeText(`${result.video_id}\t${result.frame_id}`);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+  };
+
   return createPortal(
     <div className="modal-backdrop" onMouseDown={closeOnBackdrop}>
       <section
@@ -60,9 +69,24 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
         tabIndex={-1}
       >
         <header className="detail-modal__header">
-          <div>
-            <p className="eyebrow eyebrow--dark">Keyframe detail</p>
-            <h2 id="detail-modal-title">{result.video_id}</h2>
+          <div className="detail-modal__identity">
+            <h2 id="detail-modal-title">
+              <span>{result.video_id}</span>
+              <span className="detail-modal__separator" aria-hidden="true">•</span>
+              <span className="detail-modal__frame">{result.frame_id}</span>
+            </h2>
+            <button
+              type="button"
+              className="detail-copy-button"
+              onClick={copyVideoAndFrame}
+              aria-label="Copy video ID and frame"
+            >
+              {copyStatus === "copied"
+                ? "Copied"
+                : copyStatus === "failed"
+                  ? "Copy failed"
+                  : "Copy"}
+            </button>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button 
@@ -96,25 +120,6 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
           </div>
 
           <div className="detail-modal__content">
-            <dl className="detail-metadata">
-              <div>
-                <dt>Video ID</dt>
-                <dd>{result.video_id}</dd>
-              </div>
-              <div>
-                <dt>Frame ID</dt>
-                <dd>{result.frame_id}</dd>
-              </div>
-              <div>
-                <dt>Segment</dt>
-                <dd>{result.segment_id || "Not available"}</dd>
-              </div>
-              <div>
-                <dt>Similarity</dt>
-                <dd>{formatScore(result.similarity_score)}</dd>
-              </div>
-            </dl>
-
             <section className="detail-section" aria-labelledby="asr-heading">
               <h3 id="asr-heading">ASR transcript</h3>
               <p>{result.asr_text || "No ASR transcript available."}</p>

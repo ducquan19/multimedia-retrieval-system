@@ -85,7 +85,8 @@ describe("SingleResultInspector", () => {
 
     const firstCard = cardAt(0);
     expect(firstCard).toHaveTextContent("L01_V001");
-    expect(firstCard).toHaveTextContent("Frame 505");
+    expect(firstCard).toHaveTextContent("505");
+    expect(firstCard).not.toHaveTextContent("Frame 505");
     expect(firstCard).toHaveTextContent("0.9821");
   });
 
@@ -98,13 +99,20 @@ describe("SingleResultInspector", () => {
     });
     await user.click(trigger);
 
-    const dialog = screen.getByRole("dialog", { name: "L01_V001" });
+    const dialog = screen.getByRole("dialog", { name: /L01_V001.*505/ });
+    expect(dialog).not.toHaveTextContent("Keyframe detail");
+    expect(dialog).not.toHaveTextContent("Segment");
+    expect(dialog).not.toHaveTextContent("Similarity");
     expect(dialog).toHaveTextContent("Một người đang mở laptop trên bàn.");
     expect(dialog).toHaveTextContent("AIC 2026");
     expect(dialog).toHaveTextContent("laptop");
     expect(screen.getByRole("button", { name: "Close keyframe detail" })).toHaveFocus();
     await user.tab();
-    expect(screen.getByRole("button", { name: "📂 Open Local Video" })).toHaveFocus();
+    const copyButton = screen.getByRole("button", { name: "Copy video ID and frame" });
+    expect(copyButton).toHaveFocus();
+    await user.click(copyButton);
+    expect(await navigator.clipboard.readText()).toBe("L01_V001\t505");
+    expect(copyButton).toHaveTextContent("Copied");
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -173,14 +181,14 @@ describe("SingleResultInspector", () => {
     expect(groups[0]).toHaveTextContent("L01_V001");
     expect(groups[0]).toHaveTextContent("2 results");
     expect(groups[1]).toHaveTextContent("L02_V002");
-    expect(within(groups[0]!).getAllByTestId("result-card")[0]).toHaveTextContent("Frame 1240");
+    expect(within(groups[0]!).getAllByTestId("result-card")[0]).toHaveTextContent("1240");
 
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Sort grouped results" }),
       "time",
     );
 
-    expect(within(groups[0]!).getAllByTestId("result-card")[0]).toHaveTextContent("Frame 505");
+    expect(within(groups[0]!).getAllByTestId("result-card")[0]).toHaveTextContent("505");
     expect(screen.queryByRole("button", { name: "Reset order" })).not.toBeInTheDocument();
   });
 
