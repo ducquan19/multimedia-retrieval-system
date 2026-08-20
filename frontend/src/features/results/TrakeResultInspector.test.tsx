@@ -45,6 +45,8 @@ function response(nextResults = results): TRAKESearchResponse {
     original_query: "three events in sequence",
     enhanced_query: null,
     model_choices: ["siglip", "beit3"],
+    applied_weights: null,
+    warnings: [],
     results: nextResults,
   };
 }
@@ -76,7 +78,7 @@ describe("TrakeResultInspector", () => {
     });
 
     await user.click(trigger);
-    expect(screen.getByRole("dialog", { name: "L01_V001" })).toHaveTextContent(
+    expect(screen.getByRole("dialog", { name: /L01_V001.*151/ })).toHaveTextContent(
       "ASR transcript a2",
     );
     await user.keyboard("{Escape}");

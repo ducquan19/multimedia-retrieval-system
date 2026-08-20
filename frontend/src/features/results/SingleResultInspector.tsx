@@ -1,20 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  rectSortingStrategy,
-  sortableKeyboardCoordinates,
-  useSortable,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { useCallback, useEffect, useState } from "react";
 
 import type {
   KISSearchResponse,
@@ -23,7 +7,6 @@ import type {
 } from "../../api/types";
 import { ResultDetailModal, formatScore } from "./ResultDetailModal";
 import { ResultImage } from "./ResultImage";
-import { createResultEditorState, resultEditorReducer } from "./resultState";
 
 interface SingleResultInspectorProps {
   response: KISSearchResponse | VQASearchResponse;
@@ -41,35 +24,17 @@ export function SingleResultInspector({
   response,
   maxAnswerLength,
 }: SingleResultInspectorProps) {
-  const [state, dispatch] = useReducer(
-    resultEditorReducer,
-    response.results,
-    createResultEditorState,
-  );
   const [selected, setSelected] = useState<SelectedResult | null>(null);
   const [globalVQAAnswer, setGlobalVQAAnswer] = useState("");
   const [groupByVideo, setGroupByVideo] = useState(false);
   const [groupSort, setGroupSort] = useState<GroupSort>("score");
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
   useEffect(() => {
-    dispatch({ type: "initialize", results: response.results });
     setSelected(null);
     setGlobalVQAAnswer("");
   }, [response.results]);
 
-  const resultsById = useMemo(
-    () => new Map(response.results.map((result) => [result.result_id, result])),
-    [response.results],
-  );
-  const orderedResults = state.order.flatMap((resultId) => {
-    const result = resultsById.get(resultId);
-    return result ? [result] : [];
-  });
+  const orderedResults = response.results;
   const resultRankById = new Map(
     orderedResults.map((result, index) => [result.result_id, index + 1]),
   );
@@ -90,11 +55,6 @@ export function SingleResultInspector({
         : left.frame_id - right.frame_id,
     ),
   ] as const);
-  const handleDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) return;
-    dispatch({ type: "move", activeId: String(active.id), overId: String(over.id) });
-  };
-
   const closeDetail = useCallback(() => {
     const trigger = selected?.trigger;
     setSelected(null);
@@ -156,11 +116,10 @@ export function SingleResultInspector({
               </header>
               <ol className="result-card-grid" aria-label={`Results from ${videoId}`}>
                 {results.map((result) => (
-                  <SortableResultCard
+                  <ResultCard
                     key={result.result_id}
                     result={result}
                     rank={resultRankById.get(result.result_id) ?? 0}
-                    reorderingDisabled
                     onOpenDetail={(trigger) => setSelected({ result, trigger })}
                   />
                 ))}
@@ -169,21 +128,16 @@ export function SingleResultInspector({
           ))}
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={state.order} strategy={rectSortingStrategy}>
-            <ol className="result-card-grid" aria-label="Retrieved candidates">
-              {orderedResults.map((result, index) => (
-                <SortableResultCard
-                  key={result.result_id}
-                  result={result}
-                  rank={index + 1}
-                  reorderingDisabled={false}
-                  onOpenDetail={(trigger) => setSelected({ result, trigger })}
-                />
-              ))}
-            </ol>
-          </SortableContext>
-        </DndContext>
+        <ol className="result-card-grid" aria-label="Retrieved candidates">
+          {orderedResults.map((result, index) => (
+            <ResultCard
+              key={result.result_id}
+              result={result}
+              rank={index + 1}
+              onOpenDetail={(trigger) => setSelected({ result, trigger })}
+            />
+          ))}
+        </ol>
       )}
 
       {selected && <ResultDetailModal result={selected.result} onClose={closeDetail} />}
@@ -191,31 +145,19 @@ export function SingleResultInspector({
   );
 }
 
-interface SortableResultCardProps {
+interface ResultCardProps {
   result: SingleSearchResult;
   rank: number;
-  reorderingDisabled: boolean;
   onOpenDetail: (trigger: HTMLButtonElement) => void;
 }
 
-function SortableResultCard({
+function ResultCard({
   result,
   rank,
-  reorderingDisabled,
   onOpenDetail,
-}: SortableResultCardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: result.result_id,
-    disabled: reorderingDisabled,
-  });
-
+}: ResultCardProps) {
   return (
-    <li
-      ref={setNodeRef}
-      className={`result-card${isDragging ? " result-card--dragging" : ""}`}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      data-testid="result-card"
-    >
+    <li className="result-card" data-testid="result-card">
       <article aria-label={`Rank ${rank}, ${result.video_id}`}>
         <div className="result-card__media">
           <button
@@ -223,9 +165,6 @@ function SortableResultCard({
             className="thumbnail-button"
             onClick={(event) => onOpenDetail(event.currentTarget)}
             aria-label={`Open details for ${result.video_id}, frame ${result.frame_id}`}
-            {...attributes}
-            {...listeners}
-            style={{ cursor: reorderingDisabled ? "pointer" : "grab" }}
           >
             <ResultImage
               src={result.keyframe_url}

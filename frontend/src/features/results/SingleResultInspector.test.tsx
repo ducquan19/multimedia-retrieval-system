@@ -8,7 +8,6 @@ import type {
   VQASearchResponse,
 } from "../../api/types";
 import { SingleResultInspector } from "./SingleResultInspector";
-import { createResultEditorState, resultEditorReducer } from "./resultState";
 
 const results: SingleSearchResult[] = [
   {
@@ -122,17 +121,6 @@ describe("SingleResultInspector", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => expect(trigger).toHaveFocus());
-  });
-
-  it("reorders IDs through the same reducer path used by drag end", () => {
-    const initial = createResultEditorState(results);
-    const moved = resultEditorReducer(initial, {
-      type: "move",
-      activeId: "result-c",
-      overId: "result-a",
-    });
-
-    expect(moved.order).toEqual(["result-c", "result-a", "result-b"]);
   });
 
   it("keeps the VQA answer in the current result session", async () => {

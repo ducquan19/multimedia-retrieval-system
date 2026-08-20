@@ -9,7 +9,7 @@ import { App } from "./App";
 const publicConfig = {
   min_top_k: 1,
   max_top_k: 100,
-  default_top_k: 20,
+  default_top_k: 50,
   max_trake_events: 4,
   max_query_length: 4_000,
   max_answer_length: 4_000,
@@ -101,7 +101,7 @@ describe("App query workspace", () => {
     expect(screen.getByLabelText("Top-K")).toHaveAttribute("type", "number");
 
     await user.click(screen.getByRole("tab", { name: /VQA/ }));
-    expect(screen.getByLabelText(/^Câu hỏi VQA/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Query VQA/)).toBeInTheDocument();
     expect(screen.queryByLabelText(/^Query KIS/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /TRAKE/ }));
@@ -110,17 +110,14 @@ describe("App query workspace", () => {
     expect(screen.getByLabelText("Event 2")).toBeInTheDocument();
   });
 
-  it("focuses Top-K only when its input is clicked", async () => {
+  it("renders Top-K in the footer without a visible label", async () => {
     setupApi();
-    const user = userEvent.setup();
     renderApp();
 
     const topKInput = await screen.findByLabelText("Top-K");
-    await user.click(screen.getByText("Top-K"));
-    expect(topKInput).not.toHaveFocus();
-
-    await user.click(topKInput);
-    expect(topKInput).toHaveFocus();
+    expect(topKInput).toHaveValue(50);
+    expect(topKInput.closest(".workspace__footer")).not.toBeNull();
+    expect(screen.queryByText("Top-K")).not.toBeInTheDocument();
   });
 
   it("submits the typed KIS payload with shared controls", async () => {
@@ -131,7 +128,6 @@ describe("App query workspace", () => {
     await user.type(await screen.findByLabelText(/^Query KIS/), "người mở laptop");
     await user.clear(screen.getByLabelText("Top-K"));
     await user.type(screen.getByLabelText("Top-K"), "5");
-    await user.click(screen.getByLabelText(/^Enhance query/));
     await user.click(screen.getByLabelText("ASR"));
     await user.click(screen.getByRole("button", { name: "Search" }));
 
@@ -173,15 +169,15 @@ describe("App query workspace", () => {
     renderApp();
 
     await user.click(await screen.findByRole("tab", { name: /VQA/ }));
-    await user.type(screen.getByLabelText(/^Câu hỏi VQA/), "chiếc ly màu gì?");
+    await user.type(screen.getByLabelText(/^Query VQA/), "chiếc ly màu gì?");
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     await screen.findByText("Không tìm thấy candidate");
     expect(searchPayload(fetchMock)).toEqual({
       query_type: "VQA",
       query: "chiếc ly màu gì?",
-      top_k: 20,
-      enhance_query: true,
+      top_k: 50,
+      enhance_query: false,
       use_reranking: false,
       model_choices: ["siglip", "beit3"],
       search_sources: { image: true, asr: false, object: false, ocr: false },

@@ -74,11 +74,17 @@ export interface TRAKESearchResult {
   events: TRAKEEventResult[];
 }
 
+export interface AppliedWeights {
+  w_vis: number;
+  w_ocr: number;
+  w_asr: number;
+}
+
 interface BaseSearchResponse {
   original_query: string;
   enhanced_query: string | null;
   model_choices: string[];
-  applied_weights: Record<string, number> | null;
+  applied_weights: AppliedWeights | null;
   warnings: string[];
 }
 

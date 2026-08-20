@@ -3,25 +3,8 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useReducer,
   useState,
 } from "react";
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 
 import type {
   TRAKEEventResult,
@@ -34,7 +17,6 @@ import {
   formatScore,
 } from "./ResultDetailModal";
 import { ResultImage } from "./ResultImage";
-import { createResultEditorState, resultEditorReducer } from "./resultState";
 import { validateTrakeResults } from "./trakeValidation";
 
 interface TrakeResultInspectorProps {
@@ -55,34 +37,13 @@ export function TrakeResultInspector({
     () => validateTrakeResults(response.results, expectedEventCount),
     [expectedEventCount, response.results],
   );
-  const [state, dispatch] = useReducer(
-    resultEditorReducer,
-    response.results,
-    createResultEditorState,
-  );
   const [selected, setSelected] = useState<SelectedEvent | null>(null);
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
 
   useEffect(() => {
-    dispatch({ type: "initialize", results: response.results });
     setSelected(null);
   }, [response.results]);
 
-  const resultsById = useMemo(
-    () => new Map(response.results.map((result) => [result.result_id, result])),
-    [response.results],
-  );
-  const orderedResults = state.order.flatMap((resultId) => {
-    const result = resultsById.get(resultId);
-    return result ? [result] : [];
-  });
-  const handleDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) return;
-    dispatch({ type: "move", activeId: String(active.id), overId: String(over.id) });
-  };
+  const orderedResults = response.results;
 
   const openEventDetail = (
     row: TRAKESearchResult,
@@ -119,7 +80,7 @@ export function TrakeResultInspector({
           <p className="eyebrow eyebrow--dark">Temporal candidate rows</p>
           <h3 id="trake-inspector-heading">{orderedResults.length} candidates</h3>
           <p>
-            Reorder complete video rows. Events stay fixed from Event 1 to Event {expectedEventCount}.
+            Events stay fixed from Event 1 to Event {expectedEventCount}.
           </p>
         </div>
         <div className="result-inspector__actions">
@@ -132,21 +93,17 @@ export function TrakeResultInspector({
         data-testid="trake-scroll-container"
         style={{ overflowX: "auto" }}
       >
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={state.order} strategy={verticalListSortingStrategy}>
-            <ol className="trake-row-list" aria-label="TRAKE candidate rows">
-              {orderedResults.map((result, index) => (
-                <SortableTrakeRow
-                  key={result.result_id}
-                  result={result}
-                  rank={index + 1}
-                  eventCount={expectedEventCount}
-                  onOpenDetail={(event, trigger) => openEventDetail(result, event, trigger)}
-                />
-              ))}
-            </ol>
-          </SortableContext>
-        </DndContext>
+        <ol className="trake-row-list" aria-label="TRAKE candidate rows">
+          {orderedResults.map((result, index) => (
+            <TrakeRow
+              key={result.result_id}
+              result={result}
+              rank={index + 1}
+              eventCount={expectedEventCount}
+              onOpenDetail={(event, trigger) => openEventDetail(result, event, trigger)}
+            />
+          ))}
+        </ol>
       </div>
 
       {selected && <ResultDetailModal result={selected.result} onClose={closeDetail} />}
@@ -154,42 +111,27 @@ export function TrakeResultInspector({
   );
 }
 
-interface SortableTrakeRowProps {
+interface TrakeRowProps {
   result: TRAKESearchResult;
   rank: number;
   eventCount: number;
   onOpenDetail: (event: TRAKEEventResult, trigger: HTMLButtonElement) => void;
 }
 
-function SortableTrakeRow({
+function TrakeRow({
   result,
   rank,
   eventCount,
   onOpenDetail,
-}: SortableTrakeRowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: result.result_id,
-  });
+}: TrakeRowProps) {
   const style = {
     "--event-count": eventCount,
-    transform: CSS.Transform.toString(transform),
-    transition,
   } as CSSProperties;
 
   return (
-    <li
-      ref={setNodeRef}
-      className={`trake-row${isDragging ? " trake-row--dragging" : ""}`}
-      style={style}
-      data-testid="trake-row"
-    >
+    <li className="trake-row" style={style} data-testid="trake-row">
       <article className="trake-row__identity" aria-label={`Rank ${rank}, ${result.video_id}`}>
-        <div
-          className="trake-row__video"
-          {...attributes}
-          {...listeners}
-          style={{ cursor: 'grab' }}
-        >
+        <div className="trake-row__video">
           <strong>{result.video_id}</strong>
           <span>Score {formatScore(result.similarity_score)}</span>
         </div>

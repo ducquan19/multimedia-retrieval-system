@@ -48,7 +48,7 @@ function queryLengthError(label: string, query: string, maxLength: number): stri
 export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [activeType, setActiveType] = useState<QueryType>("KIS");
   const [topK, setTopK] = useState(String(config.default_top_k));
-  const [enhanceQuery, setEnhanceQuery] = useState(true);
+  const [enhanceQuery, setEnhanceQuery] = useState(false);
   const [useReranking, setUseReranking] = useState(false);
   const [sources, setSources] = useState<SearchSources>({
     image: true,
@@ -299,20 +299,6 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
         </div>
 
         <div className="control-panel">
-          <div className="top-k-row">
-            <span id="top-k-label">Top-K</span>
-            <input
-              id="top-k"
-              aria-labelledby="top-k-label"
-              type="number"
-              min={config.min_top_k}
-              max={config.max_top_k}
-              step={1}
-              value={topK}
-              onChange={(event) => setTopK(event.target.value)}
-            />
-          </div>
-
           <div className="enhance-query-container">
             <label className="toggle-row" htmlFor="enhance-query">
               <span>
@@ -430,6 +416,18 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           <button className="search-button" type="submit" form="search-form">
             Search
           </button>
+          <input
+            id="top-k"
+            className="footer-top-k"
+            aria-label="Top-K"
+            form="search-form"
+            type="number"
+            min={config.min_top_k}
+            max={config.max_top_k}
+            step={1}
+            value={topK}
+            onChange={(event) => setTopK(event.target.value)}
+          />
         </footer>
       </aside>
 

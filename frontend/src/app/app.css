@@ -404,8 +404,9 @@ select:focus-visible {
 }
 
 .search-button {
-  width: 100%;
-  padding: 0.8rem 1rem;
+  flex: 1 1 auto;
+  width: auto;
+  padding: 0.6rem 1rem;
   color: #fff;
   background: #1f5a38;
   border: 1px solid #16462b;
@@ -424,10 +425,42 @@ select:focus-visible {
 }
 
 .workspace__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   flex: 0 0 auto;
-  padding: 0.75rem 0.5rem;
+  padding: 0.5rem;
   background: #fff;
   border-top: 1px solid #d3ddd5;
+}
+
+.footer-top-k {
+  flex: 0 0 4.75rem;
+  width: 4.75rem;
+  box-sizing: border-box;
+  padding: 0.6rem 0.45rem;
+  color: #17211b;
+  background: #fff;
+  border: 1px solid #b9c7bd;
+  border-radius: 0.6rem;
+  font-weight: 800;
+  text-align: center;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.footer-top-k::-webkit-inner-spin-button,
+.footer-top-k::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.footer-top-k:focus,
+.footer-top-k:focus-visible {
+  outline: none;
+  border-color: #24633e;
+  box-shadow: 0 0 0 1px #24633e;
 }
 
 .result-state,
@@ -780,13 +813,6 @@ select:focus-visible {
   box-shadow: 0 0.35rem 0.9rem rgb(28 67 45 / 7%);
 }
 
-.result-card--dragging {
-  z-index: 5;
-  border-color: #d8a83f;
-  box-shadow: 0 0.8rem 1.6rem rgb(28 67 45 / 18%);
-  opacity: 0.92;
-}
-
 .result-card article {
   display: flex;
   flex-direction: column;
@@ -812,6 +838,7 @@ select:focus-visible {
   border: 0;
   border-radius: 0;
   line-height: 0;
+  cursor: pointer;
 }
 
 .result-card__image,
@@ -912,60 +939,6 @@ select:focus-visible {
   border-radius: 0.45rem;
   line-height: 1.45;
   resize: vertical;
-}
-
-.card-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-top: auto;
-  padding-top: 0.15rem;
-}
-
-.drag-handle,
-.move-actions button {
-  color: #3e5547;
-  background: #f5f8f5;
-  border: 1px solid #c4d0c7;
-  border-radius: 0.42rem;
-}
-
-.drag-handle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.55rem;
-  cursor: grab;
-  font-size: 0.72rem;
-  font-weight: 700;
-  touch-action: none;
-}
-
-.drag-handle:active {
-  cursor: grabbing;
-}
-
-.move-actions {
-  display: flex;
-  gap: 0.35rem;
-}
-
-.move-actions button {
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-  font-weight: 800;
-}
-
-.move-actions button:hover:not(:disabled),
-.drag-handle:hover {
-  background: #eaf2ec;
-}
-
-.move-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.35;
 }
 
 .modal-backdrop {
@@ -1245,13 +1218,6 @@ select:focus-visible {
   box-shadow: 0 0.25rem 0.7rem rgb(28 67 45 / 6%);
 }
 
-.trake-row--dragging {
-  z-index: 5;
-  border-color: #d8a83f;
-  box-shadow: 0 0.8rem 1.6rem rgb(28 67 45 / 18%);
-  opacity: 0.94;
-}
-
 .trake-row__identity {
   position: sticky;
   left: 0;
@@ -1411,23 +1377,23 @@ select:focus-visible {
     padding-bottom: 1.5rem;
   }
 
-  .search-button {
+  .workspace__footer {
     position: fixed;
     right: 1rem;
     bottom: 1rem;
     left: 1rem;
     z-index: 20;
-    width: auto;
+    padding: 0;
+    background: transparent;
+    border-top: 0;
+  }
+
+  .search-button {
     box-shadow: 0 0.5rem 1.2rem rgb(23 63 43 / 28%);
   }
 
   .workspace {
     padding-bottom: 4.75rem;
-  }
-
-  .workspace__footer {
-    padding: 0;
-    border-top: 0;
   }
 
   .detail-modal__body {
