@@ -162,6 +162,11 @@ All runtime data lives below one data root, configured by `AIC_DATA_ROOT` and de
 > python scripts/generate_manifest.py
 > ```
 >
+> **Video playback metadata:** Put downloaded videos directly in `data/videos/`. Generate the compact local/remote source map from `metadata.json`; shot boundaries are intentionally omitted:
+> ```powershell
+> python scripts/generate_video_sources.py
+> ```
+>
 > **BEiT-3 Checkpoint:** The BEiT-3 retrieval model requires its pre-trained weights and tokenizer. Create a `checkpoint` folder in `data/` (`data/checkpoint/`) and place the files `beit3.spm` and `beit3_base_patch16_384_coco_retrieval.pth` inside it. These files can be found in the Kaggle dataset, or you can download them directly by following the instructions at [microsoft/unilm/beit3/README.md](https://github.com/microsoft/unilm/blob/master/beit3/README.md).
 
 ```text

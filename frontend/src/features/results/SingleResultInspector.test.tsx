@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
   KISSearchResponse,
@@ -79,6 +79,11 @@ function cardAt(index: number): HTMLElement {
   return card;
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe("SingleResultInspector", () => {
   it("renders essential metadata and a consistently formatted score", () => {
     render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
@@ -138,6 +143,73 @@ describe("SingleResultInspector", () => {
     await user.type(answer, "edited answer A");
 
     expect(screen.getByLabelText("VQA Answer")).toHaveValue("edited answer A");
+  });
+
+  it("plays the video from the keyframe timestamp", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          video_id: "L01_V001",
+          url: "/media/videos/L01_V001.mp4",
+          source: "local",
+          fps: 25,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open details for L01_V001, frame 505" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Play from keyframe" }));
+
+    const video = await screen.findByText("Your browser does not support video playback.");
+    const videoElement = video.closest("video");
+    if (!(videoElement instanceof HTMLVideoElement)) throw new Error("Expected video player");
+    Object.defineProperty(videoElement, "duration", { configurable: true, value: 100 });
+    fireEvent.loadedMetadata(videoElement);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/videos/L01_V001/source",
+      expect.objectContaining({ headers: expect.objectContaining({ Accept: "application/json" }) }),
+    );
+    expect(videoElement.currentTime).toBeCloseTo(505 / 25);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Show keyframe" })).toBeInTheDocument();
+
+    const frameInput = screen.getByRole("spinbutton", { name: "Current frame ID" });
+    expect(frameInput).toHaveValue(505);
+    videoElement.currentTime = 22;
+    fireEvent.timeUpdate(videoElement);
+    expect(frameInput).toHaveValue(550);
+    await user.click(screen.getByRole("button", { name: "Copy current frame ID" }));
+    expect(await navigator.clipboard.readText()).toBe("550");
+    expect(screen.getByRole("button", { name: "Copy current frame ID" })).toHaveTextContent(
+      "Copied",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Next frame" }));
+    expect(frameInput).toHaveValue(551);
+    expect(videoElement.currentTime).toBeCloseTo(551 / 25);
+    await user.click(screen.getByRole("button", { name: "Previous frame" }));
+    expect(frameInput).toHaveValue(550);
+    expect(videoElement.currentTime).toBeCloseTo(550 / 25);
+
+    videoElement.currentTime = 40;
+    await user.click(screen.getByRole("button", { name: "Back to keyframe" }));
+    expect(videoElement.currentTime).toBeCloseTo(505 / 25);
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Show keyframe" }));
+    expect(screen.queryByRole("spinbutton", { name: "Current frame ID" })).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("dialog")).getByAltText("Keyframe 505 from L01_V001"),
+    ).toBeInTheDocument();
   });
 
   it("hides manual move controls while retaining the original result order", () => {

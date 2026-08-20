@@ -2,6 +2,7 @@ import type {
   PublicConfig,
   SearchRequest,
   SearchResponse,
+  VideoSourceResponse,
 } from "./types";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -83,4 +84,14 @@ export function friendlySearchError(error: unknown): string {
     return error.message;
   }
   return "Không thể hoàn tất tìm kiếm. Vui lòng thử lại.";
+}
+
+export function getVideoSource(
+  videoId: string,
+  signal?: AbortSignal,
+): Promise<VideoSourceResponse> {
+  return requestJson<VideoSourceResponse>(
+    `/api/videos/${encodeURIComponent(videoId)}/source`,
+    { signal },
+  );
 }

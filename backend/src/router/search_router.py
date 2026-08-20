@@ -3,8 +3,10 @@ from fastapi import APIRouter, HTTPException
 from core.dependencies import SearchServiceDependency, SettingsDependency
 from repositories.keyframe_metadata_repository import KeyframeMetadataError
 from schemas.search import SearchRequest, SearchResponse
+from schemas.video import VideoSourceResponse
 from services.retrieval_service import RetrievalDataError
 from services.search_service import SearchValidationError
+from services.video_source_service import VideoSourceError, VideoSourceNotFound, VideoSourceService
 
 router = APIRouter(tags=["search"])
 
@@ -15,12 +17,14 @@ router = APIRouter(tags=["search"])
     description="""
     Perform a semantic search for keyframes using natural language.
     
-    This endpoint supports multiple search strategies including SigLIP, BEiT3, or a Hybrid fusion of both.
+    This endpoint supports multiple search strategies including SigLIP, BEiT3,
+    or a Hybrid fusion of both.
     It returns a list of candidate keyframes along with their similarity scores.
     
     **Parameters:**
     - **query**: The search text query (e.g. "a person walking").
-    - **model_choices**: List of retrieval models to use (e.g. ["siglip", "beit3"]). If multiple, RRF is used.
+    - **model_choices**: List of retrieval models to use (e.g. ["siglip", "beit3"]).
+      If multiple, RRF is used.
     - **top_k**: Maximum number of results to return.
     
     **Returns:**
@@ -38,15 +42,18 @@ async def search(payload: SearchRequest, service: SearchServiceDependency) -> Se
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-@router.post("/open-video/{video_id}")
-def open_video(video_id: str, settings: SettingsDependency):
-    import subprocess
-    video_path = settings.data_root / "videos" / f"{video_id}.mp4"
-    if not video_path.exists():
-        raise HTTPException(status_code=404, detail="Video file not found")
-    
+@router.get("/videos/{video_id}/source", response_model=VideoSourceResponse)
+def get_video_source(video_id: str, settings: SettingsDependency) -> VideoSourceResponse:
+    service = VideoSourceService(settings.data_root, settings.video_sources_filename)
     try:
-        subprocess.Popen(['explorer', '/select,', str(video_path.resolve())])
-        return {"status": "success", "message": f"Opened explorer at {video_path}"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to open video: {e}")
+        source = service.resolve(video_id)
+    except VideoSourceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VideoSourceError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return VideoSourceResponse(
+        video_id=source.video_id,
+        url=source.url,
+        source=source.source,
+        fps=source.fps,
+    )

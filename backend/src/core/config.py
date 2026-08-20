@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str | None = None
     keyframes_filename: str = "keyframes.json"
+    video_sources_filename: str = "video_sources.json"
 
     # Hybrid Retrieval settings
     faiss_siglip_filename: str = "indexing/siglip.index"

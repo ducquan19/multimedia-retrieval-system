@@ -107,3 +107,10 @@ export interface PublicConfig {
   max_query_length: number;
   max_answer_length: number;
 }
+
+export interface VideoSourceResponse {
+  video_id: string;
+  url: string;
+  source: "local" | "remote";
+  fps: number;
+}
