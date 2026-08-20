@@ -1,4 +1,4 @@
-import { type MouseEvent, useRef } from "react";
+import { type MouseEvent, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ResultImage } from "./ResultImage";
@@ -28,9 +28,25 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   useModalAccessibility({ dialogRef, initialFocusRef: closeButtonRef, onClose });
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
 
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) onClose();
+  };
+
+  const openVideoInExplorer = async () => {
+    try {
+      const response = await fetch(`/api/v1/search/open-video/${result.video_id}`, { method: "POST" });
+      if (!response.ok) {
+        if (response.status === 404) {
+          alert("Video has not been downloaded yet.");
+        } else {
+          alert("Failed to open video locally.");
+        }
+      }
+    } catch (e) {
+      alert("Failed to connect to backend to open video.");
+    }
   };
 
   return createPortal(
@@ -48,15 +64,25 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
             <p className="eyebrow eyebrow--dark">Keyframe detail</p>
             <h2 id="detail-modal-title">{result.video_id}</h2>
           </div>
-          <button
-            ref={closeButtonRef}
-            className="modal-close"
-            type="button"
-            onClick={onClose}
-            aria-label="Close keyframe detail"
-          >
-            ×
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button 
+              type="button" 
+              onClick={openVideoInExplorer}
+              className="button"
+              style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', borderRadius: '0.4rem', border: '1px solid #c8d3cb', background: '#f1f5f2', cursor: 'pointer' }}
+            >
+              📂 Open Local Video
+            </button>
+            <button
+              ref={closeButtonRef}
+              className="modal-close"
+              type="button"
+              onClick={onClose}
+              aria-label="Close keyframe detail"
+            >
+              ×
+            </button>
+          </div>
         </header>
 
         <div className="detail-modal__body">

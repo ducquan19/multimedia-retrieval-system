@@ -19,8 +19,10 @@ import { CSS } from "@dnd-kit/utilities";
 import type {
   KISSearchResponse,
   SingleSearchResult,
+  SubmissionRequest,
   VQASearchResponse,
 } from "../../api/types";
+import { SubmissionActions } from "../submissions/SubmissionActions";
 import { ResultDetailModal, formatScore } from "./ResultDetailModal";
 import { ResultImage } from "./ResultImage";
 import { createResultEditorState, resultEditorReducer } from "./resultState";
@@ -45,6 +47,8 @@ export function SingleResultInspector({
     createResultEditorState,
   );
   const [selected, setSelected] = useState<SelectedResult | null>(null);
+  const [globalVQAAnswer, setGlobalVQAAnswer] = useState("");
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -53,6 +57,7 @@ export function SingleResultInspector({
   useEffect(() => {
     dispatch({ type: "initialize", results: response.results });
     setSelected(null);
+    setGlobalVQAAnswer("");
   }, [response.results]);
 
   const resultsById = useMemo(
@@ -66,6 +71,36 @@ export function SingleResultInspector({
   const orderChanged = state.order.some(
     (resultId, index) => resultId !== state.initialOrder[index],
   );
+  const emptyAnswerCount =
+    response.query_type === "VQA" && !globalVQAAnswer.trim() ? orderedResults.length : 0;
+
+  const submissionStateVersion = JSON.stringify({
+    order: state.order,
+    globalVQAAnswer,
+  });
+
+  const buildSubmissionPayload = (filename: string): SubmissionRequest => {
+    if (response.query_type === "VQA") {
+      return {
+        query_type: "VQA",
+        filename,
+        rows: orderedResults.map((result) => ({
+          video_id: result.video_id,
+          frame_id: result.frame_id,
+          answer: globalVQAAnswer.trim(),
+        })),
+      };
+    }
+    return {
+      query_type: "KIS",
+      filename,
+      rows: orderedResults.map((result) => ({
+        video_id: result.video_id,
+        frame_id: result.frame_id,
+      })),
+    };
+  };
+
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
     dispatch({ type: "move", activeId: String(active.id), overId: String(over.id) });
@@ -86,16 +121,24 @@ export function SingleResultInspector({
         </div>
         <div className="result-inspector__actions">
           <span className="mini-badge">{response.query_type}</span>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={!orderChanged}
-            onClick={() => dispatch({ type: "reset-order" })}
-          >
-            Reset order
-          </button>
         </div>
       </div>
+
+      {response.query_type === "VQA" && (
+        <div style={{ marginBottom: "1rem" }}>
+          <label className="field" htmlFor="global-vqa-answer">
+            <span>VQA Answer</span>
+            <textarea
+              id="global-vqa-answer"
+              value={globalVQAAnswer}
+              maxLength={maxAnswerLength}
+              onChange={(e) => setGlobalVQAAnswer(e.target.value)}
+              placeholder="Nhập câu trả lời VQA vào đây..."
+              rows={3}
+            />
+          </label>
+        </div>
+      )}
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={state.order} strategy={rectSortingStrategy}>
@@ -105,16 +148,10 @@ export function SingleResultInspector({
                 key={result.result_id}
                 result={result}
                 rank={index + 1}
-                isVqa={response.query_type === "VQA"}
-                answer={state.answers[result.result_id] ?? ""}
-                maxAnswerLength={maxAnswerLength}
                 canMoveUp={index > 0}
                 canMoveDown={index < orderedResults.length - 1}
                 onMove={(offset) =>
                   dispatch({ type: "move-by", resultId: result.result_id, offset })
-                }
-                onAnswerChange={(answer) =>
-                  dispatch({ type: "set-answer", resultId: result.result_id, answer })
                 }
                 onOpenDetail={(trigger) => setSelected({ result, trigger })}
               />
@@ -122,6 +159,16 @@ export function SingleResultInspector({
           </ol>
         </SortableContext>
       </DndContext>
+
+      <SubmissionActions
+        queryType={response.query_type}
+        rowCount={orderedResults.length}
+        emptyAnswerCount={emptyAnswerCount}
+        orderChanged={orderChanged}
+        stateVersion={submissionStateVersion}
+        onResetOrder={() => dispatch({ type: "reset-order" })}
+        buildPayload={buildSubmissionPayload}
+      />
 
       {selected && <ResultDetailModal result={selected.result} onClose={closeDetail} />}
     </section>
@@ -131,26 +178,18 @@ export function SingleResultInspector({
 interface SortableResultCardProps {
   result: SingleSearchResult;
   rank: number;
-  isVqa: boolean;
-  answer: string;
-  maxAnswerLength: number;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMove: (offset: -1 | 1) => void;
-  onAnswerChange: (answer: string) => void;
   onOpenDetail: (trigger: HTMLButtonElement) => void;
 }
 
 function SortableResultCard({
   result,
   rank,
-  isVqa,
-  answer,
-  maxAnswerLength,
   canMoveUp,
   canMoveDown,
   onMove,
-  onAnswerChange,
   onOpenDetail,
 }: SortableResultCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -191,42 +230,6 @@ function SortableResultCard({
             </div>
             <span className="score-badge">{formatScore(result.similarity_score)}</span>
           </div>
-
-          <div className="result-card__controls" aria-label={`Reorder ${result.video_id}`}>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={!canMoveUp}
-              onClick={() => onMove(-1)}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              Move up
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={!canMoveDown}
-              onClick={() => onMove(1)}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              Move down
-            </button>
-          </div>
-
-          {isVqa && (
-            <label className="answer-field" htmlFor={`answer-${result.result_id}`}>
-              <span>VQA answer</span>
-              <textarea
-                id={`answer-${result.result_id}`}
-                value={answer}
-                maxLength={maxAnswerLength}
-                rows={2}
-                onPointerDown={(event) => event.stopPropagation()}
-                onChange={(event) => onAnswerChange(event.target.value)}
-              />
-            </label>
-          )}
-
         </div>
       </article>
     </li>

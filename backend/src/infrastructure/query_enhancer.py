@@ -7,27 +7,19 @@ try:
 except ImportError:
     genai = None
 
+from schemas.search import QueryVariants, QueryVariantsBatch
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 class QueryEnhancer(Protocol):
-    def enhance(self, query: str, query_type: str) -> list[str]: ...
-    def answer_vqa(self, question: str, image_path: Path) -> str: ...
-
-
-
-class QueryVariants(BaseModel):
-    variants: list[str] = Field(
-        description="Exactly 1 highly descriptive English variation of the original query.",
-        min_length=1,
-        max_length=1
-    )
+    def enhance(self, query: str, query_type: str) -> QueryVariants | None: ...
+    def enhance_batch(self, queries: dict[int, str]) -> dict[int, QueryVariants] | None: ...
 
 
 class GeminiQueryEnhancer:
-    """Uses Google Gemini to generate 1 English query variation for visual retrieval models."""
-    
+    """Uses Google Gemini to generate 1 English query variation and predict search weights."""
+
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key
         if genai:
@@ -35,26 +27,29 @@ class GeminiQueryEnhancer:
         else:
             self.client = None
 
-    def enhance(self, query: str, query_type: str) -> list[str]:
+    def enhance(self, query: str, query_type: str) -> QueryVariants | None:
         if not self.client:
             logger.warning("google-genai is not installed or client failed to initialize. Falling back.")
-            return []
+            return None
 
         if query_type == "VQA":
             prompt = f"""
             The user has provided a question about a video in Vietnamese: "{query}".
-            Your task is to convert this question into a declarative visual search query (in English) that describes what a frame containing the answer would look like. 
+            Your task is to convert this question into a declarative visual search query (in English) that describes what a frame containing the answer would look like.
             Do not answer the question. Only describe the concrete visual elements (objects, actions, settings) required to find the answer.
+            Set w_vis to 1.0, w_ocr to 0.0, and w_asr to 0.0.
             """
         else:
             prompt = f"""
-            You are an expert prompt engineer for contrastive vision-language models like CLIP, SigLIP, and BEiT-3.
+            You are an expert prompt engineer for multimodal contrastive vision-language models.
             The user has provided a search query in Vietnamese: "{query}".
-            
+
             Your task:
-            1. Translate and expand this query into exactly 1 highly descriptive English variation.
-            2. Focus strictly on concrete visual elements (objects, colors, actions, settings) that would physically appear in an image or video frame.
-            3. Do not use abstract concepts. Be as visually explicit as possible.
+            1. Translate and expand this query into exactly 1 highly descriptive English variation focusing on visual elements.
+            2. Analyze the semantic intent of the query and predict weights (0.0 to 1.0) for the 3 search modalities:
+               - w_vis: Visual search weight (high if looking for objects, colors, actions, scenes).
+               - w_ocr: OCR text search weight (high if explicitly looking for text, banners, signs, or subtitles written on screen).
+               - w_asr: ASR speech search weight (high if looking for spoken dialog, news reports, conversations, or phrases).
             """
 
         try:
@@ -67,43 +62,63 @@ class GeminiQueryEnhancer:
                     temperature=0.7,
                 ),
             )
-            
+
             # The structured output should match our Pydantic schema
             if response.parsed:
                 variants = response.parsed.variants
                 if len(variants) == 1:
                     logger.info(f"Gemini enhanced queries for '{query}':\n" + "\n".join(f"- {v}" for v in variants))
-                    return variants
-                
+                    logger.info(f"Predicted weights: w_vis={response.parsed.w_vis}, w_ocr={response.parsed.w_ocr}, w_asr={response.parsed.w_asr}")
+                    return response.parsed
+
             logger.warning("Gemini did not return exactly 1 variants. Falling back.")
-            return []
-            
+            return None
+
         except Exception as e:
             logger.warning(f"Failed to enhance query with Gemini: {e}")
-            return []
+            return None
+            
+    def enhance_batch(self, queries: dict[int, str]) -> dict[int, QueryVariants] | None:
+        if not self.client or not queries:
+            return None
 
-    def answer_vqa(self, question: str, image_path: Path) -> str:
-        if not self.client:
-            logger.warning("google-genai is not installed or client failed to initialize. Falling back.")
-            return ""
+        # Build prompt for all queries
+        query_list_str = "\n".join(f"Event {idx}: {q}" for idx, q in queries.items())
 
-        from PIL import Image
+        prompt = f"""
+        You are an expert prompt engineer for multimodal contrastive vision-language models.
+        The user has provided multiple search queries in Vietnamese (for a temporal event search task).
+
+        Queries:
+        {query_list_str}
+
+        Your task for EACH query:
+        1. Translate and expand it into exactly 1 highly descriptive English variation focusing on visual elements.
+        2. Analyze the semantic intent and predict weights (0.0 to 1.0) for the 3 search modalities (w_vis, w_ocr, w_asr).
+
+        Return a list of results, where each result contains the event_index and its corresponding QueryVariants.
+        """
 
         try:
-            image = Image.open(image_path).convert("RGB")
-            
-            prompt = f"""
-            Based on the provided image, answer the following question accurately and concisely in Vietnamese:
-            Question: {question}
-            """
-            
             response = self.client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[prompt, image],
+                model='gemini-2.5-flash-lite',
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=QueryVariantsBatch,
+                    temperature=0.7,
+                ),
             )
-            
-            return response.text.strip()
-            
+
+            if response.parsed:
+                results_list = response.parsed.results
+                results_dict = {item.event_index: item.result for item in results_list}
+                logger.info(f"Gemini enhanced batch queries successfully. Received {len(results_dict)} items.")
+                return results_dict
+
+            logger.warning("Gemini did not return valid batch variants. Falling back.")
+            return None
+
         except Exception as e:
-            logger.warning(f"Failed to answer VQA with Gemini: {e}")
-            return ""
+            logger.warning(f"Failed to enhance batch query with Gemini: {e}")
+            return None

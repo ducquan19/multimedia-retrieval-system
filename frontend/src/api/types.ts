@@ -78,6 +78,8 @@ interface BaseSearchResponse {
   original_query: string;
   enhanced_query: string | null;
   model_choices: string[];
+  applied_weights: Record<string, number> | null;
+  warnings: string[];
 }
 
 export interface KISSearchResponse extends BaseSearchResponse {

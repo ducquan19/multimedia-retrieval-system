@@ -1,13 +1,12 @@
 from fastapi import APIRouter, HTTPException
 
-from core.dependencies import SearchServiceDependency
+from core.dependencies import SearchServiceDependency, SettingsDependency
 from repositories.keyframe_metadata_repository import KeyframeMetadataError
 from schemas.search import SearchRequest, SearchResponse
 from services.retrieval_service import RetrievalDataError
 from services.search_service import SearchValidationError
 
 router = APIRouter(tags=["search"])
-
 
 @router.post(
     "/search",
@@ -38,3 +37,16 @@ async def search(payload: SearchRequest, service: SearchServiceDependency) -> Se
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@router.post("/open-video/{video_id}")
+def open_video(video_id: str, settings: SettingsDependency):
+    import subprocess
+    video_path = settings.data_root / "videos" / f"{video_id}.mp4"
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+    
+    try:
+        subprocess.Popen(['explorer', '/select,', str(video_path.resolve())])
+        return {"status": "success", "message": f"Opened explorer at {video_path}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to open video: {e}")

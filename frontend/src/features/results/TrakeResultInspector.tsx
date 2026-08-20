@@ -195,7 +195,6 @@ function SortableTrakeRow({
   });
   const style = {
     "--event-count": eventCount,
-    minWidth: `${15 + eventCount * 13}rem`,
     transform: CSS.Transform.toString(transform),
     transition,
   } as CSSProperties;
@@ -208,15 +207,14 @@ function SortableTrakeRow({
       data-testid="trake-row"
     >
       <article className="trake-row__identity" aria-label={`Rank ${rank}, ${result.video_id}`}>
-        <div 
+        <div
           className="trake-row__video"
           {...attributes}
           {...listeners}
           style={{ cursor: 'grab' }}
         >
           <strong>{result.video_id}</strong>
-          <small>{result.result_id}</small>
-          <span>Row score {formatScore(result.similarity_score)}</span>
+          <span>Score {formatScore(result.similarity_score)}</span>
         </div>
         <div className="trake-row__controls" aria-label={`Reorder ${result.video_id}`}>
           <button

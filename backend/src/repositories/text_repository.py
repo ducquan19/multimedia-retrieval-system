@@ -24,20 +24,20 @@ class KeyframeTextRepository:
             logger.error("Failed to ping Elasticsearch: %s", e)
             return False
 
-    def search_metadata(self, text_query: str, objects: Optional[list[str]], top_k: int) -> list[ScoredCandidate]:
+    def search_text(self, text_query: str, fields: list[str], objects: Optional[list[str]], top_k: int) -> list[ScoredCandidate]:
         """
-        Searches Elasticsearch using BM25 on ASR/OCR fields and filters by objects.
+        Searches Elasticsearch using BM25 on specified text fields and filters by objects.
         Returns a list of ScoredCandidate.
         """
         if not self.ping():
             return []
 
         must_clauses = []
-        if text_query:
+        if text_query and fields:
             must_clauses.append({
                 "multi_match": {
                     "query": text_query,
-                    "fields": ["asr_text", "ocr_text"],
+                    "fields": fields,
                     "type": "best_fields"
                 }
             })

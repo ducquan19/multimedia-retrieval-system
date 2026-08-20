@@ -499,13 +499,53 @@ select:focus-visible {
   line-height: 1.4;
 }
 
-.sidebar-enhanced-query small {
+.sidebar-enhanced-query small,
+.sidebar-warning small,
+.sidebar-weights small {
   display: block;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #173f2b;
   margin-bottom: 0.25rem;
+}
+
+.sidebar-warning {
+  margin: 0.5rem 1rem;
+  padding: 0.75rem;
+  background: #fff5f5;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+  font-size: 0.8rem;
+  color: #8b1a1a;
+}
+
+.sidebar-warning p {
+  margin: 0.2rem 0;
+  line-height: 1.4;
+}
+
+.sidebar-weights {
+  margin: 0.5rem 1rem 1rem;
+  padding: 0.75rem;
+  background: #e8f4ec;
+  border-radius: 6px;
+  border: 1px solid #c3e0cf;
+  font-size: 0.8rem;
+  color: #1b422d;
+}
+
+.sidebar-weights p {
+  margin: 0;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.sidebar-weights span {
+  background: #d1ead9;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-weight: 700;
 }
 
 .enhanced-callout {
@@ -1002,8 +1042,7 @@ select:focus-visible {
 .trake-row-list {
   display: grid;
   gap: 0.75rem;
-  width: 100%;
-  min-width: max-content;
+  width: max-content;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1011,7 +1050,7 @@ select:focus-visible {
 
 .trake-row {
   display: grid;
-  grid-template-columns: 15rem repeat(var(--event-count), minmax(13rem, 1fr));
+  grid-template-columns: 8rem repeat(var(--event-count), 13.5rem);
   overflow: clip;
   background: #fff;
   border: 1px solid #cedbd1;

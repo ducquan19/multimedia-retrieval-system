@@ -42,26 +42,51 @@ class SearchService:
                 f"TRAKE supports at most {self._max_trake_events} events in this deployment"
             )
 
+        warnings = []
+        applied_weights = None
+        search_sources = getattr(request, "search_sources", None)
+        default_w_vis = 1.0 if getattr(search_sources, "image", True) else 0.0
+        default_w_ocr = 1.0 if getattr(search_sources, "ocr", False) else 0.0
+        default_w_asr = 1.0 if getattr(search_sources, "asr", False) else 0.0
+
         if isinstance(request, TRAKESearchRequest):
             original_query = request.main_query
             if request.enhance_query:
-                enhanced_queries = {
-                    event.event_index: self._query_enhancer.enhance(event.query, request.query_type)
-                    for event in request.events
-                }
-                # For display in response, we'll just show the first event's enhanced queries
-                enhanced_query_str = "\n".join(f"Event {k}: {v[0] if v else ''}" for k, v in enhanced_queries.items())
+                queries_dict = {event.event_index: event.query for event in request.events}
+                enhanced_queries = self._query_enhancer.enhance_batch(queries_dict)
+                if not enhanced_queries:
+                    warnings.append("Gemini API quota exceeded or failed. Falling back to original queries with default weights.")
+                    enhanced_queries = None
+                    enhanced_query_str = None
+                    applied_weights = {"w_vis": default_w_vis, "w_asr": default_w_asr, "w_ocr": default_w_ocr}
+                else:
+                    enhanced_query_str = "\n".join(
+                        f"Event {k}: {v.variants[0] if v and v.variants else ''}"
+                        for k, v in enhanced_queries.items()
+                    )
+                    first_v = next(iter(enhanced_queries.values()), None)
+                    if first_v:
+                        applied_weights = {"w_vis": first_v.w_vis, "w_asr": first_v.w_asr, "w_ocr": first_v.w_ocr}
             else:
                 enhanced_queries = None
                 enhanced_query_str = None
+                applied_weights = {"w_vis": default_w_vis, "w_asr": default_w_asr, "w_ocr": default_w_ocr}
         else:
             original_query = request.query
             if request.enhance_query:
                 enhanced_queries = self._query_enhancer.enhance(original_query, request.query_type)
-                enhanced_query_str = "\n".join(f"- {q}" for q in enhanced_queries) if enhanced_queries else None
+                if enhanced_queries and enhanced_queries.variants:
+                    enhanced_query_str = f"- {enhanced_queries.variants[0]}"
+                    applied_weights = {"w_vis": enhanced_queries.w_vis, "w_asr": enhanced_queries.w_asr, "w_ocr": enhanced_queries.w_ocr}
+                else:
+                    warnings.append("Gemini API quota exceeded or failed. Falling back to original query with default weights.")
+                    enhanced_query_str = None
+                    enhanced_queries = None
+                    applied_weights = {"w_vis": default_w_vis, "w_asr": default_w_asr, "w_ocr": default_w_ocr}
             else:
                 enhanced_queries = None
                 enhanced_query_str = None
+                applied_weights = {"w_vis": default_w_vis, "w_asr": default_w_asr, "w_ocr": default_w_ocr}
             
         model_choices = getattr(request, "model_choices", [])
         
@@ -73,32 +98,27 @@ class SearchService:
                 original_query=original_query,
                 enhanced_query=enhanced_query_str,
                 model_choices=model_choices,
+                applied_weights=applied_weights,
+                warnings=warnings,
                 results=self._only_single_results(results),
             )
         if isinstance(request, VQASearchRequest):
-            single_results = self._only_single_results(results)
-            
-            # Answer the question using the top result
-            if single_results and self._query_enhancer and hasattr(self._query_enhancer, "answer_vqa"):
-                top_result = single_results[0]
-                answer = self._query_enhancer.answer_vqa(original_query, self._data_root / top_result.image_path)
-                
-                # Replace the top result with the answered one
-                answered_top_result = top_result.model_copy(update={"answer": answer})
-                single_results = (answered_top_result,) + single_results[1:]
-                
             return VQASearchResponse(
                 query_type="VQA",
                 original_query=original_query,
                 enhanced_query=enhanced_query_str,
                 model_choices=model_choices,
-                results=single_results,
+                applied_weights=applied_weights,
+                warnings=warnings,
+                results=self._only_single_results(results),
             )
         return TRAKESearchResponse(
             query_type="TRAKE",
             original_query=original_query,
             enhanced_query=enhanced_query_str,
             model_choices=model_choices,
+            applied_weights=applied_weights,
+            warnings=warnings,
             results=self._only_trake_results(results),
         )
 
