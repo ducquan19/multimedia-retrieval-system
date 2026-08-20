@@ -8,3 +8,5 @@ timm
 torchscale
 tensorboardX
 torchmetrics
+google-genai
+orjson
