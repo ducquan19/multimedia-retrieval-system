@@ -34,7 +34,11 @@ import {
   formatScore,
 } from "./ResultDetailModal";
 import { ResultImage } from "./ResultImage";
-import { createResultEditorState, resultEditorReducer } from "./resultState";
+import {
+  SHOW_MOVE_CONTROLS,
+  createResultEditorState,
+  resultEditorReducer,
+} from "./resultState";
 import { validateTrakeResults } from "./trakeValidation";
 
 interface TrakeResultInspectorProps {
@@ -216,24 +220,26 @@ function SortableTrakeRow({
           <strong>{result.video_id}</strong>
           <span>Score {formatScore(result.similarity_score)}</span>
         </div>
-        <div className="trake-row__controls" aria-label={`Reorder ${result.video_id}`}>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={!canMoveUp}
-            onClick={() => onMove(-1)}
-          >
-            Move up
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={!canMoveDown}
-            onClick={() => onMove(1)}
-          >
-            Move down
-          </button>
-        </div>
+        {SHOW_MOVE_CONTROLS && (
+          <div className="trake-row__controls" aria-label={`Reorder ${result.video_id}`}>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!canMoveUp}
+              onClick={() => onMove(-1)}
+            >
+              Move up
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!canMoveDown}
+              onClick={() => onMove(1)}
+            >
+              Move down
+            </button>
+          </div>
+        )}
       </article>
 
       {result.events.map((event) => (

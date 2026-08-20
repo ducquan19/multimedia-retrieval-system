@@ -1,3 +1,6 @@
+// Keep move-by controls implemented but hidden until the manual buttons are needed again.
+export const SHOW_MOVE_CONTROLS = false;
+
 interface IdentifiedResult {
   result_id: string;
   answer?: string;

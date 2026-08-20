@@ -57,6 +57,8 @@ function response(queryType: "KIS" | "VQA", nextResults = results) {
     original_query: "query",
     enhanced_query: null,
     model_choices: ["siglip", "beit3"],
+    applied_weights: null,
+    warnings: [],
     results: nextResults,
   };
   return queryType === "KIS"
@@ -102,7 +104,7 @@ describe("SingleResultInspector", () => {
     expect(dialog).toHaveTextContent("laptop");
     expect(screen.getByRole("button", { name: "Close keyframe detail" })).toHaveFocus();
     await user.tab();
-    expect(screen.getByRole("button", { name: "Close keyframe detail" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "📂 Open Local Video" })).toHaveFocus();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -120,29 +122,21 @@ describe("SingleResultInspector", () => {
     expect(moved.order).toEqual(["result-c", "result-a", "result-b"]);
   });
 
-  it("keeps VQA answers attached to result_id after reorder", async () => {
+  it("keeps the VQA answer in the current result session", async () => {
     const user = userEvent.setup();
     render(<SingleResultInspector response={response("VQA")} maxAnswerLength={4_000} />);
 
-    const firstCard = cardAt(0);
-    const answer = within(firstCard).getByLabelText("VQA answer");
-    await user.clear(answer);
+    const answer = screen.getByLabelText("VQA Answer");
     await user.type(answer, "edited answer A");
-    // Manual reorder would be performed via drag-and-drop instead of button clicks in production
-    
-    expect(within(cardAt(0)).getByText("L01_V001")).toBeInTheDocument();
-    expect(within(cardAt(0)).getByLabelText("VQA answer")).toHaveValue(
-      "edited answer A",
-    );
+
+    expect(screen.getByLabelText("VQA Answer")).toHaveValue("edited answer A");
   });
 
-  it("resets to the original API order", async () => {
-    const user = userEvent.setup();
+  it("hides manual move controls while retaining the original result order", () => {
     render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
 
-    await user.click(within(cardAt(1)).getByRole("button", { name: "Move up" }));
-    expect(cardVideoOrder()).toEqual(["L02_V002", "L01_V001", "L03_V003"]);
-    await user.click(screen.getByRole("button", { name: "Reset order" }));
+    expect(screen.queryByRole("button", { name: "Move up" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Move down" })).not.toBeInTheDocument();
     expect(cardVideoOrder()).toEqual(["L01_V001", "L02_V002", "L03_V003"]);
   });
 
@@ -155,13 +149,39 @@ describe("SingleResultInspector", () => {
     expect(screen.getByRole("img", { name: "Keyframe 505 from L01_V001" })).toBeInTheDocument();
   });
 
+  it("groups candidates by video when requested", async () => {
+    const user = userEvent.setup();
+    const groupedResults = [
+      results[0]!,
+      results[1]!,
+      { ...results[2]!, video_id: "L01_V001" },
+    ];
+    render(
+      <SingleResultInspector
+        response={response("KIS", groupedResults)}
+        maxAnswerLength={4_000}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Results" })).toBeInTheDocument();
+    expect(screen.queryByText("Editable result order")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Group by video" }));
+
+    const groups = screen.getAllByTestId("video-group");
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toHaveTextContent("L01_V001");
+    expect(groups[0]).toHaveTextContent("2 results");
+    expect(groups[1]).toHaveTextContent("L02_V002");
+    expect(screen.getByRole("button", { name: "Reset order" })).toBeDisabled();
+  });
+
   it("initializes fresh order and answers for a new query response", async () => {
     const user = userEvent.setup();
     const { rerender } = render(
       <SingleResultInspector response={response("VQA")} maxAnswerLength={4_000} />,
     );
 
-    await user.type(within(cardAt(0)).getByLabelText("VQA answer"), "!");
+    await user.type(screen.getByLabelText("VQA Answer"), "temporary answer");
 
     const sourceResult = results[2];
     if (!sourceResult) throw new Error("Expected source result");
@@ -176,6 +196,6 @@ describe("SingleResultInspector", () => {
     );
 
     expect(cardVideoOrder()).toEqual(["L03_V003"]);
-    expect(screen.getByLabelText("VQA answer")).toHaveValue("fresh answer");
+    expect(screen.getByLabelText("VQA Answer")).toHaveValue("");
   });
 });
