@@ -53,6 +53,7 @@ python -m venv .venv
 
 ```powershell
 python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 python -m pip install -r .\backend\requirements.lock
 python -m pip install --no-deps -e .\backend
 npm --prefix frontend ci
