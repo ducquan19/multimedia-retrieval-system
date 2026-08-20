@@ -38,17 +38,27 @@ class GeminiQueryEnhancer:
         if query_type == "VQA":
             prompt = f"""
             The user has provided a question about a video in Vietnamese: "{query}".
-            Your task is to convert this question into a declarative visual search query (in English) that describes what a frame containing the answer would look like.
-            Do not answer the question. Only describe the concrete visual elements (objects, actions, settings) required to find the answer.
-            Set w_vis to 1.0, w_ocr to 0.0, and w_asr to 0.0.
+            Your task is to convert this question into a concise, declarative visual search query (in English) that describes what a frame containing the answer would look like.
+            
+            STRICT RULES:
+            - Do not answer the question. Only describe the concrete visual elements (objects, actions, settings) required to find the answer.
+            - Do NOT hallucinate, guess, or add any redundant facts not implied by the question.
+            - Keep it short, objective, and highly relevant to contrastive vision-language models.
+            - Set w_vis to 1.0, w_ocr to 0.0, and w_asr to 0.0.
             """
         else:
             prompt = f"""
-            You are an expert prompt engineer for multimodal contrastive vision-language models.
+            You are an expert prompt engineer for multimodal contrastive vision-language models (like CLIP, SigLIP, BEiT-3).
             The user has provided a search query in Vietnamese: "{query}".
 
             Your task:
-            1. Translate and expand this query into exactly 1 highly descriptive English variation focusing on visual elements.
+            1. Translate this query into exactly 1 highly descriptive English variation focusing on visual elements.
+            
+            STRICT RULES FOR TRANSLATION:
+            - Ensure the translation is concise, accurate, and captures the exact meaning.
+            - Do NOT hallucinate, make up details, or add redundant descriptions that were not in the original query.
+            - Focus purely on objective visual concepts (nouns, verbs, attributes). Avoid flowery or abstract language.
+            
             2. Analyze the semantic intent of the query and predict weights (0.0 to 1.0) for the 3 search modalities:
                - w_vis: Visual search weight (high if looking for objects, colors, actions, scenes).
                - w_ocr: OCR text search weight (high if explicitly looking for text, banners, signs, or subtitles written on screen).
@@ -62,6 +72,7 @@ class GeminiQueryEnhancer:
                 config=genai.types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=QueryVariants,
+                    temperature=0.2,
                 ),
             )
 
@@ -95,8 +106,17 @@ class GeminiQueryEnhancer:
         {query_list_str}
 
         Your task for EACH query:
-        1. Translate and expand it into exactly 1 highly descriptive English variation focusing on visual elements.
+        1. Translate it into exactly 1 highly descriptive English variation focusing on visual elements.
+        
+        STRICT RULES FOR TRANSLATION:
+        - Ensure the translation is concise, accurate, and captures the exact meaning.
+        - Do NOT hallucinate, make up details, or add redundant descriptions that were not in the original query.
+        - Focus purely on objective visual concepts (nouns, verbs, attributes). Avoid flowery or abstract language.
+        
         2. Analyze the semantic intent and predict weights (0.0 to 1.0) for the 3 search modalities (w_vis, w_ocr, w_asr).
+           - w_vis: high if looking for objects, colors, actions.
+           - w_ocr: high if looking for written text on screen (signs, banners, logos).
+           - w_asr: high if looking for spoken dialog, news reports.
 
         Return a list of results, where each result contains the event_index and its corresponding QueryVariants.
         """
