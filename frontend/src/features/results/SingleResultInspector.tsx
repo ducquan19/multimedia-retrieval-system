@@ -11,6 +11,8 @@ import { ResultImage } from "./ResultImage";
 interface SingleResultInspectorProps {
   response: KISSearchResponse | VQASearchResponse;
   maxAnswerLength: number;
+  groupByVideo?: boolean;
+  groupSort?: "score" | "time";
 }
 
 interface SelectedResult {
@@ -18,16 +20,14 @@ interface SelectedResult {
   trigger: HTMLButtonElement;
 }
 
-type GroupSort = "score" | "time";
-
 export function SingleResultInspector({
   response,
   maxAnswerLength,
+  groupByVideo = false,
+  groupSort = "score",
 }: SingleResultInspectorProps) {
   const [selected, setSelected] = useState<SelectedResult | null>(null);
   const [globalVQAAnswer, setGlobalVQAAnswer] = useState("");
-  const [groupByVideo, setGroupByVideo] = useState(false);
-  const [groupSort, setGroupSort] = useState<GroupSort>("score");
 
   useEffect(() => {
     setSelected(null);
@@ -63,33 +63,6 @@ export function SingleResultInspector({
 
   return (
     <section className="result-inspector" aria-label="Search results">
-      <div className="result-inspector__heading">
-        <div className="result-group-controls">
-          <label className="result-group-toggle">
-            <input
-              type="checkbox"
-              checked={groupByVideo}
-              onChange={(event) => setGroupByVideo(event.target.checked)}
-            />
-            <span>Group by video</span>
-          </label>
-          {groupByVideo && (
-            <label className="result-group-sort">
-              <span>Sort by</span>
-              <select
-                aria-label="Sort grouped results"
-                value={groupSort}
-                onChange={(event) => setGroupSort(event.target.value as GroupSort)}
-              >
-                <option value="score">Score</option>
-                <option value="time">Time</option>
-              </select>
-            </label>
-          )}
-        </div>
-        <span className="mini-badge">{response.query_type}</span>
-      </div>
-
       {response.query_type === "VQA" && (
         <div style={{ marginBottom: "1rem" }}>
           <label className="field" htmlFor="global-vqa-answer">

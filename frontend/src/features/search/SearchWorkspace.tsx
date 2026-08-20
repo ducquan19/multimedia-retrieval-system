@@ -18,6 +18,7 @@ import {
 } from "../../api/types";
 import { SingleResultInspector } from "../results/SingleResultInspector";
 import { TrakeResultInspector } from "../results/TrakeResultInspector";
+import { VideoLookup } from "../results/VideoLookup";
 
 const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
   { key: "image", label: "Image" },
@@ -25,6 +26,8 @@ const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
   { key: "object", label: "Object" },
   { key: "ocr", label: "OCR" },
 ];
+
+type GroupSort = "score" | "time";
 
 interface SearchMutationVariables {
   payload: SearchRequest;
@@ -66,6 +69,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     Array.from({ length: initialEventCount }, () => ""),
   );
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [groupByVideo, setGroupByVideo] = useState(false);
+  const [groupSort, setGroupSort] = useState<GroupSort>("score");
   const activeController = useRef<AbortController | null>(null);
 
   const searchMutation = useMutation<SearchResponse, unknown, SearchMutationVariables>({
@@ -168,6 +173,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     activeController.current?.abort();
     const controller = new AbortController();
     activeController.current = controller;
+    setGroupByVideo(false);
+    setGroupSort("score");
     searchMutation.mutate({ payload, signal: controller.signal });
   };
 
@@ -432,7 +439,56 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       </aside>
 
       <div className="workspace__results" aria-label="Search results">
-        <SearchState mutation={searchMutation} maxAnswerLength={config.max_answer_length} />
+        <header className="result-zone__header" aria-label="Result tools">
+          <div className="result-zone__header-start">
+            {searchMutation.data?.results.length ? (
+              searchMutation.data.query_type === "TRAKE" ? (
+                <div className="result-zone__summary">
+                  <strong>{searchMutation.data.results.length} candidates</strong>
+                  <span>Temporal candidate rows</span>
+                </div>
+              ) : (
+                <div className="result-group-controls">
+                  <label className="result-group-toggle">
+                    <input
+                      type="checkbox"
+                      checked={groupByVideo}
+                      onChange={(event) => setGroupByVideo(event.target.checked)}
+                    />
+                    <span>Group by video</span>
+                  </label>
+                  {groupByVideo && (
+                    <label className="result-group-sort">
+                      <span>Sort by</span>
+                      <select
+                        aria-label="Sort grouped results"
+                        value={groupSort}
+                        onChange={(event) => setGroupSort(event.target.value as GroupSort)}
+                      >
+                        <option value="score">Score</option>
+                        <option value="time">Time</option>
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )
+            ) : null}
+          </div>
+          <VideoLookup />
+          <div className="result-zone__header-end">
+            {searchMutation.data?.results.length ? (
+              <span className="mini-badge">{searchMutation.data.query_type}</span>
+            ) : null}
+          </div>
+        </header>
+        <div className="result-zone__content">
+          <SearchState
+            mutation={searchMutation}
+            maxAnswerLength={config.max_answer_length}
+            groupByVideo={groupByVideo}
+            groupSort={groupSort}
+          />
+        </div>
       </div>
     </section>
   );
@@ -441,9 +497,11 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
 interface SearchStateProps {
   mutation: UseMutationResult<SearchResponse, unknown, SearchMutationVariables>;
   maxAnswerLength: number;
+  groupByVideo: boolean;
+  groupSort: GroupSort;
 }
 
-function SearchState({ mutation, maxAnswerLength }: SearchStateProps) {
+function SearchState({ mutation, maxAnswerLength, groupByVideo, groupSort }: SearchStateProps) {
   if (mutation.isPending) {
     return (
       <section className="result-state" aria-live="polite" aria-busy="true">
@@ -503,7 +561,12 @@ function SearchState({ mutation, maxAnswerLength }: SearchStateProps) {
           />
         )
       ) : (
-        <SingleResultInspector response={mutation.data} maxAnswerLength={maxAnswerLength} />
+        <SingleResultInspector
+          response={mutation.data}
+          maxAnswerLength={maxAnswerLength}
+          groupByVideo={groupByVideo}
+          groupSort={groupSort}
+        />
       )}
     </section>
   );

@@ -74,20 +74,7 @@ export function TrakeResultInspector({
   }
 
   return (
-    <section className="result-inspector" aria-labelledby="trake-inspector-heading">
-      <div className="result-inspector__heading">
-        <div>
-          <p className="eyebrow eyebrow--dark">Temporal candidate rows</p>
-          <h3 id="trake-inspector-heading">{orderedResults.length} candidates</h3>
-          <p>
-            Events stay fixed from Event 1 to Event {expectedEventCount}.
-          </p>
-        </div>
-        <div className="result-inspector__actions">
-          <span className="mini-badge">TRAKE</span>
-        </div>
-      </div>
-
+    <section className="result-inspector" aria-label="TRAKE search results">
       <div
         className="trake-table-scroll"
         data-testid="trake-scroll-container"

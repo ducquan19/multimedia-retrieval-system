@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -99,6 +99,8 @@ describe("App query workspace", () => {
 
     expect(await screen.findByLabelText(/^Query KIS/)).toBeInTheDocument();
     expect(screen.getByLabelText("Top-K")).toHaveAttribute("type", "number");
+    expect(screen.getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open" })).toBeDisabled();
 
     await user.click(screen.getByRole("tab", { name: /VQA/ }));
     expect(screen.getByLabelText(/^Query VQA/)).toBeInTheDocument();
@@ -118,6 +120,23 @@ describe("App query workspace", () => {
     expect(topKInput).toHaveValue(50);
     expect(topKInput.closest(".workspace__footer")).not.toBeNull();
     expect(screen.queryByText("Top-K")).not.toBeInTheDocument();
+  });
+
+  it("keeps result controls and video lookup in one shared header", async () => {
+    setupApi();
+    const user = userEvent.setup();
+    renderApp();
+
+    const header = await screen.findByRole("banner", { name: "Result tools" });
+    expect(within(header).getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
+    expect(within(header).queryByRole("checkbox", { name: "Group by video" })).not.toBeInTheDocument();
+
+    await user.type(await screen.findByLabelText(/^Query KIS/), "query");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(await within(header).findByRole("checkbox", { name: "Group by video" })).toBeInTheDocument();
+    expect(within(header).getByText("KIS")).toBeInTheDocument();
+    expect(within(header).getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
   });
 
   it("submits the typed KIS payload with shared controls", async () => {
