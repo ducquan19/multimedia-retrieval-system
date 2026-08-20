@@ -34,11 +34,7 @@ import {
   formatScore,
 } from "./ResultDetailModal";
 import { ResultImage } from "./ResultImage";
-import {
-  SHOW_MOVE_CONTROLS,
-  createResultEditorState,
-  resultEditorReducer,
-} from "./resultState";
+import { createResultEditorState, resultEditorReducer } from "./resultState";
 import { validateTrakeResults } from "./trakeValidation";
 
 interface TrakeResultInspectorProps {
@@ -83,10 +79,6 @@ export function TrakeResultInspector({
     const result = resultsById.get(resultId);
     return result ? [result] : [];
   });
-  const orderChanged = state.order.some(
-    (resultId, index) => resultId !== state.initialOrder[index],
-  );
-
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
     dispatch({ type: "move", activeId: String(active.id), overId: String(over.id) });
@@ -132,14 +124,6 @@ export function TrakeResultInspector({
         </div>
         <div className="result-inspector__actions">
           <span className="mini-badge">TRAKE</span>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={!orderChanged}
-            onClick={() => dispatch({ type: "reset-order" })}
-          >
-            Reset order
-          </button>
         </div>
       </div>
 
@@ -157,11 +141,6 @@ export function TrakeResultInspector({
                   result={result}
                   rank={index + 1}
                   eventCount={expectedEventCount}
-                  canMoveUp={index > 0}
-                  canMoveDown={index < orderedResults.length - 1}
-                  onMove={(offset) =>
-                    dispatch({ type: "move-by", resultId: result.result_id, offset })
-                  }
                   onOpenDetail={(event, trigger) => openEventDetail(result, event, trigger)}
                 />
               ))}
@@ -179,9 +158,6 @@ interface SortableTrakeRowProps {
   result: TRAKESearchResult;
   rank: number;
   eventCount: number;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
-  onMove: (offset: -1 | 1) => void;
   onOpenDetail: (event: TRAKEEventResult, trigger: HTMLButtonElement) => void;
 }
 
@@ -189,9 +165,6 @@ function SortableTrakeRow({
   result,
   rank,
   eventCount,
-  canMoveUp,
-  canMoveDown,
-  onMove,
   onOpenDetail,
 }: SortableTrakeRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -220,26 +193,6 @@ function SortableTrakeRow({
           <strong>{result.video_id}</strong>
           <span>Score {formatScore(result.similarity_score)}</span>
         </div>
-        {SHOW_MOVE_CONTROLS && (
-          <div className="trake-row__controls" aria-label={`Reorder ${result.video_id}`}>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={!canMoveUp}
-              onClick={() => onMove(-1)}
-            >
-              Move up
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={!canMoveDown}
-              onClick={() => onMove(1)}
-            >
-              Move down
-            </button>
-          </div>
-        )}
       </article>
 
       {result.events.map((event) => (

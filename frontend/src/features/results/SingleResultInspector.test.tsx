@@ -154,7 +154,7 @@ describe("SingleResultInspector", () => {
     const groupedResults = [
       results[0]!,
       results[1]!,
-      { ...results[2]!, video_id: "L01_V001" },
+      { ...results[2]!, video_id: "L01_V001", similarity_score: 0.99 },
     ];
     render(
       <SingleResultInspector
@@ -163,8 +163,9 @@ describe("SingleResultInspector", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Results" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Results" })).not.toBeInTheDocument();
     expect(screen.queryByText("Editable result order")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Sort grouped results" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "Group by video" }));
 
     const groups = screen.getAllByTestId("video-group");
@@ -172,7 +173,15 @@ describe("SingleResultInspector", () => {
     expect(groups[0]).toHaveTextContent("L01_V001");
     expect(groups[0]).toHaveTextContent("2 results");
     expect(groups[1]).toHaveTextContent("L02_V002");
-    expect(screen.getByRole("button", { name: "Reset order" })).toBeDisabled();
+    expect(within(groups[0]!).getAllByTestId("result-card")[0]).toHaveTextContent("Frame 1240");
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Sort grouped results" }),
+      "time",
+    );
+
+    expect(within(groups[0]!).getAllByTestId("result-card")[0]).toHaveTextContent("Frame 505");
+    expect(screen.queryByRole("button", { name: "Reset order" })).not.toBeInTheDocument();
   });
 
   it("initializes fresh order and answers for a new query response", async () => {

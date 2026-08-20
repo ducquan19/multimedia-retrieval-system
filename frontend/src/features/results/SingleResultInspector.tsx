@@ -23,11 +23,7 @@ import type {
 } from "../../api/types";
 import { ResultDetailModal, formatScore } from "./ResultDetailModal";
 import { ResultImage } from "./ResultImage";
-import {
-  SHOW_MOVE_CONTROLS,
-  createResultEditorState,
-  resultEditorReducer,
-} from "./resultState";
+import { createResultEditorState, resultEditorReducer } from "./resultState";
 
 interface SingleResultInspectorProps {
   response: KISSearchResponse | VQASearchResponse;
@@ -38,6 +34,8 @@ interface SelectedResult {
   result: SingleSearchResult;
   trigger: HTMLButtonElement;
 }
+
+type GroupSort = "score" | "time";
 
 export function SingleResultInspector({
   response,
@@ -51,6 +49,7 @@ export function SingleResultInspector({
   const [selected, setSelected] = useState<SelectedResult | null>(null);
   const [globalVQAAnswer, setGlobalVQAAnswer] = useState("");
   const [groupByVideo, setGroupByVideo] = useState(false);
+  const [groupSort, setGroupSort] = useState<GroupSort>("score");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -71,9 +70,6 @@ export function SingleResultInspector({
     const result = resultsById.get(resultId);
     return result ? [result] : [];
   });
-  const orderChanged = state.order.some(
-    (resultId, index) => resultId !== state.initialOrder[index],
-  );
   const resultRankById = new Map(
     orderedResults.map((result, index) => [result.result_id, index + 1]),
   );
@@ -86,7 +82,14 @@ export function SingleResultInspector({
         return groups;
       }, new Map<string, SingleSearchResult[]>())
       .entries(),
-  );
+  ).map(([videoId, results]) => [
+    videoId,
+    [...results].sort((left, right) =>
+      groupSort === "score"
+        ? right.similarity_score - left.similarity_score
+        : left.frame_id - right.frame_id,
+    ),
+  ] as const);
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
     dispatch({ type: "move", activeId: String(active.id), overId: String(over.id) });
@@ -99,11 +102,9 @@ export function SingleResultInspector({
   }, [selected]);
 
   return (
-    <section className="result-inspector" aria-labelledby="result-inspector-heading">
+    <section className="result-inspector" aria-label="Search results">
       <div className="result-inspector__heading">
-        <h3 id="result-inspector-heading">Results</h3>
-        <div className="result-inspector__actions">
-          <span className="mini-badge">{response.query_type}</span>
+        <div className="result-group-controls">
           <label className="result-group-toggle">
             <input
               type="checkbox"
@@ -112,15 +113,21 @@ export function SingleResultInspector({
             />
             <span>Group by video</span>
           </label>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={groupByVideo || !orderChanged}
-            onClick={() => dispatch({ type: "reset-order" })}
-          >
-            Reset order
-          </button>
+          {groupByVideo && (
+            <label className="result-group-sort">
+              <span>Sort by</span>
+              <select
+                aria-label="Sort grouped results"
+                value={groupSort}
+                onChange={(event) => setGroupSort(event.target.value as GroupSort)}
+              >
+                <option value="score">Score</option>
+                <option value="time">Time</option>
+              </select>
+            </label>
+          )}
         </div>
+        <span className="mini-badge">{response.query_type}</span>
       </div>
 
       {response.query_type === "VQA" && (
@@ -153,10 +160,7 @@ export function SingleResultInspector({
                     key={result.result_id}
                     result={result}
                     rank={resultRankById.get(result.result_id) ?? 0}
-                    canMoveUp={false}
-                    canMoveDown={false}
                     reorderingDisabled
-                    onMove={() => undefined}
                     onOpenDetail={(trigger) => setSelected({ result, trigger })}
                   />
                 ))}
@@ -173,12 +177,7 @@ export function SingleResultInspector({
                   key={result.result_id}
                   result={result}
                   rank={index + 1}
-                  canMoveUp={index > 0}
-                  canMoveDown={index < orderedResults.length - 1}
                   reorderingDisabled={false}
-                  onMove={(offset) =>
-                    dispatch({ type: "move-by", resultId: result.result_id, offset })
-                  }
                   onOpenDetail={(trigger) => setSelected({ result, trigger })}
                 />
               ))}
@@ -195,20 +194,14 @@ export function SingleResultInspector({
 interface SortableResultCardProps {
   result: SingleSearchResult;
   rank: number;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
   reorderingDisabled: boolean;
-  onMove: (offset: -1 | 1) => void;
   onOpenDetail: (trigger: HTMLButtonElement) => void;
 }
 
 function SortableResultCard({
   result,
   rank,
-  canMoveUp,
-  canMoveDown,
   reorderingDisabled,
-  onMove,
   onOpenDetail,
 }: SortableResultCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -250,28 +243,6 @@ function SortableResultCard({
             </div>
             <span className="score-badge">{formatScore(result.similarity_score)}</span>
           </div>
-          {SHOW_MOVE_CONTROLS && !reorderingDisabled && (
-            <div className="result-card__controls" aria-label={`Reorder ${result.video_id}`}>
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!canMoveUp}
-                onClick={() => onMove(-1)}
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                Move up
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!canMoveDown}
-                onClick={() => onMove(1)}
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                Move down
-              </button>
-            </div>
-          )}
         </div>
       </article>
     </li>
