@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type {
   TRAKEEventResult,
@@ -8,7 +8,6 @@ import type {
   TRAKESearchResult,
 } from "../../api/types";
 import { TrakeResultInspector } from "./TrakeResultInspector";
-import { createResultEditorState, resultEditorReducer } from "./resultState";
 
 function event(eventIndex: number, frameId: number, label: string): TRAKEEventResult {
   return {
@@ -54,8 +53,6 @@ function rows(): HTMLElement[] {
   return screen.getAllByTestId("trake-row");
 }
 
-afterEach(() => vi.unstubAllGlobals());
-
 describe("TrakeResultInspector", () => {
   it("renders exactly N event cells in fixed Event 1..N order", () => {
     render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
@@ -69,49 +66,6 @@ describe("TrakeResultInspector", () => {
         "Event 3",
       ]);
     }
-  });
-
-
-
-  it("exports each TRAKE row with exactly N fixed frame IDs", async () => {
-    const payloads: Record<string, unknown>[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
-        payloads.push(JSON.parse(String(init.body)) as Record<string, unknown>);
-        return new Response(
-          JSON.stringify({
-            content: "L01_V001,101,151,203\r\nL02_V002,305,390,480\r\n",
-            filename: "trake_submission.csv",
-            row_count: 2,
-            warnings: [],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }),
-    );
-    const user = userEvent.setup();
-    render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
-
-    await user.click(screen.getByRole("button", { name: "Preview submission" }));
-
-    expect(await screen.findByTestId("submission-preview-content")).toHaveTextContent(
-      "L01_V001,101,151,203",
-    );
-    expect(payloads[0]).toMatchObject({
-      query_type: "TRAKE",
-      event_count: 3,
-      rows: [
-        {
-          video_id: "L01_V001",
-          frame_ids: [101, 151, 203],
-        },
-        {
-          video_id: "L02_V002",
-          frame_ids: [305, 390, 480],
-        },
-      ],
-    });
   });
 
   it("opens the shared event modal with ASR and restores focus", async () => {

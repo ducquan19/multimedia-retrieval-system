@@ -27,9 +27,7 @@ import type {
   TRAKEEventResult,
   TRAKESearchResponse,
   TRAKESearchResult,
-  SubmissionRequest,
 } from "../../api/types";
-import { SubmissionActions } from "../submissions/SubmissionActions";
 import {
   type ResultDetail,
   ResultDetailModal,
@@ -85,16 +83,6 @@ export function TrakeResultInspector({
     (resultId, index) => resultId !== state.initialOrder[index],
   );
 
-  const buildSubmissionPayload = (filename: string): SubmissionRequest => ({
-    query_type: "TRAKE",
-    filename,
-    event_count: expectedEventCount,
-    rows: orderedResults.map((result) => ({
-      video_id: result.video_id,
-      frame_ids: result.events.map((event) => event.frame_id),
-    })),
-  });
-
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
     dispatch({ type: "move", activeId: String(active.id), overId: String(over.id) });
@@ -140,6 +128,14 @@ export function TrakeResultInspector({
         </div>
         <div className="result-inspector__actions">
           <span className="mini-badge">TRAKE</span>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={!orderChanged}
+            onClick={() => dispatch({ type: "reset-order" })}
+          >
+            Reset order
+          </button>
         </div>
       </div>
 
@@ -169,15 +165,6 @@ export function TrakeResultInspector({
           </SortableContext>
         </DndContext>
       </div>
-
-      <SubmissionActions
-        queryType="TRAKE"
-        rowCount={orderedResults.length}
-        orderChanged={orderChanged}
-        stateVersion={JSON.stringify(state.order)}
-        onResetOrder={() => dispatch({ type: "reset-order" })}
-        buildPayload={buildSubmissionPayload}
-      />
 
       {selected && <ResultDetailModal result={selected.result} onClose={closeDetail} />}
     </section>
@@ -230,6 +217,24 @@ function SortableTrakeRow({
           <strong>{result.video_id}</strong>
           <small>{result.result_id}</small>
           <span>Row score {formatScore(result.similarity_score)}</span>
+        </div>
+        <div className="trake-row__controls" aria-label={`Reorder ${result.video_id}`}>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={!canMoveUp}
+            onClick={() => onMove(-1)}
+          >
+            Move up
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={!canMoveDown}
+            onClick={() => onMove(1)}
+          >
+            Move down
+          </button>
         </div>
       </article>
 

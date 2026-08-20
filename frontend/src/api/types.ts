@@ -15,7 +15,7 @@ interface BaseSearchRequest {
   enhance_query: boolean;
   use_reranking: boolean;
   search_sources: SearchSources;
-  model_choice: "siglip" | "beit3" | "hybrid";
+  model_choices: ("siglip" | "beit3")[];
 }
 
 export interface KISSearchRequest extends BaseSearchRequest {
@@ -35,7 +35,7 @@ export interface TRAKEEventQuery {
 
 export interface TRAKESearchRequest extends BaseSearchRequest {
   query_type: "TRAKE";
-  main_query: string;
+  main_query?: string;
   events: TRAKEEventQuery[];
 }
 
@@ -96,42 +96,6 @@ export interface TRAKESearchResponse extends BaseSearchResponse {
 }
 
 export type SearchResponse = KISSearchResponse | VQASearchResponse | TRAKESearchResponse;
-
-export interface KISSubmissionRequest {
-  query_type: "KIS";
-  filename: string;
-  rows: { video_id: string; frame_id: number }[];
-}
-
-export interface VQASubmissionRequest {
-  query_type: "VQA";
-  filename: string;
-  rows: { video_id: string; frame_id: number; answer: string }[];
-}
-
-export interface TRAKESubmissionRequest {
-  query_type: "TRAKE";
-  filename: string;
-  event_count: number;
-  rows: { video_id: string; frame_ids: number[] }[];
-}
-
-export type SubmissionRequest =
-  | KISSubmissionRequest
-  | VQASubmissionRequest
-  | TRAKESubmissionRequest;
-
-export interface SubmissionRenderResponse {
-  content: string;
-  filename: string;
-  row_count: number;
-  warnings: string[];
-}
-
-export interface SubmissionDownload {
-  blob: Blob;
-  filename: string;
-}
 
 export interface PublicConfig {
   min_top_k: number;

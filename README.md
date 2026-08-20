@@ -1,13 +1,13 @@
 # AIC 2026 Retrieval Inspector
 
-A local web application for inspecting video-retrieval results, manually reranking candidates, and building submissions for the HCMC AI Challenge 2026.
+A local web application for inspecting video-retrieval results and manually reranking candidates for the HCMC AI Challenge 2026. Users submit selected results manually outside the application.
 
 > [!IMPORTANT]
 > Retrieval and Gemini query enhancement currently run in **mock mode**. The application does not call Gemini, generate embeddings, query a vector database, or perform AI inference.
 
 ## Project status
 
-The backend foundation is complete through Phase 3, and the frontend is complete through the TRAKE result inspector in Phase 6. Submission controls remain for the next frontend phase.
+The application provides the retrieval and result-inspection workflow. File generation and submission handling are intentionally out of scope.
 
 | Capability | Status |
 | --- | --- |
@@ -16,23 +16,21 @@ The backend foundation is complete through Phase 3, and the frontend is complete
 | Cached normalized manifest loader | Available |
 | Deterministic fixture retrieval | Available |
 | Safe media serving | Available |
-| CSV submission preview and download | Available |
 | React application shell and API health check | Available |
 | Typed KIS, VQA, and TRAKE query forms | Available |
 | Hybrid controls, request cancellation, and query states | Available |
 | KIS/VQA result inspector and detail modal | Available |
 | KIS/VQA drag-and-drop and accessible fallback reranking | Available |
 | TRAKE row inspector, event modal, and accessible reranking | Available |
-| Submission controls in the UI | Planned |
 | Real AI retrieval and Gemini integration | Out of scope for the MVP |
 
 ## Supported query types
 
-- **KIS — Textual Known Item Search:** submit `<video_id>,<frame_id>`.
-- **VQA — Visual Question Answering:** submit `<video_id>,<frame_id>,<answer>`.
-- **TRAKE — Temporal Retrieval and Alignment of Key Events:** submit `<video_id>,<frame_id_1>,...,<frame_id_n>`.
+- **KIS — Textual Known Item Search:** inspect candidate video/frame pairs.
+- **VQA — Visual Question Answering:** inspect candidates and edit answers locally in the current browser session.
+- **TRAKE — Temporal Retrieval and Alignment of Key Events:** inspect event sequences for each candidate video.
 
-The order of submission rows is significant. The backend always preserves the order received from the client and never sorts rows using an old retrieval rank.
+Users can rerank results for review, then submit the chosen identifiers manually using the competition's external workflow.
 
 ## Technology stack
 
@@ -117,7 +115,7 @@ The defaults work for local development:
 | `AIC_DEFAULT_TOP_K` | `50` | Default number of search candidates |
 | `AIC_MAX_TRAKE_EVENTS` | `10` | Deployment-level TRAKE event limit |
 | `AIC_MAX_QUERY_LENGTH` | `4000` | Maximum characters in each search query or TRAKE event query |
-| `AIC_MAX_ANSWER_LENGTH` | `4000` | Maximum characters in each VQA submission answer |
+| `AIC_MAX_ANSWER_LENGTH` | `4000` | Maximum characters in each locally edited VQA answer |
 | `VITE_API_BASE_URL` | Empty | Optional API base URL used by the built frontend |
 | `VITE_DEV_API_TARGET` | `http://localhost:8000` | Vite development proxy target |
 | `AIC_GEMINI_API_KEY` | None | API Key to use Gemini for query enhancement |
@@ -166,8 +164,6 @@ During development, the frontend sends `/api` requests through the Vite proxy. P
 | `GET` | `/api/health` | Process health check |
 | `GET` | `/api/config` | Public top-k, text limits, TRAKE, and mock-mode settings |
 | `POST` | `/api/search` | Deterministic mock search for KIS, VQA, or TRAKE |
-| `POST` | `/api/submissions/render` | Validate rows and return a CSV preview |
-| `POST` | `/api/submissions/download` | Return the same CSV content as an attachment |
 | `GET` | `/media/{relative_path}` | Safely serve a file below `AIC_DATA_ROOT` |
 
 See [docs/API.md](docs/API.md) for the complete request and response contract.
@@ -193,26 +189,6 @@ Invoke-RestMethod -Method Post `
   -ContentType "application/json" `
   -Body $searchBody
 ```
-
-### Example: render an ordered KIS submission
-
-```powershell
-$submissionBody = @{
-  query_type = "KIS"
-  filename = "kis-results.csv"
-  rows = @(
-    @{ video_id = "L02_V003"; frame_id = 910 },
-    @{ video_id = "L01_V001"; frame_id = 505 }
-  )
-} | ConvertTo-Json -Depth 3
-
-Invoke-RestMethod -Method Post `
-  -Uri http://localhost:8000/api/submissions/render `
-  -ContentType "application/json" `
-  -Body $submissionBody
-```
-
-Submission output is UTF-8 CSV without a header. VQA answers containing commas, quotes, newlines, or Unicode are escaped with Python's `csv.writer`. Download filenames are reduced to safe basenames and forced to use the `.csv` extension.
 
 ## Data layout
 
@@ -297,7 +273,7 @@ make test
 make build
 ```
 
-Playwright is configured, but end-to-end flows will be added after the frontend search and submission workspaces are implemented.
+Playwright is configured for browser-level workflow tests.
 
 ## Project structure
 
@@ -325,7 +301,6 @@ Important documentation:
 
 - Manifest and media paths must remain below `AIC_DATA_ROOT`.
 - Absolute paths, traversal components, and unsafe media paths are rejected.
-- Submission filenames are never used to write server-side files.
 - Development CORS is limited to the configured local frontend origin.
 - Secrets are not logged or returned to the client.
 - The MVP has no authentication because it is intended as a local, single-team tool.
@@ -334,9 +309,6 @@ Important documentation:
 
 The backend search engine reads deterministic fixture data. Gemini enhancement adds a visible mock marker, and hybrid source flags are validated and passed through without performing vector search.
 
-Remaining MVP phases:
-
-1. Connect the frontend to submission preview/download and add end-to-end tests.
-2. Complete the final security, performance, accessibility, and documentation audit.
+Remaining MVP work focuses on the final security, performance, accessibility, and documentation audit.
 
 Real Gemini calls, embedding generation, vector databases, OCR/ASR inference, automatic VQA answers, automatic TRAKE alignment, user accounts, and production cloud deployment remain outside the current MVP scope.

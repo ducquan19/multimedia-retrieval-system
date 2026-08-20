@@ -1,18 +1,16 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from core.config import get_settings
 from core.logger import SimpleLogger
-from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
-from infrastructure.embedding_service import EmbeddingService
-from repositories.vector_repository import KeyframeVectorRepository
-from repositories.text_repository import KeyframeTextRepository
 from infrastructure.blip2_reranker import BLIP2Reranker
+from infrastructure.embedding_service import EmbeddingService
+from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
+from repositories.text_repository import KeyframeTextRepository
+from repositories.vector_repository import KeyframeVectorRepository
 from services.retrieval_service import RetrievalService
 from services.search_service import SearchService
-from services.submission_service import SubmissionService
-
-from infrastructure.submission_csv import CsvSubmissionFormatter
 
 logger = SimpleLogger(__name__)
 
@@ -58,8 +56,13 @@ async def lifespan(app: FastAPI):
         text_repository = KeyframeTextRepository(resolved_settings.es_url, keyframe_repository)
         
         # 5. Reranker
-        logger.info(f"Initializing BLIP-2 Reranker (enabled={resolved_settings.enable_reranking})...")
-        blip2_reranker = BLIP2Reranker(resolved_settings.data_root, resolved_settings.enable_reranking)
+        logger.info(
+            "Initializing BLIP-2 Reranker "
+            f"(enabled={resolved_settings.enable_reranking})..."
+        )
+        blip2_reranker = BLIP2Reranker(
+            resolved_settings.data_root, resolved_settings.enable_reranking
+        )
         
         # 6. Core Services
         logger.info("Initializing Retrieval Service...")
@@ -86,14 +89,8 @@ async def lifespan(app: FastAPI):
             data_root=resolved_settings.data_root
         )
         
-        logger.info("Initializing Submission Service...")
-        submission_service = SubmissionService(
-            CsvSubmissionFormatter(), resolved_settings.max_answer_length
-        )
-        
         # Attach to app.state
         app.state.search_service = search_service
-        app.state.submission_service = submission_service
         
         logger.info("Application startup completed successfully.")
         
