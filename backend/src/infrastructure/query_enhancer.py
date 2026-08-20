@@ -12,6 +12,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_GEMINI_MODEL = "gemini-3.5-flash-lite"
+
+
 class QueryEnhancer(Protocol):
     def enhance(self, query: str, query_type: str) -> QueryVariants | None: ...
     def enhance_batch(self, queries: dict[int, str]) -> dict[int, QueryVariants] | None: ...
@@ -54,12 +57,11 @@ class GeminiQueryEnhancer:
 
         try:
             response = self.client.models.generate_content(
-                model='gemini-2.5-flash-lite',
+                model=_GEMINI_MODEL,
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=QueryVariants,
-                    temperature=0.7,
                 ),
             )
 
@@ -101,12 +103,11 @@ class GeminiQueryEnhancer:
 
         try:
             response = self.client.models.generate_content(
-                model='gemini-2.5-flash-lite',
+                model=_GEMINI_MODEL,
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=QueryVariantsBatch,
-                    temperature=0.7,
                 ),
             )
 
