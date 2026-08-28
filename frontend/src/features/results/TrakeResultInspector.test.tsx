@@ -16,7 +16,6 @@ function event(eventIndex: number, frameId: number, label: string): TRAKEEventRe
     keyframe_url: `/media/keyframes/${label}.jpg`,
     segment_id: `segment-${label}`,
     asr_text: `ASR transcript ${label}`,
-    ocr_text: "",
     objects: [],
     similarity_score: 0.9 - eventIndex / 100,
   };

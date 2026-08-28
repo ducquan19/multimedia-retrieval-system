@@ -1,4 +1,5 @@
 import type {
+  KISQueryPlan,
   PublicConfig,
   SearchRequest,
   SearchResponse,
@@ -84,6 +85,15 @@ export function friendlySearchError(error: unknown): string {
     return error.message;
   }
   return "Không thể hoàn tất tìm kiếm. Vui lòng thử lại.";
+}
+
+export function planKisQuery(query: string, signal?: AbortSignal): Promise<KISQueryPlan> {
+  return requestJson<KISQueryPlan>("/api/search/kis/plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+    signal,
+  });
 }
 
 export function getVideoSource(

@@ -13,7 +13,7 @@ from schemas.search import KISSearchRequest
 
 
 def sources(**overrides: bool) -> dict[str, bool]:
-    values = {"image": True, "asr": False, "object": False, "ocr": False}
+    values = {"image": True, "asr": False, "object": False}
     values.update(overrides)
     return values
 
@@ -209,7 +209,6 @@ def test_missing_optional_manifest_fields_are_normalized(client: TestClient) -> 
     fourth_result = response.json()["results"][3]
     assert fourth_result["video_id"] == "L04_V004"
     assert fourth_result["asr_text"] == ""
-    assert fourth_result["ocr_text"] == ""
     assert fourth_result["objects"] == []
 
 
@@ -246,6 +245,20 @@ def test_all_search_sources_disabled_is_rejected(client: TestClient) -> None:
             "top_k": 5,
             "enhance_query": False,
             "search_sources": sources(image=False),
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_removed_ocr_source_is_rejected(client: TestClient) -> None:
+    response = client.post(
+        "/api/search",
+        json={
+            "query_type": "KIS",
+            "query": "anything",
+            "top_k": 5,
+            "search_sources": {"image": True, "asr": False, "object": False, "ocr": True},
         },
     )
 

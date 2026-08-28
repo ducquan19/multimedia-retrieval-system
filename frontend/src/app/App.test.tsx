@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { QueryType } from "../api/types";
+import type { KISQueryPlan, QueryType } from "../api/types";
 import { App } from "./App";
 
 const publicConfig = {
@@ -32,7 +32,7 @@ function searchResponse(
     original_query: "original query",
     enhanced_query: options.enhanced ? "[Mock enhanced KIS] original query" : null,
     model_choices: ["siglip"],
-    applied_weights: options.weights ? { w_vis: 1, w_ocr: 0, w_asr: 0 } : null,
+    applied_weights: options.weights ? { w_vis: 1, w_asr: 0 } : null,
     warnings: [],
     results: options.empty
       ? []
@@ -45,7 +45,6 @@ function searchResponse(
             keyframe_url: "/media/keyframes/mock-frame.svg",
             segment_id: "segment-001",
             asr_text: "Một người đang mở laptop.",
-            ocr_text: "AIC 2026",
             objects: [{ label: "laptop", score: 0.97 }],
             similarity_score: 0.9821,
             answer: "",
@@ -56,11 +55,32 @@ function searchResponse(
 
 type SearchHandler = (init: RequestInit) => Response | Promise<Response>;
 
-function setupApi(searchHandler: SearchHandler = () => jsonResponse(searchResponse("KIS"))) {
+const queryPlan: KISQueryPlan = {
+  search_mode: "temporal_sequence",
+  planner_model: "gemini-3.5-flash-lite",
+  warnings: [],
+  events: [
+    {
+      event_index: 1,
+      source_span_vi: "tháo rời máy ảnh",
+      visual_query_en: "a person disassembling a camera",
+      asr_query_vi: null,
+      importance: "anchor",
+      confidence: 0.96,
+      inferred: false,
+    },
+  ],
+};
+
+function setupApi(
+  searchHandler: SearchHandler = () => jsonResponse(searchResponse("KIS")),
+  planHandler: SearchHandler = () => jsonResponse(queryPlan),
+) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(input);
     if (url.endsWith("/api/health")) return Promise.resolve(jsonResponse({ status: "ok" }));
     if (url.endsWith("/api/config")) return Promise.resolve(jsonResponse(publicConfig));
+    if (url.endsWith("/api/search/kis/plan")) return Promise.resolve(planHandler(init));
     if (url.endsWith("/api/search")) return Promise.resolve(searchHandler(init));
     return Promise.resolve(jsonResponse({ detail: "Not found" }, 404));
   });
@@ -179,7 +199,7 @@ describe("App query workspace", () => {
       enhance_query: false,
       use_reranking: false,
       model_choices: ["siglip"],
-      search_sources: { image: true, asr: true, object: false, ocr: false },
+      search_sources: { image: true, asr: true, object: false },
     });
   });
 
@@ -220,7 +240,7 @@ describe("App query workspace", () => {
       enhance_query: false,
       use_reranking: false,
       model_choices: ["siglip"],
-      search_sources: { image: true, asr: false, object: false, ocr: false },
+      search_sources: { image: true, asr: false, object: false },
     });
     expect(searchPayload(fetchMock)).not.toHaveProperty("answer");
   });
@@ -284,6 +304,51 @@ describe("App query workspace", () => {
     expect(enhanced).toBeInTheDocument();
     expect(screen.getByText("[Mock enhanced KIS] original query")).toBeInTheDocument();
   });
+
+  it(
+    "plans and submits an editable advanced KIS query only when opted in",
+    async () => {
+      const fetchMock = setupApi(() =>
+        jsonResponse(searchResponse("KIS", { enhanced: true, empty: true })),
+      );
+      const user = userEvent.setup();
+      renderApp();
+
+    await user.type(await screen.findByLabelText(/^Query KIS/), "tháo máy ảnh rồi lau lens");
+    await user.click(screen.getByLabelText("Query Understanding & Planning"));
+    expect(screen.getByLabelText(/^Enhance query/)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Search" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Execute" }));
+    const visualQuery = await screen.findByLabelText("Visual query event 1");
+    expect(visualQuery).toHaveValue("a person disassembling a camera");
+    await user.clear(visualQuery);
+    await user.type(visualQuery, "a detached camera lens on a purple towel");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    await screen.findByText("Không tìm thấy candidate");
+    expect(screen.queryByText("Enhanced:")).not.toBeInTheDocument();
+    expect(searchPayload(fetchMock)).toMatchObject({
+      query_type: "KIS",
+      query_understanding: true,
+      enhance_query: false,
+      query_plan: {
+        search_mode: "temporal_sequence",
+        events: [
+          {
+            event_index: 1,
+            visual_query_en: "a detached camera lens on a purple towel",
+            importance: "anchor",
+          },
+        ],
+      },
+    });
+
+      await user.click(screen.getByRole("tab", { name: /VQA/ }));
+      expect(screen.queryByLabelText("Query Understanding & Planning")).not.toBeInTheDocument();
+    },
+    15_000,
+  );
 
   it("shows applied weights only for a search submitted with enhancement", async () => {
     setupApi(() => jsonResponse(searchResponse("KIS", { weights: true })));

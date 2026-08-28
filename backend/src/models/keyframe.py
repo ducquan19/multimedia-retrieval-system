@@ -30,7 +30,6 @@ class Keyframe(BaseModel):
     video_path: str | None = None
     segment_id: str | None = None
     asr_text: str | None = None
-    ocr_text: str | None = None
     objects: list[dict[str, Any]] | None = None
 
     @field_validator("image_path")

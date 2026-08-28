@@ -24,7 +24,7 @@ def test_hybrid_source_flags_pass_through_to_retrieval_engine() -> None:
         query_type="KIS",
         query="query",
         top_k=5,
-        search_sources=SearchSources(image=False, asr=True, object=True, ocr=True),
+        search_sources=SearchSources(image=False, asr=True, object=True),
     )
 
     service.search(request)
@@ -34,5 +34,4 @@ def test_hybrid_source_flags_pass_through_to_retrieval_engine() -> None:
         "image": False,
         "asr": True,
         "object": True,
-        "ocr": True,
     }

@@ -7,7 +7,6 @@ export interface SearchSources {
   image: boolean;
   asr: boolean;
   object: boolean;
-  ocr: boolean;
 }
 
 interface BaseSearchRequest {
@@ -18,9 +17,31 @@ interface BaseSearchRequest {
   model_choices: ("siglip" | "beit3")[];
 }
 
+export type KISSearchMode = "single_anchor" | "multi_anchor" | "temporal_sequence";
+export type KISEventImportance = "anchor" | "supporting" | "context";
+
+export interface KISQueryPlanEvent {
+  event_index: number;
+  source_span_vi: string;
+  visual_query_en: string | null;
+  asr_query_vi: string | null;
+  importance: KISEventImportance;
+  confidence: number;
+  inferred: boolean;
+}
+
+export interface KISQueryPlan {
+  search_mode: KISSearchMode;
+  events: KISQueryPlanEvent[];
+  warnings: string[];
+  planner_model: string;
+}
+
 export interface KISSearchRequest extends BaseSearchRequest {
   query_type: "KIS";
   query: string;
+  query_understanding?: boolean;
+  query_plan?: KISQueryPlan;
 }
 
 export interface VQASearchRequest extends BaseSearchRequest {
@@ -49,7 +70,6 @@ export interface SingleSearchResult {
   keyframe_url: string;
   segment_id: string;
   asr_text: string;
-  ocr_text: string;
   objects: Record<string, unknown>[];
   similarity_score: number;
   answer: string;
@@ -61,7 +81,6 @@ export interface TRAKEEventResult {
   keyframe_url: string;
   segment_id: string;
   asr_text: string;
-  ocr_text: string;
   objects: Record<string, unknown>[];
   similarity_score: number;
 }
@@ -76,7 +95,6 @@ export interface TRAKESearchResult {
 
 export interface AppliedWeights {
   w_vis: number;
-  w_ocr: number;
   w_asr: number;
 }
 
@@ -90,6 +108,7 @@ interface BaseSearchResponse {
 
 export interface KISSearchResponse extends BaseSearchResponse {
   query_type: "KIS";
+  query_plan?: KISQueryPlan | null;
   results: SingleSearchResult[];
 }
 

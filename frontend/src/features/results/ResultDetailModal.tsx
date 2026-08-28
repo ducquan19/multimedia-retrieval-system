@@ -12,7 +12,6 @@ export interface ResultDetail {
   keyframe_url: string;
   segment_id: string;
   asr_text: string;
-  ocr_text: string;
   objects: Record<string, unknown>[];
   similarity_score: number;
 }
@@ -281,13 +280,6 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
               <h3 id="asr-heading">ASR transcript</h3>
               <p>{result.asr_text || "No ASR transcript available."}</p>
             </section>
-
-            {result.ocr_text && (
-              <section className="detail-section" aria-labelledby="ocr-heading">
-                <h3 id="ocr-heading">OCR text</h3>
-                <p>{result.ocr_text}</p>
-              </section>
-            )}
 
             {result.objects.length > 0 && (
               <section className="detail-section" aria-labelledby="objects-heading">

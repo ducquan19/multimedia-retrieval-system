@@ -18,7 +18,6 @@ const results: SingleSearchResult[] = [
     keyframe_url: "/media/keyframes/a.jpg",
     segment_id: "segment-a",
     asr_text: "Một người đang mở laptop trên bàn.",
-    ocr_text: "AIC 2026",
     objects: [{ label: "laptop", score: 0.97 }],
     similarity_score: 0.9821,
     answer: "answer A",
@@ -31,7 +30,6 @@ const results: SingleSearchResult[] = [
     keyframe_url: "/media/keyframes/b.jpg",
     segment_id: "segment-b",
     asr_text: "Diễn giả bắt đầu phần trình bày.",
-    ocr_text: "",
     objects: [],
     similarity_score: 0.9012,
     answer: "answer B",
@@ -44,7 +42,6 @@ const results: SingleSearchResult[] = [
     keyframe_url: "/media/keyframes/c.jpg",
     segment_id: "segment-c",
     asr_text: "Khán giả đang vỗ tay.",
-    ocr_text: "",
     objects: [],
     similarity_score: 0.85,
     answer: "answer C",
@@ -94,7 +91,7 @@ describe("SingleResultInspector", () => {
     expect(firstCard).toHaveTextContent("0.9821");
   });
 
-  it("opens an accessible modal with ASR, OCR and objects, then restores focus", async () => {
+  it("opens an accessible modal with ASR and objects, then restores focus", async () => {
     const user = userEvent.setup();
     render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
 
@@ -108,7 +105,6 @@ describe("SingleResultInspector", () => {
     expect(dialog).not.toHaveTextContent("Segment");
     expect(dialog).not.toHaveTextContent("Similarity");
     expect(dialog).toHaveTextContent("Một người đang mở laptop trên bàn.");
-    expect(dialog).toHaveTextContent("AIC 2026");
     expect(dialog).toHaveTextContent("laptop");
     expect(screen.getByRole("button", { name: "Close keyframe detail" })).toHaveFocus();
     await user.tab();

@@ -1,10 +1,11 @@
 from typing import Protocol
 
 from schemas.search import (
+    KISQueryPlan,
+    QueryVariants,
     SearchRequest,
     SingleSearchResult,
     TRAKESearchResult,
-    QueryVariants,
 )
 
 
@@ -16,6 +17,7 @@ class RetrievalEngine(Protocol):
     """Protocol for abstracting the concrete retrieval service from domain logic."""
 
     def retrieve(
-        self, request: SearchRequest, enhanced_queries: QueryVariants | dict[int, QueryVariants] | None = None
-    ) -> tuple[SingleSearchResult | TRAKESearchResult, ...]:
-        ...
+        self,
+        request: SearchRequest,
+        enhanced_queries: QueryVariants | dict[int, QueryVariants] | KISQueryPlan | None = None,
+    ) -> tuple[SingleSearchResult | TRAKESearchResult, ...]: ...

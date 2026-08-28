@@ -3,6 +3,7 @@ from pathlib import Path
 from infrastructure.query_enhancer import QueryEnhancer
 from infrastructure.retrieval import RetrievalEngine
 from schemas.search import (
+    KISQueryPlan,
     KISSearchRequest,
     KISSearchResponse,
     SearchRequest,
@@ -35,6 +36,18 @@ class SearchService:
         self._max_query_length = max_query_length
         self._data_root = data_root
 
+    def plan_kis(self, query: str) -> KISQueryPlan:
+        if len(query) > self._max_query_length:
+            raise SearchValidationError(
+                f"query must contain at most {self._max_query_length} characters"
+            )
+        plan = self._query_enhancer.plan_kis(query)
+        if plan is None:
+            raise SearchValidationError(
+                "Gemini could not create a KIS query plan. Check the API key/quota and retry."
+            )
+        return plan
+
     def search(self, request: SearchRequest) -> SearchResponse:
         self._validate_query_lengths(request)
         if isinstance(request, TRAKESearchRequest) and len(request.events) > self._max_trake_events:
@@ -46,8 +59,9 @@ class SearchService:
         applied_weights = None
         search_sources = getattr(request, "search_sources", None)
         default_w_vis = 1.0 if getattr(search_sources, "image", True) else 0.0
-        default_w_ocr = 1.0 if getattr(search_sources, "ocr", False) else 0.0
         default_w_asr = 1.0 if getattr(search_sources, "asr", False) else 0.0
+
+        query_plan = request.query_plan if isinstance(request, KISSearchRequest) else None
 
         if isinstance(request, TRAKESearchRequest):
             original_query = request.main_query
@@ -64,7 +78,6 @@ class SearchService:
                     applied_weights = {
                         "w_vis": default_w_vis,
                         "w_asr": default_w_asr,
-                        "w_ocr": default_w_ocr,
                     }
                 else:
                     enhanced_query_str = "\n".join(
@@ -76,11 +89,15 @@ class SearchService:
                         applied_weights = {
                             "w_vis": first_v.w_vis,
                             "w_asr": first_v.w_asr,
-                            "w_ocr": first_v.w_ocr,
                         }
             else:
                 enhanced_queries = None
                 enhanced_query_str = None
+        elif isinstance(request, KISSearchRequest) and request.query_understanding:
+            original_query = request.query
+            enhanced_queries = query_plan
+            enhanced_query_str = None
+            warnings.extend(query_plan.warnings)
         else:
             original_query = request.query
             if request.enhance_query:
@@ -90,7 +107,6 @@ class SearchService:
                     applied_weights = {
                         "w_vis": enhanced_queries.w_vis,
                         "w_asr": enhanced_queries.w_asr,
-                        "w_ocr": enhanced_queries.w_ocr,
                     }
                 else:
                     warnings.append(
@@ -102,7 +118,6 @@ class SearchService:
                     applied_weights = {
                         "w_vis": default_w_vis,
                         "w_asr": default_w_asr,
-                        "w_ocr": default_w_ocr,
                     }
             else:
                 enhanced_queries = None
@@ -120,6 +135,7 @@ class SearchService:
                 model_choices=model_choices,
                 applied_weights=applied_weights,
                 warnings=warnings,
+                query_plan=query_plan,
                 results=self._only_single_results(results),
             )
         if isinstance(request, VQASearchRequest):

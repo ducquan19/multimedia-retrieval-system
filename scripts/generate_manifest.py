@@ -3,7 +3,9 @@ import json
 import logging
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -31,7 +33,7 @@ def generate_manifest(keyframes_dir: Path, output_path: Path):
             if not shot_dir.is_dir():
                 continue
             shot_id = shot_dir.name
-            
+
             # Bỏ qua các thư mục không phải là shot (ví dụ: contact_sheets)
             if not shot_id.startswith("S"):
                 continue
@@ -60,16 +62,13 @@ def generate_manifest(keyframes_dir: Path, output_path: Path):
                     "image_path": image_path,
                     "segment_id": f"{video_id}_{shot_id}",
                     # Optional fields omitted; they can be populated later
-                    # by another metadata-merging script (e.g. from ASR/OCR json)
+                    # by another metadata-merging script (e.g. from ASR json)
                 }
                 keyframes_list.append(kf_entry)
 
     logger.info("Scanned %d keyframes.", len(keyframes_list))
 
-    manifest_data = {
-        "version": 1,
-        "keyframes": keyframes_list
-    }
+    manifest_data = {"version": 1, "keyframes": keyframes_list}
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
@@ -79,8 +78,12 @@ def generate_manifest(keyframes_dir: Path, output_path: Path):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate manifest.json from keyframes folder")
-    parser.add_argument("--data-root", type=str, default="./data", help="Root data directory")
+    parser = argparse.ArgumentParser(
+        description="Generate manifest.json from keyframes folder"
+    )
+    parser.add_argument(
+        "--data-root", type=str, default="./data", help="Root data directory"
+    )
     args = parser.parse_args()
 
     data_root = Path(args.data_root)

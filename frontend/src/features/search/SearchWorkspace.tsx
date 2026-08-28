@@ -7,9 +7,11 @@ import {
 } from "react";
 import { type UseMutationResult, useMutation } from "@tanstack/react-query";
 
-import { friendlySearchError, search } from "../../api/client";
+import { friendlySearchError, planKisQuery, search } from "../../api/client";
 import {
   QUERY_TYPES,
+  type KISQueryPlan,
+  type KISQueryPlanEvent,
   type PublicConfig,
   type QueryType,
   type SearchRequest,
@@ -24,7 +26,6 @@ const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
   { key: "image", label: "Image" },
   { key: "asr", label: "ASR" },
   { key: "object", label: "Object" },
-  { key: "ocr", label: "OCR" },
 ];
 
 type GroupSort = "score" | "time";
@@ -69,11 +70,12 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [sources, setSources] = useState<SearchSources>({
     image: true,
     asr: false,
-    ocr: false,
     object: false,
   });
   const [modelChoices, setModelChoices] = useState<Array<"siglip" | "beit3">>(["siglip"]);
   const [kisQuery, setKisQuery] = useState("");
+  const [queryUnderstanding, setQueryUnderstanding] = useState(false);
+  const [kisPlan, setKisPlan] = useState<KISQueryPlan | null>(null);
   const [vqaQuery, setVqaQuery] = useState("");
   const [trakeMainQuery, setTrakeMainQuery] = useState("");
   const initialEventCount = Math.min(4, config.max_trake_events);
@@ -88,6 +90,14 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
 
   const searchMutation = useMutation<SearchResponse, unknown, SearchMutationVariables>({
     mutationFn: ({ payload, signal }) => search(payload, signal),
+  });
+  const planMutation = useMutation<
+    KISQueryPlan,
+    unknown,
+    { query: string; signal: AbortSignal }
+  >({
+    mutationFn: ({ query, signal }) => planKisQuery(query, signal),
+    onSuccess: (plan) => setKisPlan(plan),
   });
 
   useEffect(
@@ -110,6 +120,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const changeTab = (queryType: QueryType) => {
     activeController.current?.abort();
     searchMutation.reset();
+    planMutation.reset();
     setValidationErrors([]);
     setActiveType(queryType);
   };
@@ -133,6 +144,59 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     );
   };
 
+  const changeKisQuery = (value: string) => {
+    setKisQuery(value);
+    setKisPlan(null);
+    planMutation.reset();
+  };
+
+  const toggleQueryUnderstanding = (enabled: boolean) => {
+    setQueryUnderstanding(enabled);
+    setKisPlan(null);
+    planMutation.reset();
+    if (enabled) setEnhanceQuery(false);
+  };
+
+  const understandKisQuery = () => {
+    const queryError = queryLengthError("Query KIS", kisQuery, config.max_query_length);
+    if (queryError) {
+      setValidationErrors([queryError]);
+      return;
+    }
+    setValidationErrors([]);
+    activeController.current?.abort();
+    const controller = new AbortController();
+    activeController.current = controller;
+    planMutation.mutate({ query: kisQuery.trim(), signal: controller.signal });
+  };
+
+  const updatePlanEvent = (index: number, update: Partial<KISQueryPlanEvent>) => {
+    setKisPlan((current) =>
+      current
+        ? {
+            ...current,
+            events: current.events.map((event, eventIndex) =>
+              eventIndex === index ? { ...event, ...update } : event,
+            ),
+          }
+        : current,
+    );
+  };
+
+  const removePlanEvent = (index: number) => {
+    setKisPlan((current) => {
+      if (!current || current.events.length === 1) return current;
+      const remaining = current.events
+        .filter((_, eventIndex) => eventIndex !== index)
+        .map((event, eventIndex) => ({ ...event, event_index: eventIndex + 1 }));
+      if (!remaining.some((event) => event.importance === "anchor")) {
+        const firstEvent = remaining[0];
+        if (firstEvent) remaining[0] = { ...firstEvent, importance: "anchor" };
+      }
+      return { ...current, events: remaining };
+    });
+  };
+
   const buildPayload = (): SearchRequest | null => {
     const errors: string[] = [];
     const parsedTopK = Number(topK);
@@ -145,7 +209,10 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
         `Top-K phải là số nguyên từ ${config.min_top_k} đến ${config.max_top_k}.`,
       );
     }
-    if (!Object.values(sources).some(Boolean)) {
+    if (
+      !(activeType === "KIS" && queryUnderstanding) &&
+      !Object.values(sources).some(Boolean)
+    ) {
       errors.push("Chọn ít nhất một nguồn tìm kiếm.");
     }
     if (modelChoices.length === 0) {
@@ -154,7 +221,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
 
     const common = {
       top_k: parsedTopK,
-      enhance_query: enhanceQuery,
+      enhance_query: activeType === "KIS" && queryUnderstanding ? false : enhanceQuery,
       use_reranking: useReranking,
       search_sources: sources,
       model_choices: modelChoices,
@@ -164,7 +231,30 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     if (activeType === "KIS") {
       const queryError = queryLengthError("Query KIS", kisQuery, config.max_query_length);
       if (queryError) errors.push(queryError);
-      payload = { query_type: "KIS", query: kisQuery.trim(), ...common };
+      if (queryUnderstanding && !kisPlan) {
+        errors.push("Hãy tạo và kiểm tra query plan trước khi tìm kiếm.");
+      }
+      if (queryUnderstanding && kisPlan) {
+        if (!kisPlan.events.some((event) => event.importance === "anchor")) {
+          errors.push("Query plan phải có ít nhất một anchor event.");
+        }
+        kisPlan.events.forEach((event) => {
+          if (
+            !event.visual_query_en?.trim() &&
+            !event.asr_query_vi?.trim()
+          ) {
+            errors.push(`Event ${event.event_index} phải có visual hoặc ASR query.`);
+          }
+        });
+      }
+      payload = {
+        query_type: "KIS",
+        query: kisQuery.trim(),
+        ...(queryUnderstanding && kisPlan
+          ? { query_understanding: true, query_plan: kisPlan }
+          : {}),
+        ...common,
+      };
     } else if (activeType === "VQA") {
       const queryError = queryLengthError("Câu hỏi VQA", vqaQuery, config.max_query_length);
       if (queryError) errors.push(queryError);
@@ -264,19 +354,158 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           className="query-panel"
         >
           {activeType === "KIS" && (
-            <label className="field field--query-only" htmlFor="kis-query">
-              <span>Query KIS</span>
-              <textarea
-                id="kis-query"
-                value={kisQuery}
-                maxLength={config.max_query_length}
-                onChange={(event) => setKisQuery(event.target.value)}
-                onKeyDown={submitQueryOnEnter}
-                aria-keyshortcuts="Enter Shift+Enter"
-                placeholder="Ví dụ: một người mở laptop trên bàn"
-                rows={6}
-              />
-            </label>
+            <div className="kis-query-zone">
+              <label className="field field--query-only" htmlFor="kis-query">
+                <span>Query KIS</span>
+                <textarea
+                  id="kis-query"
+                  value={kisQuery}
+                  maxLength={config.max_query_length}
+                  onChange={(event) => changeKisQuery(event.target.value)}
+                  onKeyDown={submitQueryOnEnter}
+                  aria-keyshortcuts="Enter Shift+Enter"
+                  placeholder="Enter a KIS query"
+                  rows={6}
+                />
+              </label>
+
+              <section className="query-planning-card">
+                <div className="query-planning-card__header">
+                  <label className="query-planning-toggle" htmlFor="query-understanding">
+                    <strong>Query Understanding &amp; Planning</strong>
+                    <input
+                      id="query-understanding"
+                      type="checkbox"
+                      aria-label="Query Understanding & Planning"
+                      checked={queryUnderstanding}
+                      onChange={(event) => toggleQueryUnderstanding(event.target.checked)}
+                    />
+                  </label>
+                </div>
+
+                {queryUnderstanding && (
+                  <button
+                    type="button"
+                    className="query-plan__generate"
+                    onClick={understandKisQuery}
+                    disabled={planMutation.isPending}
+                  >
+                    {planMutation.isPending ? "Executing…" : "Execute"}
+                  </button>
+                )}
+
+                {queryUnderstanding && (planMutation.isError || kisPlan) && (
+                  <section className="query-plan" aria-label="KIS query plan">
+                  {planMutation.isError && (
+                    <p className="query-plan__error" role="alert">
+                      {friendlySearchError(planMutation.error)}
+                    </p>
+                  )}
+
+                  {kisPlan && (
+                    <>
+                      <label className="field field--compact" htmlFor="kis-search-mode">
+                        <span>Search strategy</span>
+                        <select
+                          id="kis-search-mode"
+                          value={kisPlan.search_mode}
+                          onChange={(event) =>
+                            setKisPlan((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    search_mode: event.target
+                                      .value as KISQueryPlan["search_mode"],
+                                  }
+                                : current,
+                            )
+                          }
+                        >
+                          <option value="single_anchor">Single anchor</option>
+                          <option value="multi_anchor">Multiple anchors</option>
+                          <option value="temporal_sequence">Temporal sequence</option>
+                        </select>
+                      </label>
+
+                      <div className="query-plan__events">
+                        {kisPlan.events.map((planEvent, index) => (
+                          <article className="query-plan-event" key={planEvent.event_index}>
+                            <header>
+                              <strong>Event {planEvent.event_index}</strong>
+                              <span>{Math.round(planEvent.confidence * 100)}% confidence</span>
+                              <button
+                                type="button"
+                                onClick={() => removePlanEvent(index)}
+                                disabled={kisPlan.events.length === 1}
+                                aria-label={`Remove event ${planEvent.event_index}`}
+                              >
+                                Remove
+                              </button>
+                            </header>
+                            <p className="query-plan-event__source">{planEvent.source_span_vi}</p>
+                            <label className="field">
+                              <span>Visual query (English)</span>
+                              <textarea
+                                aria-label={`Visual query event ${planEvent.event_index}`}
+                                value={planEvent.visual_query_en ?? ""}
+                                onChange={(event) =>
+                                  updatePlanEvent(index, {
+                                    visual_query_en: event.target.value || null,
+                                  })
+                                }
+                                rows={2}
+                              />
+                            </label>
+                            <label className="field">
+                              <span>ASR query (Vietnamese)</span>
+                              <textarea
+                                aria-label={`ASR query event ${planEvent.event_index}`}
+                                value={planEvent.asr_query_vi ?? ""}
+                                onChange={(event) =>
+                                  updatePlanEvent(index, {
+                                    asr_query_vi: event.target.value || null,
+                                  })
+                                }
+                                rows={2}
+                              />
+                            </label>
+                            <label className="field field--compact">
+                              <span>Importance</span>
+                              <select
+                                aria-label={`Importance event ${planEvent.event_index}`}
+                                value={planEvent.importance}
+                                onChange={(event) =>
+                                  updatePlanEvent(index, {
+                                    importance: event.target
+                                      .value as KISQueryPlanEvent["importance"],
+                                  })
+                                }
+                              >
+                                <option value="anchor">Anchor</option>
+                                <option value="supporting">Supporting</option>
+                                <option value="context">Context</option>
+                              </select>
+                            </label>
+                            {planEvent.inferred && (
+                              <small className="query-plan-event__inferred">
+                                Contains an inference — verify before searching.
+                              </small>
+                            )}
+                          </article>
+                        ))}
+                      </div>
+
+                      {kisPlan.warnings.map((warning) => (
+                        <p className="query-plan__warning" key={warning}>
+                          {warning}
+                        </p>
+                      ))}
+                    </>
+                  )}
+                  </section>
+                )}
+              </section>
+            </div>
           )}
 
           {activeType === "VQA" && (
@@ -359,6 +588,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 id="enhance-query"
                 type="checkbox"
                 checked={enhanceQuery}
+                disabled={activeType === "KIS" && queryUnderstanding}
                 onChange={(event) => setEnhanceQuery(event.target.checked)}
               />
             </label>
@@ -370,12 +600,13 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
               </div>
             ) : null}
 
-            {searchMutation.data?.enhanced_query && (
-              <div className="sidebar-enhanced-query">
-                <small><strong>Enhanced:</strong></small>
-                <p>{searchMutation.data.enhanced_query.replace("- ", "")}</p>
-              </div>
-            )}
+            {searchMutation.variables?.payload.enhance_query &&
+              searchMutation.data?.enhanced_query && (
+                <div className="sidebar-enhanced-query">
+                  <small><strong>Enhanced:</strong></small>
+                  <p>{searchMutation.data.enhanced_query.replace("- ", "")}</p>
+                </div>
+              )}
             
             {searchMutation.variables?.payload.enhance_query &&
               searchMutation.data?.applied_weights && (
@@ -383,7 +614,6 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                   <small><strong>Weights Applied:</strong></small>
                   <p>
                     <span>VIS: {searchMutation.data.applied_weights.w_vis.toFixed(2)}</span>
-                    <span>OCR: {searchMutation.data.applied_weights.w_ocr.toFixed(2)}</span>
                     <span>ASR: {searchMutation.data.applied_weights.w_asr.toFixed(2)}</span>
                   </p>
                 </div>
@@ -434,7 +664,10 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             </label>
           </fieldset>
 
-          <fieldset className="source-options">
+          <fieldset
+            className="source-options"
+            disabled={activeType === "KIS" && queryUnderstanding}
+          >
             <legend>Sources</legend>
             {SOURCE_OPTIONS.map(({ key, label }) => (
               <label key={key}>
@@ -465,7 +698,15 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
         </form>
 
         <footer className="workspace__footer">
-          <button className="search-button" type="submit" form="search-form">
+          <button
+            className="search-button"
+            type="submit"
+            form="search-form"
+            disabled={
+              planMutation.isPending ||
+              (activeType === "KIS" && queryUnderstanding && !kisPlan)
+            }
+          >
             Search
           </button>
           <input

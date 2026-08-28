@@ -10,6 +10,58 @@ QueryText = Annotated[
 ]
 
 
+class KISQueryPlanEvent(BaseModel):
+    """One observable or searchable event extracted from a raw KIS query."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    event_index: int = Field(ge=1)
+    source_span_vi: QueryText
+    visual_query_en: str | None = None
+    asr_query_vi: str | None = None
+    importance: Literal["anchor", "supporting", "context"] = "supporting"
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    inferred: bool = False
+
+    @model_validator(mode="after")
+    def require_searchable_content(self) -> "KISQueryPlanEvent":
+        if not any(
+            (
+                self.visual_query_en and self.visual_query_en.strip(),
+                self.asr_query_vi and self.asr_query_vi.strip(),
+            )
+        ):
+            raise ValueError("a KIS plan event must contain a visual or ASR query")
+        return self
+
+
+class KISQueryPlan(BaseModel):
+    """Editable search plan produced by Query Understanding & Planning."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    search_mode: Literal["single_anchor", "multi_anchor", "temporal_sequence"]
+    events: tuple[KISQueryPlanEvent, ...] = Field(min_length=1, max_length=10)
+    warnings: tuple[str, ...] = ()
+    planner_model: Literal["gemini-3.5-flash-lite"] = "gemini-3.5-flash-lite"
+
+    @model_validator(mode="after")
+    def validate_events(self) -> "KISQueryPlan":
+        expected = list(range(1, len(self.events) + 1))
+        actual = [event.event_index for event in self.events]
+        if actual != expected:
+            raise ValueError("KIS plan event_index values must be continuous from 1")
+        if not any(event.importance == "anchor" for event in self.events):
+            raise ValueError("a KIS query plan must contain at least one anchor event")
+        return self
+
+
+class KISQueryPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    query: QueryText
+
+
 class QueryVariants(BaseModel):
     variants: list[str] = Field(
         description="Exactly 1 highly descriptive English variation of the original query.",
@@ -20,12 +72,6 @@ class QueryVariants(BaseModel):
         default=1.0,
         description=(
             "Weight for visual search (e.g. objects, colors, actions). Value from 0.0 to 1.0."
-        ),
-    )
-    w_ocr: float = Field(
-        default=0.0,
-        description=(
-            "Weight for OCR text search (e.g. exact text on screen, signs). Value from 0.0 to 1.0."
         ),
     )
     w_asr: float = Field(
@@ -54,11 +100,10 @@ class SearchSources(BaseModel):
     image: bool = True
     asr: bool = False
     object: bool = False
-    ocr: bool = False
 
     @model_validator(mode="after")
     def require_one_source(self) -> "SearchSources":
-        if not any((self.image, self.asr, self.object, self.ocr)):
+        if not any((self.image, self.asr, self.object)):
             raise ValueError("at least one search source must be enabled")
         return self
 
@@ -76,6 +121,18 @@ class BaseSearchRequest(BaseModel):
 class KISSearchRequest(BaseSearchRequest):
     query_type: Literal["KIS"]
     query: QueryText
+    query_understanding: bool = False
+    query_plan: KISQueryPlan | None = None
+
+    @model_validator(mode="after")
+    def validate_query_understanding(self) -> "KISSearchRequest":
+        if self.query_understanding and self.query_plan is None:
+            raise ValueError("query_plan is required when query_understanding is enabled")
+        if not self.query_understanding and self.query_plan is not None:
+            raise ValueError("query_understanding must be enabled when query_plan is provided")
+        if self.query_understanding and self.enhance_query:
+            raise ValueError("enhance_query and query_understanding cannot be enabled together")
+        return self
 
 
 class VQASearchRequest(BaseSearchRequest):
@@ -121,7 +178,6 @@ class SingleSearchResult(BaseModel):
     image_path: str
     segment_id: str
     asr_text: str
-    ocr_text: str
     objects: list[dict[str, Any]]
     similarity_score: float
     answer: str = ""
@@ -135,7 +191,6 @@ class TRAKEEventResult(BaseModel):
     keyframe_url: str
     segment_id: str
     asr_text: str
-    ocr_text: str
     objects: list[dict[str, Any]]
     similarity_score: float
 
@@ -157,6 +212,7 @@ class KISSearchResponse(BaseModel):
     model_choices: list[str] = Field(default_factory=list)
     applied_weights: dict[str, float] | None = None
     warnings: list[str] = Field(default_factory=list)
+    query_plan: KISQueryPlan | None = None
     results: tuple[SingleSearchResult, ...]
 
 

@@ -9,8 +9,12 @@ from repositories.text_repository import KeyframeTextRepository
 from repositories.vector_repository import KeyframeVectorRepository
 from schemas.retrieval import ScoredCandidate
 from schemas.search import (
+    KISQueryPlan,
+    KISQueryPlanEvent,
+    KISSearchRequest,
     QueryVariants,
     SearchRequest,
+    SearchSources,
     SingleSearchResult,
     TRAKEEventResult,
     TRAKESearchRequest,
@@ -42,11 +46,15 @@ class RetrievalService:
     def retrieve(
         self,
         request: SearchRequest,
-        enhanced_queries: QueryVariants | dict[int, QueryVariants] | None = None,
+        enhanced_queries: QueryVariants | dict[int, QueryVariants] | KISQueryPlan | None = None,
     ) -> tuple[SingleSearchResult | TRAKESearchResult, ...]:
         if isinstance(request, TRAKESearchRequest):
-            return self._retrieve_trake(request, enhanced_queries)
-        return self._retrieve_single(request, enhanced_queries)
+            trake_queries = enhanced_queries if isinstance(enhanced_queries, dict) else None
+            return self._retrieve_trake(request, trake_queries)
+        if isinstance(request, KISSearchRequest) and isinstance(enhanced_queries, KISQueryPlan):
+            return self._retrieve_planned_kis(request, enhanced_queries)
+        enhanced = enhanced_queries if isinstance(enhanced_queries, QueryVariants) else None
+        return self._retrieve_single(request, enhanced)
 
     def _search_candidates(
         self,
@@ -56,14 +64,14 @@ class RetrievalService:
         search_sources=None,
         enhanced: QueryVariants | None = None,
         use_reranking: bool = False,
+        asr_query: str | None = None,
     ) -> list[ScoredCandidate]:
-        visual_queries = enhanced.variants if enhanced else [query]
+        visual_queries = (
+            enhanced.variants if enhanced and enhanced.w_vis > 0 else ([] if enhanced else [query])
+        )
 
         w_vis = (
             enhanced.w_vis if enhanced else (1.0 if getattr(search_sources, "image", True) else 0.0)
-        )
-        w_ocr = (
-            enhanced.w_ocr if enhanced else (1.0 if getattr(search_sources, "ocr", False) else 0.0)
         )
         w_asr = (
             enhanced.w_asr if enhanced else (1.0 if getattr(search_sources, "asr", False) else 0.0)
@@ -84,14 +92,12 @@ class RetrievalService:
 
         asr_cands = []
         if search_sources and getattr(search_sources, "asr", False) and w_asr > 0:
-            asr_cands = self._text_repository.search_text(query, ["asr_text"], None, fetch_k)
-
-        ocr_cands = []
-        if search_sources and getattr(search_sources, "ocr", False) and w_ocr > 0:
-            ocr_cands = self._text_repository.search_text(query, ["ocr_text"], None, fetch_k)
+            asr_cands = self._text_repository.search_text(
+                asr_query or query, ["asr_text"], None, fetch_k
+            )
 
         cmap = {}
-        for cands in siglip_candidates_lists + beit3_candidates_lists + [asr_cands, ocr_cands]:
+        for cands in siglip_candidates_lists + beit3_candidates_lists + [asr_cands]:
             for c in cands:
                 if c.image_path not in cmap:
                     cmap[c.image_path] = c
@@ -124,16 +130,11 @@ class RetrievalService:
 
         vis_norm = norm_dict(vis_srrf)
         asr_norm = norm_dict({c.image_path: c.similarity_score for c in asr_cands})
-        ocr_norm = norm_dict({c.image_path: c.similarity_score for c in ocr_cands})
 
         # 3. Final Score Fusion
         final_scores = {}
         for p in cmap:
-            final_scores[p] = (
-                w_vis * vis_norm.get(p, 0.0)
-                + w_asr * asr_norm.get(p, 0.0)
-                + w_ocr * ocr_norm.get(p, 0.0)
-            )
+            final_scores[p] = w_vis * vis_norm.get(p, 0.0) + w_asr * asr_norm.get(p, 0.0)
 
         top_paths = sorted(final_scores.keys(), key=lambda x: final_scores[x], reverse=True)[
             :fetch_k
@@ -177,13 +178,134 @@ class RetrievalService:
                     image_path=keyframe.image_path,
                     segment_id=keyframe.segment_id or "",
                     asr_text=keyframe.asr_text or "",
-                    ocr_text=keyframe.ocr_text or "",
                     objects=keyframe.objects or [],
                     similarity_score=candidate.similarity_score,
                     answer="",
                 )
             )
 
+        return tuple(results)
+
+    def _retrieve_planned_kis(
+        self, request: KISSearchRequest, plan: KISQueryPlan
+    ) -> tuple[SingleSearchResult, ...]:
+        """Retrieve an anchor frame, then rerank it with same-video event evidence."""
+        fetch_k = max(request.top_k * 10, 100)
+        primary_anchor = max(
+            (event for event in plan.events if event.importance == "anchor"),
+            key=lambda event: event.confidence,
+        )
+        candidates_by_event: dict[int, list[ScoredCandidate]] = {}
+        retrieval_events = (primary_anchor,) if plan.search_mode == "single_anchor" else plan.events
+
+        for event in retrieval_events:
+            sources = SearchSources(
+                image=bool(event.visual_query_en),
+                asr=bool(event.asr_query_vi),
+                object=False,
+            )
+            visual_query = event.visual_query_en or event.source_span_vi
+            enhanced = QueryVariants(
+                variants=[visual_query],
+                w_vis=1.0 if event.visual_query_en else 0.0,
+                w_asr=1.0 if event.asr_query_vi else 0.0,
+            )
+            candidates_by_event[event.event_index] = self._search_candidates(
+                query=visual_query,
+                model_choices=request.model_choices,
+                fetch_k=fetch_k,
+                search_sources=sources,
+                enhanced=enhanced,
+                use_reranking=request.use_reranking,
+                asr_query=event.asr_query_vi,
+            )
+
+        anchor_candidates = candidates_by_event[primary_anchor.event_index]
+        scored: list[tuple[float, ScoredCandidate]] = []
+        for anchor_candidate in anchor_candidates:
+            weighted_score = anchor_candidate.similarity_score
+            total_weight = 1.0
+            for event in retrieval_events:
+                if event.event_index == primary_anchor.event_index:
+                    continue
+                weight = self._plan_event_weight(event)
+                evidence_score = self._best_same_video_evidence(
+                    candidates_by_event[event.event_index],
+                    anchor_candidate,
+                    event,
+                    primary_anchor,
+                    plan.search_mode == "temporal_sequence",
+                )
+                weighted_score += weight * evidence_score
+                total_weight += weight
+            scored.append((weighted_score / total_weight, anchor_candidate))
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        reranked = [
+            candidate.model_copy(update={"similarity_score": score})
+            for score, candidate in scored[: request.top_k]
+        ]
+        return self._single_results_from_candidates(reranked)
+
+    @staticmethod
+    def _plan_event_weight(event: KISQueryPlanEvent) -> float:
+        importance_weight = {"anchor": 1.0, "supporting": 0.6, "context": 0.2}
+        return importance_weight[event.importance] * event.confidence
+
+    @staticmethod
+    def _best_same_video_evidence(
+        candidates: list[ScoredCandidate],
+        anchor_candidate: ScoredCandidate,
+        event: KISQueryPlanEvent,
+        primary_anchor: KISQueryPlanEvent,
+        enforce_order: bool,
+    ) -> float:
+        same_video = [
+            candidate
+            for candidate in candidates
+            if candidate.keyframe.video_id == anchor_candidate.keyframe.video_id
+        ]
+        if not same_video:
+            return 0.0
+        if enforce_order:
+            if event.event_index < primary_anchor.event_index:
+                ordered = [
+                    candidate
+                    for candidate in same_video
+                    if candidate.keyframe.frame_id <= anchor_candidate.keyframe.frame_id
+                ]
+            else:
+                ordered = [
+                    candidate
+                    for candidate in same_video
+                    if candidate.keyframe.frame_id >= anchor_candidate.keyframe.frame_id
+                ]
+            if ordered:
+                return max(candidate.similarity_score for candidate in ordered)
+            return 0.5 * max(candidate.similarity_score for candidate in same_video)
+        return max(candidate.similarity_score for candidate in same_video)
+
+    def _single_results_from_candidates(
+        self, candidates: list[ScoredCandidate]
+    ) -> tuple[SingleSearchResult, ...]:
+        results = []
+        for rank, candidate in enumerate(candidates, start=1):
+            keyframe = candidate.keyframe
+            results.append(
+                SingleSearchResult(
+                    result_id=candidate.result_id,
+                    rank=rank,
+                    video_id=keyframe.video_id,
+                    frame_id=keyframe.frame_id,
+                    keyframe_url=self._media_url(keyframe.image_path),
+                    image_path=keyframe.image_path,
+                    segment_id=keyframe.segment_id or "",
+                    asr_text=keyframe.asr_text or "",
+                    objects=keyframe.objects or [],
+                    similarity_score=candidate.similarity_score,
+                    answer="",
+                )
+            )
         return tuple(results)
 
     def _retrieve_trake(
@@ -298,7 +420,6 @@ class RetrievalService:
                         keyframe_url=self._media_url(c.image_path),
                         segment_id=c.keyframe.segment_id or "",
                         asr_text=c.keyframe.asr_text or "",
-                        ocr_text=c.keyframe.ocr_text or "",
                         objects=c.keyframe.objects or [],
                         similarity_score=c.similarity_score,
                     )

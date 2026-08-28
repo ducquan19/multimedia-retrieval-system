@@ -19,7 +19,7 @@ The order of submission rows is significant. The backend always preserves the or
 - Pydantic v2 and pydantic-settings
 - FAISS (for SigLIP and BEiT-3 indexing)
 - Elasticsearch (for ASR BM25 search)
-- Google Gemini 2.5 Flash Lite (for Query Enhancement & TRAKE analysis)
+- Google Gemini 3.5 Flash Lite (for Query Enhancement and KIS Query Understanding & Planning)
 - Stateless architecture with SQLite metadata DB
 
 ### Frontend
@@ -76,7 +76,13 @@ Copy-Item .env.example .env
 
 Search uses a code-managed default Top-K of `100` and allows values up to `500`.
 
-Do not commit `.env` or real credentials.
+### Advanced KIS query planning
+
+The KIS search zone includes an opt-in **Query Understanding & Planning** workflow. When
+enabled, **Understand query** sends the raw Vietnamese description to
+`POST /api/search/kis/plan`. Gemini returns an editable structured plan containing visual
+queries in English, Vietnamese ASR queries, event importance, and temporal strategy.
+Review the plan and then run Search.
 
 ### 4. Run the application
 
@@ -144,7 +150,6 @@ data/
 │   └── beit3.index
 ├── checkpoint/             # BEiT-3 weights and tokenizer
 ├── asr/
-├── ocr/
 └── objects/
 ```
 

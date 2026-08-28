@@ -2,13 +2,28 @@ from fastapi import APIRouter, HTTPException
 
 from core.dependencies import SearchServiceDependency, SettingsDependency
 from repositories.keyframe_metadata_repository import KeyframeMetadataError
-from schemas.search import SearchRequest, SearchResponse
+from schemas.search import KISQueryPlan, KISQueryPlanRequest, SearchRequest, SearchResponse
 from schemas.video import VideoSourceResponse
 from services.retrieval_service import RetrievalDataError
 from services.search_service import SearchValidationError
 from services.video_source_service import VideoSourceError, VideoSourceNotFound, VideoSourceService
 
 router = APIRouter(tags=["search"])
+
+
+@router.post(
+    "/search/kis/plan",
+    response_model=KISQueryPlan,
+    summary="Understand and plan a KIS query",
+)
+async def plan_kis_query(
+    payload: KISQueryPlanRequest, service: SearchServiceDependency
+) -> KISQueryPlan:
+    try:
+        return service.plan_kis(payload.query)
+    except SearchValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
 
 @router.post(
     "/search",
@@ -41,6 +56,7 @@ async def search(payload: SearchRequest, service: SearchServiceDependency) -> Se
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
 
 @router.get("/videos/{video_id}/source", response_model=VideoSourceResponse)
 def get_video_source(video_id: str, settings: SettingsDependency) -> VideoSourceResponse:
