@@ -1,8 +1,7 @@
 import logging
-import uuid
-import time
 import math
-from typing import Any
+import time
+import uuid
 
 from infrastructure.blip2_reranker import BLIP2Reranker
 from infrastructure.embedding_service import EmbeddingService
@@ -10,15 +9,16 @@ from repositories.text_repository import KeyframeTextRepository
 from repositories.vector_repository import KeyframeVectorRepository
 from schemas.retrieval import ScoredCandidate
 from schemas.search import (
+    QueryVariants,
     SearchRequest,
     SingleSearchResult,
+    TRAKEEventResult,
     TRAKESearchRequest,
     TRAKESearchResult,
-    TRAKEEventResult,
-    QueryVariants,
 )
 
 logger = logging.getLogger(__name__)
+
 
 class RetrievalDataError(RuntimeError):
     """Raised when retrieval data (like vectors or text index) is missing or corrupted."""
@@ -40,20 +40,34 @@ class RetrievalService:
         self._embedding_service = embedding_service
 
     def retrieve(
-        self, request: SearchRequest, enhanced_queries: QueryVariants | dict[int, QueryVariants] | None = None
+        self,
+        request: SearchRequest,
+        enhanced_queries: QueryVariants | dict[int, QueryVariants] | None = None,
     ) -> tuple[SingleSearchResult | TRAKESearchResult, ...]:
         if isinstance(request, TRAKESearchRequest):
             return self._retrieve_trake(request, enhanced_queries)
         return self._retrieve_single(request, enhanced_queries)
 
     def _search_candidates(
-        self, query: str, model_choices: list[str], fetch_k: int, search_sources=None, enhanced: QueryVariants | None = None, use_reranking: bool = False
+        self,
+        query: str,
+        model_choices: list[str],
+        fetch_k: int,
+        search_sources=None,
+        enhanced: QueryVariants | None = None,
+        use_reranking: bool = False,
     ) -> list[ScoredCandidate]:
         visual_queries = enhanced.variants if enhanced else [query]
-        
-        w_vis = enhanced.w_vis if enhanced else (1.0 if getattr(search_sources, "image", True) else 0.0)
-        w_ocr = enhanced.w_ocr if enhanced else (1.0 if getattr(search_sources, "ocr", False) else 0.0)
-        w_asr = enhanced.w_asr if enhanced else (1.0 if getattr(search_sources, "asr", False) else 0.0)
+
+        w_vis = (
+            enhanced.w_vis if enhanced else (1.0 if getattr(search_sources, "image", True) else 0.0)
+        )
+        w_ocr = (
+            enhanced.w_ocr if enhanced else (1.0 if getattr(search_sources, "ocr", False) else 0.0)
+        )
+        w_asr = (
+            enhanced.w_asr if enhanced else (1.0 if getattr(search_sources, "asr", False) else 0.0)
+        )
 
         siglip_candidates_lists = []
         beit3_candidates_lists = []
@@ -62,7 +76,7 @@ class RetrievalService:
             for vq in visual_queries:
                 query_vector = self._embedding_service.get_siglip_embedding(vq)
                 siglip_candidates_lists.append(self._siglip_repo.search(query_vector, fetch_k))
-                
+
         if "beit3" in model_choices:
             for vq in visual_queries:
                 query_vector = self._embedding_service.get_beit3_embedding(vq)
@@ -84,8 +98,10 @@ class RetrievalService:
 
         # 1. Visual SRRF (for fusing SigLIP and BEiT-3)
         vis_srrf = {}
-        def add_to_srrf(cands: list['ScoredCandidate'], k=60):
-            if not cands: return
+
+        def add_to_srrf(cands: list["ScoredCandidate"], k=60):
+            if not cands:
+                return
             max_s = max(c.similarity_score for c in cands)
             min_s = min(c.similarity_score for c in cands)
             range_s = max_s - min_s if max_s > min_s else 1.0
@@ -93,12 +109,15 @@ class RetrievalService:
                 norm_score = (c.similarity_score - min_s) / range_s
                 vis_srrf[c.image_path] = vis_srrf.get(c.image_path, 0.0) + norm_score / (k + rank)
 
-        for cands in siglip_candidates_lists: add_to_srrf(cands)
-        for cands in beit3_candidates_lists: add_to_srrf(cands)
+        for cands in siglip_candidates_lists:
+            add_to_srrf(cands)
+        for cands in beit3_candidates_lists:
+            add_to_srrf(cands)
 
         # 2. Min-Max Normalization
         def norm_dict(d: dict[str, float]) -> dict[str, float]:
-            if not d: return {}
+            if not d:
+                return {}
             max_s, min_s = max(d.values()), min(d.values())
             range_s = max_s - min_s + 1e-6
             return {k: (v - min_s) / range_s for k, v in d.items()}
@@ -111,28 +130,39 @@ class RetrievalService:
         final_scores = {}
         for p in cmap:
             final_scores[p] = (
-                w_vis * vis_norm.get(p, 0.0) +
-                w_asr * asr_norm.get(p, 0.0) +
-                w_ocr * ocr_norm.get(p, 0.0)
+                w_vis * vis_norm.get(p, 0.0)
+                + w_asr * asr_norm.get(p, 0.0)
+                + w_ocr * ocr_norm.get(p, 0.0)
             )
 
-        top_paths = sorted(final_scores.keys(), key=lambda x: final_scores[x], reverse=True)[:fetch_k]
-        candidates = [cmap[p].model_copy(update={"similarity_score": final_scores[p]}) for p in top_paths]
+        top_paths = sorted(final_scores.keys(), key=lambda x: final_scores[x], reverse=True)[
+            :fetch_k
+        ]
+        candidates = [
+            cmap[p].model_copy(update={"similarity_score": final_scores[p]}) for p in top_paths
+        ]
 
         if self._blip2_reranker.enable and use_reranking:
             candidates = self._blip2_reranker.rerank(query, candidates)
 
         return candidates
 
-    def _retrieve_single(self, request: SearchRequest, enhanced_queries: QueryVariants | None = None) -> tuple[SingleSearchResult, ...]:
-        model_choices = getattr(request, "model_choices", ["siglip", "beit3"])
+    def _retrieve_single(
+        self, request: SearchRequest, enhanced_queries: QueryVariants | None = None
+    ) -> tuple[SingleSearchResult, ...]:
+        model_choices = getattr(request, "model_choices", ["siglip"])
         fetch_k = request.top_k * 5
 
         search_sources = getattr(request, "search_sources", None)
 
-        candidates = self._search_candidates(request.query, model_choices, fetch_k, search_sources, enhanced_queries, getattr(request, "use_reranking", False))
-
-
+        candidates = self._search_candidates(
+            request.query,
+            model_choices,
+            fetch_k,
+            search_sources,
+            enhanced_queries,
+            getattr(request, "use_reranking", False),
+        )
 
         results = []
         for rank, candidate in enumerate(candidates[: request.top_k], start=1):
@@ -156,23 +186,32 @@ class RetrievalService:
 
         return tuple(results)
 
-    def _retrieve_trake(self, request: TRAKESearchRequest, enhanced_queries: dict[int, QueryVariants] | None = None) -> tuple[TRAKESearchResult, ...]:
+    def _retrieve_trake(
+        self, request: TRAKESearchRequest, enhanced_queries: dict[int, QueryVariants] | None = None
+    ) -> tuple[TRAKESearchResult, ...]:
         if not request.events:
             return tuple()
 
         beam_width = max(150, request.top_k * 5)
-        max_kf_gap = getattr(request, "max_kf_gap", 3000) # Defaults to 3000 gap if not provided
-        model_choices = getattr(request, "model_choices", ["siglip", "beit3"])
+        max_kf_gap = getattr(request, "max_kf_gap", 3000)  # Defaults to 3000 gap if not provided
+        model_choices = getattr(request, "model_choices", ["siglip"])
         fetch_k = request.top_k * 10
         search_sources = getattr(request, "search_sources", None)
         use_reranking = getattr(request, "use_reranking", False)
 
         # 1. Forward Pass: Fetch candidates for all events using per-event enhanced queries
         first_event = request.events[0]
-        enhanced_for_first = enhanced_queries.get(first_event.event_index) if enhanced_queries else None
-        
+        enhanced_for_first = (
+            enhanced_queries.get(first_event.event_index) if enhanced_queries else None
+        )
+
         first_candidates = self._search_candidates(
-            first_event.query, model_choices, fetch_k, search_sources, enhanced_for_first, use_reranking
+            first_event.query,
+            model_choices,
+            fetch_k,
+            search_sources,
+            enhanced_for_first,
+            use_reranking,
         )
 
         if not first_candidates:
@@ -180,13 +219,16 @@ class RetrievalService:
 
         # beam = [(total_score, [(ScoredCandidate, s_i, lambda_i)])]
         beams: list[tuple[float, list[tuple[ScoredCandidate, float, float]]]] = [
-            (c.similarity_score, [(c, c.similarity_score, 1.0)]) for c in first_candidates[:beam_width]
+            (c.similarity_score, [(c, c.similarity_score, 1.0)])
+            for c in first_candidates[:beam_width]
         ]
 
         # Stages 2..N
         for event in request.events[1:]:
             event_enhanced = enhanced_queries.get(event.event_index) if enhanced_queries else None
-            candidates = self._search_candidates(event.query, model_choices, fetch_k, search_sources, event_enhanced)
+            candidates = self._search_candidates(
+                event.query, model_choices, fetch_k, search_sources, event_enhanced
+            )
             next_beams: list[tuple[float, list[tuple[ScoredCandidate, float, float]]]] = []
 
             for total_score, seq in beams:
@@ -207,7 +249,12 @@ class RetrievalService:
                     delta_t = (c.keyframe.frame_id - last_c.keyframe.frame_id) / 25.0
                     decay = math.exp(-0.010 * delta_t)
 
-                    next_beams.append((total_score + c.similarity_score * decay, seq + [(c, c.similarity_score, decay)]))
+                    next_beams.append(
+                        (
+                            total_score + c.similarity_score * decay,
+                            seq + [(c, c.similarity_score, decay)],
+                        )
+                    )
 
             next_beams.sort(key=lambda x: x[0], reverse=True)
             beams = next_beams[:beam_width]
@@ -217,31 +264,31 @@ class RetrievalService:
 
         # Stage 4: BLIP-2 Multiplicative Gating
         final_beams = []
-        for total_score, seq in beams:
+        for _total_score, seq in beams:
             final_seq_score = 0.0
             gated_seq = []
             for i, (c, s_i, lambda_i) in enumerate(seq):
                 event_query = request.events[i].query
-                
+
                 if getattr(request, "use_reranking", False) and self._blip2_reranker.enable:
                     # BLIP-2 returns the candidate with updated similarity_score
                     b_i = self._blip2_reranker.rerank(event_query, [c])[0].similarity_score
                 else:
                     b_i = 1.0
-                    
+
                 final_event_score = s_i * lambda_i * b_i
                 final_seq_score += final_event_score
-                
+
                 gated_c = c.model_copy(update={"similarity_score": final_event_score})
                 gated_seq.append(gated_c)
-                
+
             final_beams.append((final_seq_score, gated_seq))
-            
+
         final_beams.sort(key=lambda x: x[0], reverse=True)
 
         # Convert the top K beams into TRAKESearchResult
         results = []
-        for rank, (total_score, seq) in enumerate(final_beams[:request.top_k], start=1):
+        for rank, (total_score, seq) in enumerate(final_beams[: request.top_k], start=1):
             event_results = []
             for i, c in enumerate(seq):
                 event_results.append(
@@ -263,7 +310,7 @@ class RetrievalService:
                     rank=rank,
                     video_id=seq[0].keyframe.video_id,
                     similarity_score=total_score,
-                    events=tuple(event_results)
+                    events=tuple(event_results),
                 )
             )
 

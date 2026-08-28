@@ -1,4 +1,5 @@
-from typing import Final, Literal, get_args
+from typing import Final
 
 MIN_TOP_K: Final[int] = 1
-MAX_TOP_K: Final[int] = 100
+DEFAULT_TOP_K: Final[int] = 100
+MAX_TOP_K: Final[int] = 500

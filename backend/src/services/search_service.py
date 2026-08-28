@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from infrastructure.query_enhancer import QueryEnhancer
 from infrastructure.retrieval import RetrievalEngine
 from schemas.search import (
@@ -13,8 +15,6 @@ from schemas.search import (
     VQASearchResponse,
 )
 
-
-from pathlib import Path
 
 class SearchValidationError(ValueError):
     """Raised when runtime-configured search constraints are violated."""
@@ -55,10 +55,17 @@ class SearchService:
                 queries_dict = {event.event_index: event.query for event in request.events}
                 enhanced_queries = self._query_enhancer.enhance_batch(queries_dict)
                 if not enhanced_queries:
-                    warnings.append("Gemini API quota exceeded or failed. Falling back to original queries with default weights.")
+                    warnings.append(
+                        "Gemini API quota exceeded or failed. Falling back to original "
+                        "queries with default weights."
+                    )
                     enhanced_queries = None
                     enhanced_query_str = None
-                    applied_weights = {"w_vis": default_w_vis, "w_asr": default_w_asr, "w_ocr": default_w_ocr}
+                    applied_weights = {
+                        "w_vis": default_w_vis,
+                        "w_asr": default_w_asr,
+                        "w_ocr": default_w_ocr,
+                    }
                 else:
                     enhanced_query_str = "\n".join(
                         f"Event {k}: {v.variants[0] if v and v.variants else ''}"
@@ -66,30 +73,43 @@ class SearchService:
                     )
                     first_v = next(iter(enhanced_queries.values()), None)
                     if first_v:
-                        applied_weights = {"w_vis": first_v.w_vis, "w_asr": first_v.w_asr, "w_ocr": first_v.w_ocr}
+                        applied_weights = {
+                            "w_vis": first_v.w_vis,
+                            "w_asr": first_v.w_asr,
+                            "w_ocr": first_v.w_ocr,
+                        }
             else:
                 enhanced_queries = None
                 enhanced_query_str = None
-                applied_weights = {"w_vis": default_w_vis, "w_asr": default_w_asr, "w_ocr": default_w_ocr}
         else:
             original_query = request.query
             if request.enhance_query:
                 enhanced_queries = self._query_enhancer.enhance(original_query, request.query_type)
                 if enhanced_queries and enhanced_queries.variants:
                     enhanced_query_str = f"- {enhanced_queries.variants[0]}"
-                    applied_weights = {"w_vis": enhanced_queries.w_vis, "w_asr": enhanced_queries.w_asr, "w_ocr": enhanced_queries.w_ocr}
+                    applied_weights = {
+                        "w_vis": enhanced_queries.w_vis,
+                        "w_asr": enhanced_queries.w_asr,
+                        "w_ocr": enhanced_queries.w_ocr,
+                    }
                 else:
-                    warnings.append("Gemini API quota exceeded or failed. Falling back to original query with default weights.")
+                    warnings.append(
+                        "Gemini API quota exceeded or failed. Falling back to original "
+                        "query with default weights."
+                    )
                     enhanced_query_str = None
                     enhanced_queries = None
-                    applied_weights = {"w_vis": default_w_vis, "w_asr": default_w_asr, "w_ocr": default_w_ocr}
+                    applied_weights = {
+                        "w_vis": default_w_vis,
+                        "w_asr": default_w_asr,
+                        "w_ocr": default_w_ocr,
+                    }
             else:
                 enhanced_queries = None
                 enhanced_query_str = None
-                applied_weights = {"w_vis": default_w_vis, "w_asr": default_w_asr, "w_ocr": default_w_ocr}
-            
+
         model_choices = getattr(request, "model_choices", [])
-        
+
         results = self._retrieval_engine.retrieve(request, enhanced_queries)
 
         if isinstance(request, KISSearchRequest):

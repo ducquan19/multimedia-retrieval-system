@@ -1,10 +1,15 @@
+import asyncio
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from core.config import Settings
+from core.constants import DEFAULT_TOP_K, MAX_TOP_K
 from main import create_app
+from router.config_router import public_config
+from schemas.search import KISSearchRequest
 
 
 def sources(**overrides: bool) -> dict[str, bool]:
@@ -13,10 +18,7 @@ def sources(**overrides: bool) -> dict[str, bool]:
     return values
 
 
-
-
-
-@pytest.mark.parametrize(("top_k", "expected_count"), [(1, 1), (50, 50), (100, 100)])
+@pytest.mark.parametrize(("top_k", "expected_count"), [(1, 1), (100, 100), (500, 500)])
 def test_scoring_top_k_bounds_are_accepted(
     client: TestClient, top_k: int, expected_count: int
 ) -> None:
@@ -49,9 +51,39 @@ def test_manually_entered_top_k_is_accepted(client: TestClient) -> None:
     assert len(response.json()["results"]) <= 10
 
 
-def test_default_top_k_must_be_within_bounds() -> None:
-    with pytest.raises(ValueError, match="default_top_k must be between"):
-        Settings(default_top_k=0)
+def test_top_k_above_maximum_is_rejected(client: TestClient) -> None:
+    response = client.post(
+        "/api/search",
+        json={
+            "query_type": "KIS",
+            "query": "top-k contract",
+            "top_k": 501,
+            "search_sources": sources(),
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_code_managed_top_k_ignores_legacy_environment_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AIC_DEFAULT_TOP_K", "50")
+
+    config = asyncio.run(public_config(Settings(_env_file=None)))
+    request = KISSearchRequest(query_type="KIS", query="visual query")
+
+    assert config.default_top_k == DEFAULT_TOP_K == 100
+    assert config.max_top_k == MAX_TOP_K == 500
+    assert request.top_k == DEFAULT_TOP_K
+    assert request.model_choices == ["siglip"]
+
+
+def test_request_schema_accepts_500_and_rejects_501() -> None:
+    assert KISSearchRequest(query_type="KIS", query="visual query", top_k=500).top_k == 500
+
+    with pytest.raises(ValidationError):
+        KISSearchRequest(query_type="KIS", query="visual query", top_k=501)
 
 
 def test_text_limits_load_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -117,7 +149,7 @@ def test_search_accepts_all_query_types(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["query_type"] == query_type
-    assert "model_choices" in body
+    assert body["model_choices"] == ["siglip"]
     assert body["results"]
 
 
@@ -156,8 +188,10 @@ def test_enhance_query_is_deterministic_and_optional(client: TestClient) -> None
 
     assert disabled.json()["original_query"] == "người đang mở laptop"
     assert disabled.json()["enhanced_query"] is None
+    assert disabled.json()["applied_weights"] is None
     assert enabled.json()["original_query"] == "người đang mở laptop"
     assert enabled.json()["enhanced_query"] == "[Mock enhanced KIS] người đang mở laptop"
+    assert enabled.json()["applied_weights"] is not None
 
 
 def test_missing_optional_manifest_fields_are_normalized(client: TestClient) -> None:

@@ -71,9 +71,10 @@ Copy-Item .env.example .env
 | --- | --- | --- |
 | `AIC_DATA_ROOT` | `./data` | Root directory for manifests, FAISS indices, and media |
 | `AIC_FRONTEND_ORIGIN` | `http://localhost:5173` | Allowed frontend origin in development |
-| `AIC_DEFAULT_TOP_K` | `50` | Default number of search candidates |
 | `AIC_GEMINI_API_KEY` | None | **Required** for AI Query Enhancement |
 | `AIC_ENABLE_RERANKING` | `false` | Enable local re-ranking |
+
+Search uses a code-managed default Top-K of `100` and allows values up to `500`.
 
 Do not commit `.env` or real credentials.
 

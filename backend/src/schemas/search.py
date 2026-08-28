@@ -2,6 +2,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from core.constants import DEFAULT_TOP_K, MAX_TOP_K, MIN_TOP_K
+
 QueryText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1),
@@ -12,18 +14,38 @@ class QueryVariants(BaseModel):
     variants: list[str] = Field(
         description="Exactly 1 highly descriptive English variation of the original query.",
         min_length=1,
-        max_length=1
+        max_length=1,
     )
-    w_vis: float = Field(default=1.0, description="Weight for visual search (e.g. objects, colors, actions). Value from 0.0 to 1.0.")
-    w_ocr: float = Field(default=0.0, description="Weight for OCR text search (e.g. exact text on screen, signs). Value from 0.0 to 1.0.")
-    w_asr: float = Field(default=0.0, description="Weight for ASR speech search (e.g. spoken dialog, conversations). Value from 0.0 to 1.0.")
+    w_vis: float = Field(
+        default=1.0,
+        description=(
+            "Weight for visual search (e.g. objects, colors, actions). Value from 0.0 to 1.0."
+        ),
+    )
+    w_ocr: float = Field(
+        default=0.0,
+        description=(
+            "Weight for OCR text search (e.g. exact text on screen, signs). Value from 0.0 to 1.0."
+        ),
+    )
+    w_asr: float = Field(
+        default=0.0,
+        description=(
+            "Weight for ASR speech search (e.g. spoken dialog, conversations). "
+            "Value from 0.0 to 1.0."
+        ),
+    )
+
 
 class BatchVariantResult(BaseModel):
     event_index: int
     result: QueryVariants
 
+
 class QueryVariantsBatch(BaseModel):
-    results: list[BatchVariantResult] = Field(description="List of enhanced query variants for each event.")
+    results: list[BatchVariantResult] = Field(
+        description="List of enhanced query variants for each event."
+    )
 
 
 class SearchSources(BaseModel):
@@ -44,13 +66,11 @@ class SearchSources(BaseModel):
 class BaseSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    top_k: int = Field(default=50, ge=1, le=100)
+    top_k: int = Field(default=DEFAULT_TOP_K, ge=MIN_TOP_K, le=MAX_TOP_K)
     enhance_query: bool = False
     use_reranking: bool = False
     search_sources: SearchSources = Field(default_factory=SearchSources)
-    model_choices: list[Literal["siglip", "beit3"]] = Field(
-        default_factory=lambda: ["siglip", "beit3"]
-    )
+    model_choices: list[Literal["siglip", "beit3"]] = Field(default_factory=lambda: ["siglip"])
 
 
 class KISSearchRequest(BaseSearchRequest):

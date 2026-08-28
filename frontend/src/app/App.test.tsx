@@ -8,12 +8,12 @@ import { App } from "./App";
 
 const publicConfig = {
   min_top_k: 1,
-  max_top_k: 100,
-  default_top_k: 50,
+  max_top_k: 500,
+  default_top_k: 100,
   max_trake_events: 4,
   max_query_length: 4_000,
   max_answer_length: 4_000,
-  model_choices: ["siglip", "beit3"],
+  model_choices: ["siglip"],
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -25,13 +25,15 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function searchResponse(
   queryType: QueryType,
-  options: { enhanced?: boolean; empty?: boolean } = {},
+  options: { enhanced?: boolean; empty?: boolean; weights?: boolean } = {},
 ) {
   return {
     query_type: queryType,
     original_query: "original query",
     enhanced_query: options.enhanced ? "[Mock enhanced KIS] original query" : null,
-    model_choices: ["siglip", "beit3"],
+    model_choices: ["siglip"],
+    applied_weights: options.weights ? { w_vis: 1, w_ocr: 0, w_asr: 0 } : null,
+    warnings: [],
     results: options.empty
       ? []
       : [
@@ -101,6 +103,8 @@ describe("App query workspace", () => {
 
     expect(await screen.findByLabelText(/^Query KIS/)).toBeInTheDocument();
     expect(screen.getByLabelText("Top-K")).toHaveAttribute("type", "number");
+    expect(screen.getByLabelText("SigLIP-2")).toBeChecked();
+    expect(screen.getByLabelText("BEiT-3")).not.toBeChecked();
     expect(screen.getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open" })).toBeDisabled();
 
@@ -119,7 +123,7 @@ describe("App query workspace", () => {
     renderApp();
 
     const topKInput = await screen.findByLabelText("Top-K");
-    expect(topKInput).toHaveValue(50);
+    expect(topKInput).toHaveValue(100);
     expect(topKInput.closest(".workspace__footer")).not.toBeNull();
     expect(screen.queryByText("Top-K")).not.toBeInTheDocument();
   });
@@ -174,7 +178,7 @@ describe("App query workspace", () => {
       top_k: 5,
       enhance_query: false,
       use_reranking: false,
-      model_choices: ["siglip", "beit3"],
+      model_choices: ["siglip"],
       search_sources: { image: true, asr: true, object: false, ocr: false },
     });
   });
@@ -212,10 +216,10 @@ describe("App query workspace", () => {
     expect(searchPayload(fetchMock)).toEqual({
       query_type: "VQA",
       query: "chiếc ly màu gì?",
-      top_k: 50,
+      top_k: 100,
       enhance_query: false,
       use_reranking: false,
-      model_choices: ["siglip", "beit3"],
+      model_choices: ["siglip"],
       search_sources: { image: true, asr: false, object: false, ocr: false },
     });
     expect(searchPayload(fetchMock)).not.toHaveProperty("answer");
@@ -279,6 +283,21 @@ describe("App query workspace", () => {
     const enhanced = await screen.findByText("Enhanced:");
     expect(enhanced).toBeInTheDocument();
     expect(screen.getByText("[Mock enhanced KIS] original query")).toBeInTheDocument();
+  });
+
+  it("shows applied weights only for a search submitted with enhancement", async () => {
+    setupApi(() => jsonResponse(searchResponse("KIS", { weights: true })));
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(await screen.findByLabelText(/^Query KIS/), "visual query");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByRole("checkbox", { name: "Group by video" });
+    expect(screen.queryByText("Weights Applied:")).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText(/^Enhance query/));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(await screen.findByText("Weights Applied:")).toBeInTheDocument();
   });
 
   it("renders loading and friendly API error states", async () => {

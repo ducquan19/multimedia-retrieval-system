@@ -4,8 +4,6 @@ from pathlib import Path
 from pydantic import AnyHttpUrl, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.constants import MAX_TOP_K, MIN_TOP_K
-
 
 class Settings(BaseSettings):
     """Runtime settings loaded from AIC_* environment variables."""
@@ -20,7 +18,6 @@ class Settings(BaseSettings):
     app_name: str = "AIC 2026 Retrieval Inspector API"
     data_root: Path = Path("./data")
     frontend_origin: AnyHttpUrl = "http://localhost:5173"
-    default_top_k: int = 50
     max_trake_events: int = 10
     max_query_length: int = Field(default=2_000, ge=1)
     max_answer_length: int = Field(default=2_000, ge=1)
@@ -50,8 +47,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_public_config(self) -> "Settings":
-        if not (MIN_TOP_K <= self.default_top_k <= MAX_TOP_K):
-            raise ValueError(f"default_top_k must be between {MIN_TOP_K} and {MAX_TOP_K}")
         if self.max_trake_events < 1:
             raise ValueError("max_trake_events must be at least 1")
         return self

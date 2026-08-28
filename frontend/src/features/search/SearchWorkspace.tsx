@@ -72,7 +72,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     ocr: false,
     object: false,
   });
-  const [modelChoices, setModelChoices] = useState<Array<"siglip" | "beit3">>(["siglip", "beit3"]);
+  const [modelChoices, setModelChoices] = useState<Array<"siglip" | "beit3">>(["siglip"]);
   const [kisQuery, setKisQuery] = useState("");
   const [vqaQuery, setVqaQuery] = useState("");
   const [trakeMainQuery, setTrakeMainQuery] = useState("");
@@ -136,8 +136,14 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const buildPayload = (): SearchRequest | null => {
     const errors: string[] = [];
     const parsedTopK = Number(topK);
-    if (!Number.isInteger(parsedTopK) || parsedTopK < 1 || parsedTopK > 100) {
-      errors.push("Top-K phải là số nguyên từ 1 đến 100.");
+    if (
+      !Number.isInteger(parsedTopK) ||
+      parsedTopK < config.min_top_k ||
+      parsedTopK > config.max_top_k
+    ) {
+      errors.push(
+        `Top-K phải là số nguyên từ ${config.min_top_k} đến ${config.max_top_k}.`,
+      );
     }
     if (!Object.values(sources).some(Boolean)) {
       errors.push("Chọn ít nhất một nguồn tìm kiếm.");
@@ -371,16 +377,17 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
               </div>
             )}
             
-            {searchMutation.data?.applied_weights && (
-              <div className="sidebar-weights">
-                <small><strong>Weights Applied:</strong></small>
-                <p>
-                  <span>VIS: {searchMutation.data.applied_weights.w_vis.toFixed(2)}</span>
-                  <span>OCR: {searchMutation.data.applied_weights.w_ocr.toFixed(2)}</span>
-                  <span>ASR: {searchMutation.data.applied_weights.w_asr.toFixed(2)}</span>
-                </p>
-              </div>
-            )}
+            {searchMutation.variables?.payload.enhance_query &&
+              searchMutation.data?.applied_weights && (
+                <div className="sidebar-weights">
+                  <small><strong>Weights Applied:</strong></small>
+                  <p>
+                    <span>VIS: {searchMutation.data.applied_weights.w_vis.toFixed(2)}</span>
+                    <span>OCR: {searchMutation.data.applied_weights.w_ocr.toFixed(2)}</span>
+                    <span>ASR: {searchMutation.data.applied_weights.w_asr.toFixed(2)}</span>
+                  </p>
+                </div>
+              )}
           </div>
 
           <label className="toggle-row" htmlFor="use-reranking">
