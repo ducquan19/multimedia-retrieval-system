@@ -1,11 +1,29 @@
 import logging
+import sys
 from pathlib import Path
 
 import numpy as np
+import sentencepiece as spm
 import torch
 from transformers import AutoModel, AutoProcessor
 
 logger = logging.getLogger(__name__)
+
+_BEIT3_BOS_ID = 0
+_BEIT3_PAD_ID = 1
+_BEIT3_EOS_ID = 2
+_BEIT3_UNK_ID = 3
+_BEIT3_SENTENCEPIECE_OFFSET = 1
+
+
+def _remap_beit3_sentencepiece_ids(ids: list[int], sentencepiece_unk_id: int) -> list[int]:
+    """Map raw SentencePiece IDs to the XLM-R vocabulary expected by BEiT-3."""
+    return [
+        _BEIT3_UNK_ID
+        if token_id == sentencepiece_unk_id
+        else token_id + _BEIT3_SENTENCEPIECE_OFFSET
+        for token_id in ids
+    ]
 
 
 class EmbeddingService:
@@ -42,9 +60,6 @@ class EmbeddingService:
             spm_path = Path(beit3_model_path) / "beit3.spm"
             pth_path = Path(beit3_model_path) / "beit3_base_patch16_384_coco_retrieval.pth"
 
-            import sys
-            import sentencepiece as spm
-
             # Add BEiT-3 to path to load its modules
             beit3_dir = str(Path(__file__).parent / "beit3")
             if beit3_dir not in sys.path:
@@ -54,35 +69,42 @@ class EmbeddingService:
             logger.info("Loading BEiT-3 Tokenizer and Model...")
             self.beit3_tokenizer = spm.SentencePieceProcessor(model_file=str(spm_path))
             self.beit3_model = modeling_finetune.beit3_base_patch16_384_retrieval(pretrained=False)
-            checkpoint = torch.load(pth_path, map_location="cpu")
-            self.beit3_model.load_state_dict(checkpoint['model'], strict=False)
+            checkpoint = torch.load(pth_path, map_location="cpu", weights_only=True)
+            incompatible = self.beit3_model.load_state_dict(checkpoint["model"], strict=False)
+            if incompatible.missing_keys or incompatible.unexpected_keys:
+                raise RuntimeError(
+                    "BEiT-3 checkpoint is incompatible with the retrieval model: "
+                    f"missing={incompatible.missing_keys}, "
+                    f"unexpected={incompatible.unexpected_keys}"
+                )
             self.beit3_model = self.beit3_model.to(self.device).eval()
             logger.info("BEiT-3 ITC Model loaded successfully!")
         except Exception as e:
-            logger.error("Failed to load BEiT-3 model: %s", e)
+            self.beit3_model = None
+            logger.exception("Failed to load BEiT-3 model: %s", e)
 
-    def _get_beit3_text_segment(self, text_segment: str, max_len: int = 64):
-        # Manually encode using SentencePiece
-        ids = self.beit3_tokenizer.encode(text_segment)
+    def _get_beit3_text_segment(
+        self, text_segment: str, max_len: int = 64
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if max_len < 2:
+            raise ValueError("BEiT-3 max_len must leave room for BOS and EOS")
+        if self.beit3_tokenizer is None:
+            raise RuntimeError("BEiT-3 tokenizer is unavailable")
 
-        # Add BOS (0) and EOS (2)
-        tokens = [0] + ids + [2]
-
-        # Truncate if necessary
-        if len(tokens) > max_len:
-            tokens = tokens[:max_len - 1] + [2]
-
-        # Pad if necessary with PAD (1)
-        attention_mask = [1] * len(tokens)
-        if len(tokens) < max_len:
-            pad_len = max_len - len(tokens)
-            tokens.extend([1] * pad_len)
-            attention_mask.extend([0] * pad_len)
+        raw_ids = self.beit3_tokenizer.encode(text_segment, out_type=int)
+        content_ids = _remap_beit3_sentencepiece_ids(
+            raw_ids, self.beit3_tokenizer.unk_id()
+        )[: max_len - 2]
+        tokens = [_BEIT3_BOS_ID, *content_ids, _BEIT3_EOS_ID]
+        content_length = len(tokens)
+        tokens.extend([_BEIT3_PAD_ID] * (max_len - content_length))
 
         tokens_tensor = torch.tensor([tokens], dtype=torch.long, device=self.device)
-        # In BEiT3, padding_mask is True for padding tokens (where attention_mask is 0)
-        attention_mask_tensor = torch.tensor([attention_mask], dtype=torch.long, device=self.device)
-        padding_mask = (attention_mask_tensor == 0).to(self.device)
+        padding_mask = torch.tensor(
+            [[False] * content_length + [True] * (max_len - content_length)],
+            dtype=torch.bool,
+            device=self.device,
+        )
         return tokens_tensor, padding_mask
 
     def get_siglip_embedding(self, text: str) -> np.ndarray:
@@ -99,8 +121,7 @@ class EmbeddingService:
 
     def get_beit3_embedding(self, text: str) -> np.ndarray:
         if not self.beit3_model:
-            # BEiT-3 Base ITC uses 768 dimension
-            return np.zeros((1, 768), dtype='float32')
+            raise RuntimeError("BEiT-3 was selected but its retrieval model is unavailable")
 
         logger.debug("Generating BEiT3 embedding for: %s", text)
 

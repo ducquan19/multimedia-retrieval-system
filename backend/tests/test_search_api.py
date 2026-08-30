@@ -7,6 +7,10 @@ from pydantic import ValidationError
 
 from core.config import Settings
 from core.constants import DEFAULT_TOP_K, MAX_TOP_K
+from infrastructure.embedding_service import (
+    EmbeddingService,
+    _remap_beit3_sentencepiece_ids,
+)
 from main import create_app
 from router.config_router import public_config
 from schemas.search import KISSearchRequest
@@ -84,6 +88,34 @@ def test_request_schema_accepts_500_and_rejects_501() -> None:
 
     with pytest.raises(ValidationError):
         KISSearchRequest(query_type="KIS", query="visual query", top_k=501)
+
+
+def test_beit3_text_ids_follow_xlm_roberta_vocabulary_mapping() -> None:
+    assert _remap_beit3_sentencepiece_ids([0, 9, 402], sentencepiece_unk_id=0) == [
+        3,
+        10,
+        403,
+    ]
+
+    class StubSentencePiece:
+        @staticmethod
+        def encode(text: str, out_type: type[int]) -> list[int]:
+            assert text == "a person"
+            assert out_type is int
+            return [9, 402]
+
+        @staticmethod
+        def unk_id() -> int:
+            return 0
+
+    service = EmbeddingService.__new__(EmbeddingService)
+    service.device = "cpu"
+    service.beit3_tokenizer = StubSentencePiece()
+
+    tokens, padding_mask = service._get_beit3_text_segment("a person", max_len=6)
+
+    assert tokens.tolist() == [[0, 10, 403, 2, 1, 1]]
+    assert padding_mask.tolist() == [[False, False, False, False, True, True]]
 
 
 def test_text_limits_load_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
