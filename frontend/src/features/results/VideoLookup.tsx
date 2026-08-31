@@ -1,4 +1,11 @@
-import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from "react";
+import {
+  type ClipboardEvent,
+  type FormEvent,
+  type MouseEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { getVideoSource, resolveMediaUrl } from "../../api/client";
@@ -7,18 +14,46 @@ import { useModalAccessibility } from "./useModalAccessibility";
 
 export function VideoLookup() {
   const [videoId, setVideoId] = useState("");
-  const [openedVideoId, setOpenedVideoId] = useState<string | null>(null);
+  const [frameId, setFrameId] = useState("");
+  const [openedVideo, setOpenedVideo] = useState<{
+    videoId: string;
+    frameId: number;
+  } | null>(null);
+
+  const parsedFrameId = parseFrameId(frameId);
 
   const openVideo = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedVideoId = videoId.trim();
-    if (normalizedVideoId) setOpenedVideoId(normalizedVideoId);
+    if (normalizedVideoId && parsedFrameId !== null) {
+      setOpenedVideo({ videoId: normalizedVideoId, frameId: parsedFrameId });
+    }
+  };
+
+  const pasteVideoAndFrame = (event: ClipboardEvent<HTMLFormElement>) => {
+    const firstRow = event.clipboardData.getData("text").split(/\r?\n/, 1)[0] ?? "";
+    const cells = firstRow.split("\t");
+    if (cells.length < 2) return;
+
+    const pastedVideoId = cells[0]?.trim() ?? "";
+    const pastedFrameId = cells[1]?.trim() ?? "";
+    if (!pastedVideoId || parseFrameId(pastedFrameId) === null) return;
+
+    event.preventDefault();
+    setVideoId(pastedVideoId);
+    setFrameId(pastedFrameId);
   };
 
   return (
     <>
-      <form className="video-lookup" aria-label="Open video by ID" onSubmit={openVideo}>
+      <form
+        className="video-lookup"
+        aria-label="Open video by ID and frame"
+        onSubmit={openVideo}
+        onPaste={pasteVideoAndFrame}
+      >
         <input
+          className="video-lookup__video-id"
           type="text"
           value={videoId}
           onChange={(event) => setVideoId(event.target.value)}
@@ -28,34 +63,54 @@ export function VideoLookup() {
           autoComplete="off"
           spellCheck={false}
         />
-        <button type="submit" disabled={!videoId.trim()}>
+        <input
+          className="video-lookup__frame-id"
+          type="number"
+          min="0"
+          step="1"
+          value={frameId}
+          onChange={(event) => setFrameId(event.target.value)}
+          aria-label="Frame ID"
+          placeholder="frame_id"
+          autoComplete="off"
+        />
+        <button type="submit" disabled={!videoId.trim() || parsedFrameId === null}>
           Open
         </button>
       </form>
 
-      {openedVideoId && (
+      {openedVideo && (
         <VideoPlayerModal
-          videoId={openedVideoId}
-          onClose={() => setOpenedVideoId(null)}
+          key={`${openedVideo.videoId}:${openedVideo.frameId}`}
+          videoId={openedVideo.videoId}
+          initialFrameId={openedVideo.frameId}
+          onClose={() => setOpenedVideo(null)}
         />
       )}
     </>
   );
 }
 
+function parseFrameId(value: string): number | null {
+  if (!value.trim()) return 0;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
 interface VideoPlayerModalProps {
   videoId: string;
+  initialFrameId: number;
   onClose: () => void;
 }
 
-function VideoPlayerModal({ videoId, onClose }: VideoPlayerModalProps) {
+function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const frameInputRef = useRef<HTMLInputElement>(null);
   const [videoSource, setVideoSource] = useState<VideoSourceResponse | null>(null);
   const [videoStatus, setVideoStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [frameInput, setFrameInput] = useState("0");
+  const [frameInput, setFrameInput] = useState(String(initialFrameId));
   const [frameCopyStatus, setFrameCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
 
   useModalAccessibility({ dialogRef, initialFocusRef: closeButtonRef, onClose });
@@ -79,7 +134,7 @@ function VideoPlayerModal({ videoId, onClose }: VideoPlayerModalProps) {
     if (event.target === event.currentTarget) onClose();
   };
 
-  const setVideoFrame = (requestedFrame: number) => {
+  const setVideoFrame = (requestedFrame: number, pauseAfterSeek = true) => {
     const video = videoRef.current;
     if (!video || !videoSource) return;
 
@@ -88,7 +143,7 @@ function VideoPlayerModal({ videoId, onClose }: VideoPlayerModalProps) {
       : Number.POSITIVE_INFINITY;
     const targetFrame = Math.min(Math.max(0, Math.round(requestedFrame)), maxFrame);
     video.currentTime = targetFrame / videoSource.fps;
-    video.pause();
+    if (pauseAfterSeek) video.pause();
     setFrameInput(String(targetFrame));
     setFrameCopyStatus("idle");
   };
@@ -166,6 +221,7 @@ function VideoPlayerModal({ videoId, onClose }: VideoPlayerModalProps) {
                   controls
                   autoPlay
                   preload="metadata"
+                  onLoadedMetadata={() => setVideoFrame(initialFrameId, false)}
                   onTimeUpdate={updatePlayingFrame}
                 >
                   Your browser does not support video playback.

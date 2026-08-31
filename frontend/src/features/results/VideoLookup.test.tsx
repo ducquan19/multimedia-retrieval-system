@@ -10,6 +10,47 @@ afterEach(() => {
 });
 
 describe("VideoLookup", () => {
+  it("pastes adjacent sheet cells and opens the video at the pasted frame with Enter", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          video_id: "L21_V003",
+          url: "/media/videos/L21_V003.mp4",
+          source: "local",
+          fps: 25,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    render(<VideoLookup />);
+
+    const videoIdInput = screen.getByRole("textbox", { name: "Video ID" });
+    const frameIdInput = screen.getByRole("spinbutton", { name: "Frame ID" });
+    fireEvent.paste(videoIdInput, {
+      clipboardData: { getData: () => "L21_V003\t125\r\n" },
+    });
+
+    expect(videoIdInput).toHaveValue("L21_V003");
+    expect(frameIdInput).toHaveValue(125);
+
+    videoIdInput.focus();
+    await user.keyboard("{Enter}");
+
+    const fallbackText = await screen.findByText("Your browser does not support video playback.");
+    const video = fallbackText.closest("video");
+    if (!(video instanceof HTMLVideoElement)) throw new Error("Expected video player");
+    Object.defineProperty(video, "duration", { configurable: true, value: 100 });
+    fireEvent.loadedMetadata(video);
+
+    expect(screen.getByRole("dialog", { name: "L21_V003" })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Current frame ID" })).toHaveValue(125);
+    expect(video.currentTime).toBeCloseTo(125 / 25);
+    expect(video).toHaveAttribute("autoplay");
+  });
+
   it("opens a video-only modal by ID and keeps frame navigation below the player", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

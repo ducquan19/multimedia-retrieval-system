@@ -170,7 +170,7 @@ describe("App query workspace", () => {
 
     const header = await screen.findByRole("banner", { name: "Result tools" });
     expect(within(header).getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
-    expect(within(header).getByRole("combobox", { name: "Program" })).toHaveValue("ALL");
+    expect(within(header).queryByRole("combobox", { name: "Program" })).not.toBeInTheDocument();
     expect(within(header).queryByRole("checkbox", { name: "Group by video" })).not.toBeInTheDocument();
 
     await user.type(await screen.findByLabelText(/^Query KIS/), "query");
@@ -179,6 +179,7 @@ describe("App query workspace", () => {
     expect(await within(header).findByRole("checkbox", { name: "Group by video" })).toBeInTheDocument();
     expect(within(header).getByText("KIS")).toBeInTheDocument();
     expect(within(header).getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
+    expect(within(header).getByRole("combobox", { name: "Program" })).toHaveValue("ALL");
   });
 
   it("filters displayed results by program without changing the search payload", async () => {
@@ -219,6 +220,12 @@ describe("App query workspace", () => {
     expect(screen.getByText("L22_V001")).toBeInTheDocument();
     expect(screen.queryByText("L25_V001")).not.toBeInTheDocument();
     expect(searchPayload(fetchMock)).not.toHaveProperty("program");
+
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    const resetProgram = await screen.findByRole("combobox", { name: "Program" });
+    expect(resetProgram).toHaveValue("ALL");
+    expect(screen.getByText("L25_V001")).toBeInTheDocument();
+    expect(screen.getByText("L26_V001")).toBeInTheDocument();
   });
 
   it("submits the typed KIS payload with shared controls", async () => {
@@ -436,6 +443,7 @@ describe("App query workspace", () => {
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     expect(await screen.findByText("Không tìm thấy candidate")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Program" })).not.toBeInTheDocument();
   });
 
   it("aborts the previous request when a new search starts", async () => {

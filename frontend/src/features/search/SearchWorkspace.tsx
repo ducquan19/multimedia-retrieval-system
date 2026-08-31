@@ -118,6 +118,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     searchMutation.data?.results.filter((result) =>
       matchesProgram(result.video_id, programFilter),
     ).length ?? 0;
+  const showProgramFilter =
+    !searchMutation.isPending && Boolean(searchMutation.data?.results.length);
 
   useEffect(
     () => () => {
@@ -313,6 +315,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     activeController.current = controller;
     setGroupByVideo(false);
     setGroupSort("score");
+    setProgramFilter("ALL");
     searchMutation.mutate({ payload, signal: controller.signal });
   };
 
@@ -744,7 +747,12 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       </aside>
 
       <div className="workspace__results" aria-label="Search results">
-        <header className="result-zone__header" aria-label="Result tools">
+        <header
+          className={`result-zone__header${
+            showProgramFilter ? "" : " result-zone__header--without-program"
+          }`}
+          aria-label="Result tools"
+        >
           <div className="result-zone__header-start">
             {searchMutation.data?.results.length ? (
               searchMutation.data.query_type === "TRAKE" ? (
@@ -780,14 +788,15 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             ) : null}
           </div>
           <VideoLookup />
-          <label className="program-filter">
-            <span>Program</span>
-            <select
-              aria-label="Program"
-              value={programFilter}
-              onChange={(event) =>
-                setProgramFilter(event.target.value as ProgramFilter)
-              }
+          {showProgramFilter && (
+            <label className="program-filter">
+              <span>Program</span>
+              <select
+                aria-label="Program"
+                value={programFilter}
+                onChange={(event) =>
+                  setProgramFilter(event.target.value as ProgramFilter)
+                }
               >
                 <option value="ALL">ALL</option>
                 <option value="L21_L22">HTV 60 Giây</option>
@@ -795,8 +804,9 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 <option value="L24">Múa lân</option>
                 <option value="L25">Ôn thi THPT</option>
                 <option value="L26">Món ngon mỗi ngày</option>
-            </select>
-          </label>
+              </select>
+            </label>
+          )}
           <div className="result-zone__header-end">
             {searchMutation.data?.results.length ? (
               <span className="mini-badge">{searchMutation.data.query_type}</span>
