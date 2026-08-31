@@ -1,21 +1,28 @@
 import logging
-from typing import Optional
+import uuid
 
 from elasticsearch import Elasticsearch
+
+from core.intro_exclusion import IntroExclusionPolicy
+from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
+from schemas.retrieval import ScoredCandidate
 
 logger = logging.getLogger(__name__)
 
 
-import uuid
-from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
-from schemas.retrieval import ScoredCandidate
-
-
 class KeyframeTextRepository:
-    def __init__(self, es_url: str, keyframe_repository: KeyframeMetadataRepository):
+    _MAX_TERMS_PER_CLAUSE = 65_536
+
+    def __init__(
+        self,
+        es_url: str,
+        keyframe_repository: KeyframeMetadataRepository,
+        intro_exclusion_policy: IntroExclusionPolicy | None = None,
+    ):
         self.es = Elasticsearch(es_url)
         self.index_name = "keyframes_metadata"
         self._keyframe_repository = keyframe_repository
+        self._intro_exclusion_policy = intro_exclusion_policy or IntroExclusionPolicy()
 
     def ping(self) -> bool:
         try:
@@ -24,7 +31,13 @@ class KeyframeTextRepository:
             logger.error("Failed to ping Elasticsearch: %s", e)
             return False
 
-    def search_text(self, text_query: str, fields: list[str], objects: Optional[list[str]], top_k: int) -> list[ScoredCandidate]:
+    def search_text(
+        self,
+        text_query: str,
+        fields: list[str],
+        objects: list[str] | None,
+        top_k: int,
+    ) -> list[ScoredCandidate]:
         """
         Searches Elasticsearch using BM25 on specified text fields and filters by objects.
         Returns a list of ScoredCandidate.
@@ -51,12 +64,26 @@ class KeyframeTextRepository:
                     }
                 })
 
+        collection = self._keyframe_repository.load()
+        excluded_ids = self._intro_exclusion_policy.excluded_faiss_ids(collection)
+        must_not_clauses = [
+            {
+                "terms": {
+                    "faiss_id": list(
+                        excluded_ids[offset : offset + self._MAX_TERMS_PER_CLAUSE]
+                    )
+                }
+            }
+            for offset in range(0, len(excluded_ids), self._MAX_TERMS_PER_CLAUSE)
+        ]
+
         query_body = {
             "size": top_k,
             "query": {
                 "bool": {
                     "must": must_clauses if must_clauses else {"match_all": {}},
-                    "filter": filter_clauses
+                    "filter": filter_clauses,
+                    "must_not": must_not_clauses,
                 }
             },
             "_source": ["faiss_id"]
@@ -67,7 +94,6 @@ class KeyframeTextRepository:
             hits = response["hits"]["hits"]
 
             # Map hits to ScoredCandidate
-            collection = self._keyframe_repository.load()
             candidates = []
 
             for hit in hits:
@@ -75,6 +101,8 @@ class KeyframeTextRepository:
                 score = hit["_score"] or 0.0
                 try:
                     keyframe = collection.keyframes[faiss_id]
+                    if self._intro_exclusion_policy.is_intro(keyframe):
+                        continue
                     candidate = ScoredCandidate(
                         result_id=str(uuid.uuid4()),
                         keyframe=keyframe,

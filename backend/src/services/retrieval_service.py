@@ -3,6 +3,7 @@ import math
 import time
 import uuid
 
+from core.intro_exclusion import IntroExclusionPolicy
 from infrastructure.blip2_reranker import BLIP2Reranker
 from infrastructure.embedding_service import EmbeddingService
 from repositories.text_repository import KeyframeTextRepository
@@ -36,12 +37,14 @@ class RetrievalService:
         text_repository: KeyframeTextRepository,
         blip2_reranker: BLIP2Reranker,
         embedding_service: EmbeddingService,
+        intro_exclusion_policy: IntroExclusionPolicy | None = None,
     ) -> None:
         self._siglip_repo = siglip_vector_repo
         self._beit3_repo = beit3_vector_repo
         self._text_repository = text_repository
         self._blip2_reranker = blip2_reranker
         self._embedding_service = embedding_service
+        self._intro_exclusion_policy = intro_exclusion_policy or IntroExclusionPolicy()
 
     def retrieve(
         self,
@@ -96,6 +99,16 @@ class RetrievalService:
                 asr_query or query, ["asr_text"], None, fetch_k
             )
 
+        siglip_candidates_lists = [
+            self._intro_exclusion_policy.filter_candidates(candidates)
+            for candidates in siglip_candidates_lists
+        ]
+        beit3_candidates_lists = [
+            self._intro_exclusion_policy.filter_candidates(candidates)
+            for candidates in beit3_candidates_lists
+        ]
+        asr_cands = self._intro_exclusion_policy.filter_candidates(asr_cands)
+
         cmap = {}
         for cands in siglip_candidates_lists + beit3_candidates_lists + [asr_cands]:
             for c in cands:
@@ -146,7 +159,9 @@ class RetrievalService:
         if self._blip2_reranker.enable and use_reranking:
             candidates = self._blip2_reranker.rerank(query, candidates)
 
-        return candidates
+        # Repository-level filters protect recall; this is a final invariant check
+        # before any caller performs ranking or temporal reasoning.
+        return self._intro_exclusion_policy.filter_candidates(candidates)
 
     def _retrieve_single(
         self, request: SearchRequest, enhanced_queries: QueryVariants | None = None
@@ -189,7 +204,7 @@ class RetrievalService:
     def _retrieve_planned_kis(
         self, request: KISSearchRequest, plan: KISQueryPlan
     ) -> tuple[SingleSearchResult, ...]:
-        """Retrieve an anchor frame, then rerank it with same-video event evidence."""
+        """Retrieve event frames, then rerank them with same-video event evidence."""
         fetch_k = max(request.top_k * 10, 100)
         primary_anchor = max(
             (event for event in plan.events if event.importance == "anchor"),
@@ -221,29 +236,72 @@ class RetrievalService:
             )
 
         anchor_candidates = candidates_by_event[primary_anchor.event_index]
-        scored: list[tuple[float, ScoredCandidate]] = []
-        for anchor_candidate in anchor_candidates:
-            weighted_score = anchor_candidate.similarity_score
+        seeded_candidates: list[tuple[ScoredCandidate, KISQueryPlanEvent]] = [
+            (candidate, primary_anchor) for candidate in anchor_candidates
+        ]
+
+        # Preserve all primary-anchor frames while allowing reliable secondary
+        # events to contribute a few strong frames for each video. A target video
+        # can already be present in the primary list with the wrong frame, so
+        # expansion must be bounded by event and video rather than by video alone.
+        primary_image_paths = {candidate.image_path for candidate in anchor_candidates}
+        secondary_seeds: list[tuple[ScoredCandidate, KISQueryPlanEvent]] = []
+        secondary_seed_counts: dict[tuple[int, str], int] = {}
+        for event in retrieval_events:
+            if not self._can_expand_plan_candidates(event, primary_anchor):
+                continue
+            for candidate in candidates_by_event[event.event_index]:
+                if candidate.image_path in primary_image_paths:
+                    continue
+                video_id = candidate.keyframe.video_id
+                seed_key = (event.event_index, video_id)
+                seed_count = secondary_seed_counts.get(seed_key, 0)
+                if seed_count >= 3:
+                    continue
+                secondary_seed_counts[seed_key] = seed_count + 1
+                secondary_seeds.append((candidate, event))
+        seeded_candidates.extend(secondary_seeds)
+
+        scored_primary: list[tuple[float, ScoredCandidate]] = []
+        scored_secondary: list[tuple[float, ScoredCandidate]] = []
+        for seed_candidate, seed_event in seeded_candidates:
+            weighted_score = seed_candidate.similarity_score
             total_weight = 1.0
             for event in retrieval_events:
-                if event.event_index == primary_anchor.event_index:
+                if event.event_index == seed_event.event_index:
                     continue
                 weight = self._plan_event_weight(event)
                 evidence_score = self._best_same_video_evidence(
                     candidates_by_event[event.event_index],
-                    anchor_candidate,
+                    seed_candidate,
                     event,
-                    primary_anchor,
+                    seed_event,
                     plan.search_mode == "temporal_sequence",
                 )
                 weighted_score += weight * evidence_score
                 total_weight += weight
-            scored.append((weighted_score / total_weight, anchor_candidate))
+            combined_score = weighted_score / total_weight
+            if seed_event.event_index == primary_anchor.event_index:
+                scored_primary.append((combined_score, seed_candidate))
+            else:
+                source_score = seed_event.confidence * seed_candidate.similarity_score
+                scored_secondary.append(
+                    (max(combined_score, source_score), seed_candidate)
+                )
 
-        scored.sort(key=lambda item: item[0], reverse=True)
+        scored_primary.sort(key=lambda item: item[0], reverse=True)
+        scored_secondary.sort(key=lambda item: item[0], reverse=True)
+        if scored_secondary:
+            protected_count = min(10, request.top_k, len(scored_primary))
+            protected = scored_primary[:protected_count]
+            tail = scored_primary[protected_count:] + scored_secondary
+            tail.sort(key=lambda item: item[0], reverse=True)
+            scored = protected + tail[: request.top_k - protected_count]
+        else:
+            scored = scored_primary[: request.top_k]
         reranked = [
             candidate.model_copy(update={"similarity_score": score})
-            for score, candidate in scored[: request.top_k]
+            for score, candidate in scored
         ]
         return self._single_results_from_candidates(reranked)
 
@@ -251,6 +309,17 @@ class RetrievalService:
     def _plan_event_weight(event: KISQueryPlanEvent) -> float:
         importance_weight = {"anchor": 1.0, "supporting": 0.6, "context": 0.2}
         return importance_weight[event.importance] * event.confidence
+
+    @staticmethod
+    def _can_expand_plan_candidates(
+        event: KISQueryPlanEvent, primary_anchor: KISQueryPlanEvent
+    ) -> bool:
+        return (
+            event.event_index != primary_anchor.event_index
+            and event.importance in {"anchor", "supporting"}
+            and event.confidence >= 0.8
+            and not event.inferred
+        )
 
     @staticmethod
     def _best_same_video_evidence(

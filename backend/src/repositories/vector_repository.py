@@ -1,23 +1,34 @@
 import logging
-from collections import defaultdict
+import uuid
 from pathlib import Path
 
 import faiss
 import numpy as np
 
-logger = logging.getLogger(__name__)
-
-import uuid
+from core.intro_exclusion import IntroExclusionPolicy
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
 from schemas.retrieval import ScoredCandidate
 
+logger = logging.getLogger(__name__)
+
 
 class KeyframeVectorRepository:
-    def __init__(self, index_path: Path, index_dim: int, keyframe_repository: KeyframeMetadataRepository):
+    def __init__(
+        self,
+        index_path: Path,
+        index_dim: int,
+        keyframe_repository: KeyframeMetadataRepository,
+        intro_exclusion_policy: IntroExclusionPolicy | None = None,
+    ):
         self.index_path = index_path
         self._keyframe_repository = keyframe_repository
+        self._intro_exclusion_policy = intro_exclusion_policy or IntroExclusionPolicy()
         self.index_dim = index_dim
         self._index = None
+        self._search_parameters = None
+        self._excluded_id_array = None
+        self._excluded_selector = None
+        self._allowed_selector = None
         self._load_index()
 
     def _load_index(self):
@@ -33,16 +44,40 @@ class KeyframeVectorRepository:
         if self._index.ntotal == 0:
             return []
 
-        distances, indices = self._index.search(query_vector, top_k)
+        search_parameters = self._get_search_parameters()
+        distances, indices = self._index.search(query_vector, top_k, params=search_parameters)
         faiss_scores = self._format_single_search_result(distances, indices)
         return self._hydrate_candidates(faiss_scores)
 
-    def _format_single_search_result(self, distances: np.ndarray, indices: np.ndarray) -> list[tuple[int, float]]:
+    def _get_search_parameters(self):
+        if self._search_parameters is not None:
+            return self._search_parameters
+
+        collection = self._keyframe_repository.load()
+        excluded_ids = self._intro_exclusion_policy.excluded_faiss_ids(collection)
+        if not excluded_ids:
+            return None
+
+        # Keep every SWIG-backed object alive for as long as the search parameters.
+        self._excluded_id_array = np.asarray(excluded_ids, dtype=np.int64)
+        self._excluded_selector = faiss.IDSelectorBatch(self._excluded_id_array)
+        self._allowed_selector = faiss.IDSelectorNot(self._excluded_selector)
+        self._search_parameters = faiss.SearchParameters(sel=self._allowed_selector)
+        logger.info("Excluding %d intro keyframes from %s", len(excluded_ids), self.index_path)
+        return self._search_parameters
+
+    def _format_single_search_result(
+        self, distances: np.ndarray, indices: np.ndarray
+    ) -> list[tuple[int, float]]:
         if indices.size == 0 or distances.size == 0:
             return []
         dist_list = distances[0].tolist()
         idx_list = indices[0].tolist()
-        return [(idx, dist) for idx, dist in zip(idx_list, dist_list) if idx != -1]
+        return [
+            (idx, dist)
+            for idx, dist in zip(idx_list, dist_list, strict=True)
+            if idx != -1
+        ]
 
     def _hydrate_candidates(self, faiss_scores: list[tuple[int, float]]) -> list[ScoredCandidate]:
         collection = self._keyframe_repository.load()
@@ -51,6 +86,8 @@ class KeyframeVectorRepository:
             try:
                 # Assuming faiss_id corresponds to the index in the keyframes list
                 keyframe = collection.keyframes[faiss_id]
+                if self._intro_exclusion_policy.is_intro(keyframe):
+                    continue
                 candidate = ScoredCandidate(
                     result_id=str(uuid.uuid4()),
                     keyframe=keyframe,
@@ -59,5 +96,7 @@ class KeyframeVectorRepository:
                 )
                 candidates.append(candidate)
             except IndexError:
-                logger.warning("FAISS returned id %d which is out of bounds for keyframes", faiss_id)
+                logger.warning(
+                    "FAISS returned id %d which is out of bounds for keyframes", faiss_id
+                )
         return candidates

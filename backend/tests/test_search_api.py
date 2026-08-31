@@ -1,17 +1,24 @@
 import asyncio
+from pathlib import Path
 from typing import Any
 
+import faiss
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from core.config import Settings
 from core.constants import DEFAULT_TOP_K, MAX_TOP_K
+from core.intro_exclusion import IntroExclusionPolicy
 from infrastructure.embedding_service import (
     EmbeddingService,
     _remap_beit3_sentencepiece_ids,
 )
 from main import create_app
+from models.keyframe import Keyframe, KeyframeCollection
+from repositories.text_repository import KeyframeTextRepository
+from repositories.vector_repository import KeyframeVectorRepository
 from router.config_router import public_config
 from schemas.search import KISSearchRequest
 
@@ -398,3 +405,108 @@ def test_media_endpoint_serves_only_existing_data_file(client: TestClient) -> No
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/svg+xml")
+
+
+def intro_test_keyframe(video_id: str, frame_id: int) -> Keyframe:
+    return Keyframe(
+        keyframe_id=f"{video_id}/{frame_id}",
+        video_id=video_id,
+        frame_id=frame_id,
+        image_path=f"keyframes/{video_id}/F{frame_id:06d}.jpg",
+    )
+
+
+def test_intro_exclusion_uses_exclusive_frame_count_boundaries() -> None:
+    policy = IntroExclusionPolicy()
+
+    for group_id, frame_count in policy.intro_frame_counts.items():
+        assert policy.is_intro(intro_test_keyframe(f"{group_id}_V001", frame_count - 1))
+        assert not policy.is_intro(intro_test_keyframe(f"{group_id}_V001", frame_count))
+
+
+def test_intro_group_matching_does_not_use_an_ambiguous_prefix() -> None:
+    policy = IntroExclusionPolicy()
+
+    assert policy.is_intro(intro_test_keyframe("L21_V999", 49))
+    assert not policy.is_intro(intro_test_keyframe("L210_V001", 49))
+    assert not policy.is_intro(intro_test_keyframe("OTHER_L21_V001", 49))
+
+
+class StubKeyframeMetadataRepository:
+    def __init__(self, collection: KeyframeCollection) -> None:
+        self._collection = collection
+
+    def load(self) -> KeyframeCollection:
+        return self._collection
+
+
+def test_faiss_search_skips_intro_without_reducing_top_k() -> None:
+    keyframes = (
+        intro_test_keyframe("L26_V001", 10),
+        intro_test_keyframe("L26_V002", 20),
+        intro_test_keyframe("L26_V001", 300),
+        intro_test_keyframe("L20_V001", 5),
+    )
+    manifest = KeyframeCollection(version=1, keyframes=keyframes)
+
+    vectors = np.asarray(
+        [[1.0, 0.0], [0.9, 0.1], [0.8, 0.2], [0.7, 0.3]], dtype=np.float32
+    )
+    index = faiss.IndexFlatIP(2)
+    index.add(vectors)
+
+    metadata = StubKeyframeMetadataRepository(manifest)
+    repository = KeyframeVectorRepository(
+        Path("missing-test.index"), 2, metadata  # type: ignore[arg-type]
+    )
+    repository._index = index
+    candidates = repository.search(np.asarray([[1.0, 0.0]], dtype=np.float32), top_k=2)
+
+    assert [(item.keyframe.video_id, item.keyframe.frame_id) for item in candidates] == [
+        ("L26_V001", 300),
+        ("L20_V001", 5),
+    ]
+
+
+def test_asr_search_excludes_intro_ids_and_defensively_filters_hits() -> None:
+    manifest = KeyframeCollection(
+        version=1,
+        keyframes=(
+            intro_test_keyframe("L25_V001", 74),
+            intro_test_keyframe("L25_V001", 75),
+        ),
+    )
+
+    class FakeElasticsearch:
+        def __init__(self) -> None:
+            self.body = None
+
+        def ping(self) -> bool:
+            return True
+
+        def search(self, *, index: str, body: dict[str, Any]) -> dict[str, Any]:
+            assert index == "keyframes_metadata"
+            self.body = body
+            return {
+                "hits": {
+                    "hits": [
+                        {"_source": {"faiss_id": 0}, "_score": 2.0},
+                        {"_source": {"faiss_id": 1}, "_score": 1.0},
+                    ]
+                }
+            }
+
+    fake_es = FakeElasticsearch()
+    repository = KeyframeTextRepository(
+        "http://localhost:9200",
+        StubKeyframeMetadataRepository(manifest),  # type: ignore[arg-type]
+    )
+    repository.es = fake_es  # type: ignore[assignment]
+
+    candidates = repository.search_text("query", ["asr_text"], None, top_k=2)
+
+    assert fake_es.body is not None
+    assert fake_es.body["query"]["bool"]["must_not"] == [
+        {"terms": {"faiss_id": [0]}}
+    ]
+    assert [item.keyframe.frame_id for item in candidates] == [75]

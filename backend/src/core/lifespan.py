@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from core.config import get_settings
+from core.intro_exclusion import IntroExclusionPolicy
 from core.logger import SimpleLogger
 from infrastructure.blip2_reranker import BLIP2Reranker
 from infrastructure.embedding_service import EmbeddingService
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
             resolved_settings.data_root,
             resolved_settings.keyframes_filename,
         )
+        intro_exclusion_policy = IntroExclusionPolicy()
         
         # 2. Embedding Service
         logger.info("Initializing Embedding Service (SigLIP & BEiT3)...")
@@ -41,19 +43,25 @@ async def lifespan(app: FastAPI):
         siglip_vector_repo = KeyframeVectorRepository(
             index_path=resolved_settings.faiss_siglip_path, 
             index_dim=1152,
-            keyframe_repository=keyframe_repository
+            keyframe_repository=keyframe_repository,
+            intro_exclusion_policy=intro_exclusion_policy,
         )
         
         logger.info(f"Loading FAISS BEiT3 index from {resolved_settings.faiss_beit3_path}...")
         beit3_vector_repo = KeyframeVectorRepository(
             index_path=resolved_settings.faiss_beit3_path,
             index_dim=768,
-            keyframe_repository=keyframe_repository
+            keyframe_repository=keyframe_repository,
+            intro_exclusion_policy=intro_exclusion_policy,
         )
         
         # 4. Text Repository (Elasticsearch)
         logger.info(f"Initializing Elasticsearch Repository at {resolved_settings.es_url}...")
-        text_repository = KeyframeTextRepository(resolved_settings.es_url, keyframe_repository)
+        text_repository = KeyframeTextRepository(
+            resolved_settings.es_url,
+            keyframe_repository,
+            intro_exclusion_policy,
+        )
         
         # 5. Reranker
         logger.info(
@@ -71,7 +79,8 @@ async def lifespan(app: FastAPI):
             beit3_vector_repo=beit3_vector_repo,
             text_repository=text_repository,
             blip2_reranker=blip2_reranker,
-            embedding_service=embedding_service
+            embedding_service=embedding_service,
+            intro_exclusion_policy=intro_exclusion_policy,
         )
         
         # 7. Query Enhancer
