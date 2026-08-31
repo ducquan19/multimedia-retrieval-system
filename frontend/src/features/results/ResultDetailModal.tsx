@@ -160,13 +160,12 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
                   : "Copy"}
             </button>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <button 
-              type="button" 
+          <div className="detail-modal__header-actions">
+            <button
+              type="button"
               onClick={toggleVideo}
               disabled={videoStatus === "loading"}
-              className="button"
-              style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', borderRadius: '0.4rem', border: '1px solid #c8d3cb', background: '#f1f5f2', cursor: 'pointer' }}
+              className="detail-keyframe-action detail-keyframe-action--toggle"
             >
               {videoStatus === "loading"
                 ? "Loading video…"
@@ -178,8 +177,7 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
               <button
                 type="button"
                 onClick={pauseAtKeyframe}
-                className="button"
-                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', borderRadius: '0.4rem', border: '1px solid #c8d3cb', background: '#f1f5f2', cursor: 'pointer' }}
+                className="detail-keyframe-action detail-keyframe-action--return"
               >
                 Back to keyframe
               </button>
