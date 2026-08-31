@@ -218,7 +218,8 @@ select:focus-visible {
 .result-zone__header {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  column-gap: 0.55rem;
   align-items: center;
   min-height: 2.75rem;
   padding: 0.1rem 0.5rem 0.6rem;
@@ -462,6 +463,9 @@ select:focus-visible {
 
 .query-planning-toggle input {
   flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  accent-color: #24633e;
 }
 
 .query-planning-toggle input:focus,
@@ -950,6 +954,36 @@ select:focus-visible {
 .video-lookup {
   display: flex;
   align-items: center;
+  justify-self: center;
+}
+
+.program-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-self: center;
+  color: #52645a;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.program-filter select {
+  height: 2rem;
+  max-width: 11.5rem;
+  padding: 0 1.8rem 0 0.55rem;
+  color: #294735;
+  background: #fff;
+  border: 1px solid #b9c7bd;
+  border-radius: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.program-filter select:focus,
+.program-filter select:focus-visible {
+  outline: none;
+  border-color: #b9c7bd;
+  box-shadow: none;
 }
 
 .video-lookup input {
@@ -1737,6 +1771,7 @@ select:focus-visible {
 :root[data-theme="dark"] .result-state,
 :root[data-theme="dark"] .result-zone__summary span,
 :root[data-theme="dark"] .result-group-sort,
+:root[data-theme="dark"] .program-filter,
 :root[data-theme="dark"] .result-video-group__heading span,
 :root[data-theme="dark"] .result-card__title-row span:not(.score-badge),
 :root[data-theme="dark"] .detail-section p,
@@ -1760,6 +1795,7 @@ select:focus-visible {
 :root[data-theme="dark"] .top-k-row input,
 :root[data-theme="dark"] .footer-top-k,
 :root[data-theme="dark"] .video-lookup input,
+:root[data-theme="dark"] .program-filter select,
 :root[data-theme="dark"] .result-group-sort select,
 :root[data-theme="dark"] .answer-field textarea,
 :root[data-theme="dark"] .detail-frame-navigation input {
@@ -1877,6 +1913,7 @@ select:focus-visible {
 
 :root[data-theme="dark"] .toggle-row input,
 :root[data-theme="dark"] .source-options input,
+:root[data-theme="dark"] .query-planning-toggle input,
 :root[data-theme="dark"] .result-group-toggle input {
   accent-color: #8b5cf6;
 }
@@ -1897,6 +1934,12 @@ select:focus-visible {
 :root[data-theme="dark"] .detail-frame-navigation input:focus-visible {
   border-color: #a78bfa;
   box-shadow: 0 0 0 1px #a78bfa;
+}
+
+:root[data-theme="dark"] .program-filter select:focus,
+:root[data-theme="dark"] .program-filter select:focus-visible {
+  border-color: #524a63;
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .theme-switch input:focus-visible + .theme-switch__track {
@@ -2022,6 +2065,10 @@ select:focus-visible {
 
   .video-lookup input {
     width: 100%;
+  }
+
+  .program-filter {
+    justify-self: end;
   }
 
   .result-zone__header {

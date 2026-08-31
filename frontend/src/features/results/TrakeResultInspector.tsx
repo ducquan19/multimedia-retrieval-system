@@ -63,7 +63,7 @@ export function TrakeResultInspector({
     return (
       <section className="trake-validation-error" role="alert">
         <strong>Cannot display malformed TRAKE results</strong>
-        <p>The response does not match the submitted event sequence.</p>
+        <p>The response does not match the submitted EVENT sequence.</p>
         <ul>
           {validationErrors.map((error) => (
             <li key={error}>{error}</li>
@@ -129,21 +129,21 @@ function TrakeRow({
           className="trake-event-cell"
           data-testid="trake-event-cell"
           key={event.event_index}
-          aria-label={`Event ${event.event_index}`}
+          aria-label={`EVENT ${event.event_index}`}
         >
           <div className="trake-event-cell__heading">
-            <strong>Event {event.event_index}</strong>
+            <strong>EVENT {event.event_index}</strong>
             <span>{formatScore(event.similarity_score)}</span>
           </div>
           <button
             type="button"
             className="thumbnail-button trake-event-cell__thumbnail"
             onClick={(clickEvent) => onOpenDetail(event, clickEvent.currentTarget)}
-            aria-label={`Open Event ${event.event_index} details for ${result.video_id}, frame ${event.frame_id}`}
+            aria-label={`Open EVENT ${event.event_index} details for ${result.video_id}, frame ${event.frame_id}`}
           >
             <ResultImage
               src={event.keyframe_url}
-              alt={`Event ${event.event_index}, frame ${event.frame_id} from ${result.video_id}`}
+              alt={`EVENT ${event.event_index}, frame ${event.frame_id} from ${result.video_id}`}
               className="result-card__image"
             />
           </button>

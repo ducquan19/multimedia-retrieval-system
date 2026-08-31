@@ -62,9 +62,9 @@ describe("TrakeResultInspector", () => {
       const cells = within(row).getAllByTestId("trake-event-cell");
       expect(cells).toHaveLength(3);
       expect(cells.map((cell) => cell.getAttribute("aria-label"))).toEqual([
-        "Event 1",
-        "Event 2",
-        "Event 3",
+        "EVENT 1",
+        "EVENT 2",
+        "EVENT 3",
       ]);
     }
   });
@@ -73,7 +73,7 @@ describe("TrakeResultInspector", () => {
     const user = userEvent.setup();
     render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
     const trigger = screen.getByRole("button", {
-      name: "Open Event 2 details for L01_V001, frame 151",
+      name: "Open EVENT 2 details for L01_V001, frame 151",
     });
 
     await user.click(trigger);

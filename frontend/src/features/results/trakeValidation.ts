@@ -24,7 +24,7 @@ export function validateTrakeResults(
       const expectedIndex = index + 1;
       if (event.event_index !== expectedIndex) {
         errors.push(
-          `${result.result_id} has Event ${event.event_index} at position ${expectedIndex}; event_index must be continuous from 1.`,
+          `${result.result_id} has EVENT ${event.event_index} at position ${expectedIndex}; event_index must be continuous from 1.`,
         );
       }
       const eventVideoId =
@@ -33,7 +33,7 @@ export function validateTrakeResults(
           : undefined;
       if (eventVideoId !== undefined && eventVideoId !== result.video_id) {
         errors.push(
-          `${result.result_id} Event ${event.event_index} belongs to ${eventVideoId}, not ${result.video_id}.`,
+          `${result.result_id} EVENT ${event.event_index} belongs to ${eventVideoId}, not ${result.video_id}.`,
         );
       }
     });

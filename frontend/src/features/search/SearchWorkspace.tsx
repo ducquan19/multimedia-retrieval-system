@@ -29,7 +29,21 @@ const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
 ];
 
 type GroupSort = "score" | "time";
+type ProgramFilter = "ALL" | "L21_L22" | "L23" | "L24" | "L25" | "L26";
 const DARK_MODE_STORAGE_KEY = "aic-retrieval-theme";
+const PROGRAM_PREFIXES: Record<Exclude<ProgramFilter, "ALL">, readonly string[]> = {
+  L21_L22: ["L21", "L22"],
+  L23: ["L23"],
+  L24: ["L24"],
+  L25: ["L25"],
+  L26: ["L26"],
+};
+
+function matchesProgram(videoId: string, program: ProgramFilter): boolean {
+  return (
+    program === "ALL" || PROGRAM_PREFIXES[program].some((prefix) => videoId.startsWith(prefix))
+  );
+}
 
 function prefersDarkMode(): boolean {
   try {
@@ -86,6 +100,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [groupByVideo, setGroupByVideo] = useState(false);
   const [groupSort, setGroupSort] = useState<GroupSort>("score");
+  const [programFilter, setProgramFilter] = useState<ProgramFilter>("ALL");
   const activeController = useRef<AbortController | null>(null);
 
   const searchMutation = useMutation<SearchResponse, unknown, SearchMutationVariables>({
@@ -99,6 +114,10 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     mutationFn: ({ query, signal }) => planKisQuery(query, signal),
     onSuccess: (plan) => setKisPlan(plan),
   });
+  const displayedResultCount =
+    searchMutation.data?.results.filter((result) =>
+      matchesProgram(result.video_id, programFilter),
+    ).length ?? 0;
 
   useEffect(
     () => () => {
@@ -236,14 +255,14 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       }
       if (queryUnderstanding && kisPlan) {
         if (!kisPlan.events.some((event) => event.importance === "anchor")) {
-          errors.push("Query plan phải có ít nhất một anchor event.");
+          errors.push("Query plan phải có ít nhất một anchor EVENT.");
         }
         kisPlan.events.forEach((event) => {
           if (
             !event.visual_query_en?.trim() &&
             !event.asr_query_vi?.trim()
           ) {
-            errors.push(`Event ${event.event_index} phải có visual hoặc ASR query.`);
+            errors.push(`EVENT ${event.event_index} phải có visual hoặc ASR query.`);
           }
         });
       }
@@ -265,7 +284,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       }
       const events = eventQueries.slice(0, eventCount).map((query, index) => {
         const eventError = queryLengthError(
-          `Event ${index + 1}`,
+          `EVENT ${index + 1}`,
           query,
           config.max_query_length,
         );
@@ -372,11 +391,11 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
               <section className="query-planning-card">
                 <div className="query-planning-card__header">
                   <label className="query-planning-toggle" htmlFor="query-understanding">
-                    <strong>Query Understanding &amp; Planning</strong>
+                    <strong>Query Decomposition</strong>
                     <input
                       id="query-understanding"
                       type="checkbox"
-                      aria-label="Query Understanding & Planning"
+                      aria-label="Query Decomposition"
                       checked={queryUnderstanding}
                       onChange={(event) => toggleQueryUnderstanding(event.target.checked)}
                     />
@@ -431,13 +450,13 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                         {kisPlan.events.map((planEvent, index) => (
                           <article className="query-plan-event" key={planEvent.event_index}>
                             <header>
-                              <strong>Event {planEvent.event_index}</strong>
+                              <strong>EVENT {planEvent.event_index}</strong>
                               <span>{Math.round(planEvent.confidence * 100)}% confidence</span>
                               <button
                                 type="button"
                                 onClick={() => removePlanEvent(index)}
                                 disabled={kisPlan.events.length === 1}
-                                aria-label={`Remove event ${planEvent.event_index}`}
+                                aria-label={`Remove EVENT ${planEvent.event_index}`}
                               >
                                 Remove
                               </button>
@@ -446,7 +465,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                             <label className="field">
                               <span>Visual query (English)</span>
                               <textarea
-                                aria-label={`Visual query event ${planEvent.event_index}`}
+                                aria-label={`Visual query EVENT ${planEvent.event_index}`}
                                 value={planEvent.visual_query_en ?? ""}
                                 onChange={(event) =>
                                   updatePlanEvent(index, {
@@ -459,7 +478,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                             <label className="field">
                               <span>ASR query (Vietnamese)</span>
                               <textarea
-                                aria-label={`ASR query event ${planEvent.event_index}`}
+                                aria-label={`ASR query EVENT ${planEvent.event_index}`}
                                 value={planEvent.asr_query_vi ?? ""}
                                 onChange={(event) =>
                                   updatePlanEvent(index, {
@@ -472,7 +491,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                             <label className="field field--compact">
                               <span>Importance</span>
                               <select
-                                aria-label={`Importance event ${planEvent.event_index}`}
+                                aria-label={`Importance EVENT ${planEvent.event_index}`}
                                 value={planEvent.importance}
                                 onChange={(event) =>
                                   updatePlanEvent(index, {
@@ -541,7 +560,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
               </label>
 
               <label className="top-k-row" htmlFor="event-count">
-                <span>Event count</span>
+                <span>EVENT count</span>
                 <select
                   id="event-count"
                   value={eventCount}
@@ -561,7 +580,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
               <div className="event-grid">
                 {eventQueries.slice(0, eventCount).map((query, index) => (
                   <label className="field event-field" key={index} htmlFor={`event-${index + 1}`}>
-                    <span>Event {index + 1}</span>
+                    <span>EVENT {index + 1}</span>
                     <textarea
                       id={`event-${index + 1}`}
                       value={query}
@@ -730,7 +749,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             {searchMutation.data?.results.length ? (
               searchMutation.data.query_type === "TRAKE" ? (
                 <div className="result-zone__summary">
-                  <strong>{searchMutation.data.results.length} candidates</strong>
+                  <strong>{displayedResultCount} candidates</strong>
                   <span>Temporal candidate rows</span>
                 </div>
               ) : (
@@ -761,6 +780,23 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             ) : null}
           </div>
           <VideoLookup />
+          <label className="program-filter">
+            <span>Program</span>
+            <select
+              aria-label="Program"
+              value={programFilter}
+              onChange={(event) =>
+                setProgramFilter(event.target.value as ProgramFilter)
+              }
+              >
+                <option value="ALL">ALL</option>
+                <option value="L21_L22">HTV 60 Giây</option>
+                <option value="L23">Giải đua xe đạp</option>
+                <option value="L24">Múa lân</option>
+                <option value="L25">Ôn thi THPT</option>
+                <option value="L26">Món ngon mỗi ngày</option>
+            </select>
+          </label>
           <div className="result-zone__header-end">
             {searchMutation.data?.results.length ? (
               <span className="mini-badge">{searchMutation.data.query_type}</span>
@@ -773,6 +809,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             maxAnswerLength={config.max_answer_length}
             groupByVideo={groupByVideo}
             groupSort={groupSort}
+            programFilter={programFilter}
           />
         </div>
       </div>
@@ -785,9 +822,16 @@ interface SearchStateProps {
   maxAnswerLength: number;
   groupByVideo: boolean;
   groupSort: GroupSort;
+  programFilter: ProgramFilter;
 }
 
-function SearchState({ mutation, maxAnswerLength, groupByVideo, groupSort }: SearchStateProps) {
+function SearchState({
+  mutation,
+  maxAnswerLength,
+  groupByVideo,
+  groupSort,
+  programFilter,
+}: SearchStateProps) {
   if (mutation.isPending) {
     return (
       <section className="result-state" aria-live="polite" aria-busy="true">
@@ -827,6 +871,21 @@ function SearchState({ mutation, maxAnswerLength, groupByVideo, groupSort }: Sea
     );
   }
 
+  const displayedResults = mutation.data.results.filter(
+    (result) => matchesProgram(result.video_id, programFilter),
+  );
+
+  if (displayedResults.length === 0) {
+    return (
+      <section className="result-state result-state--empty" role="status">
+        <strong>Không có kết quả thuộc chương trình đã chọn</strong>
+        <p>Chọn ALL hoặc một chương trình khác để xem kết quả.</p>
+      </section>
+    );
+  }
+
+  const displayedResponse = { ...mutation.data, results: displayedResults } as SearchResponse;
+
   const submittedTrakeEventCount =
     mutation.variables?.payload.query_type === "TRAKE"
       ? mutation.variables.payload.events.length
@@ -834,21 +893,21 @@ function SearchState({ mutation, maxAnswerLength, groupByVideo, groupSort }: Sea
 
   return (
     <section className="result-preview" aria-live="polite">
-      {mutation.data.query_type === "TRAKE" ? (
+      {displayedResponse.query_type === "TRAKE" ? (
         submittedTrakeEventCount === null ? (
           <section className="trake-validation-error" role="alert">
             <strong>Cannot display TRAKE results</strong>
-            <p>The submitted event count is unavailable for response validation.</p>
+            <p>The submitted EVENT count is unavailable for response validation.</p>
           </section>
         ) : (
           <TrakeResultInspector
-            response={mutation.data}
+            response={displayedResponse}
             expectedEventCount={submittedTrakeEventCount}
           />
         )
       ) : (
         <SingleResultInspector
-          response={mutation.data}
+          response={displayedResponse}
           maxAnswerLength={maxAnswerLength}
           groupByVideo={groupByVideo}
           groupSort={groupSort}

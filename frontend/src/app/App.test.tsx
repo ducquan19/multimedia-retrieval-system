@@ -134,8 +134,8 @@ describe("App query workspace", () => {
 
     await user.click(screen.getByRole("tab", { name: /TRAKE/ }));
     expect(screen.getByLabelText(/^Main query TRAKE/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Event 1")).toBeInTheDocument();
-    expect(screen.getByLabelText("Event 2")).toBeInTheDocument();
+    expect(screen.getByLabelText("EVENT 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("EVENT 2")).toBeInTheDocument();
   });
 
   it("renders Top-K in the footer without a visible label", async () => {
@@ -170,6 +170,7 @@ describe("App query workspace", () => {
 
     const header = await screen.findByRole("banner", { name: "Result tools" });
     expect(within(header).getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
+    expect(within(header).getByRole("combobox", { name: "Program" })).toHaveValue("ALL");
     expect(within(header).queryByRole("checkbox", { name: "Group by video" })).not.toBeInTheDocument();
 
     await user.type(await screen.findByLabelText(/^Query KIS/), "query");
@@ -178,6 +179,46 @@ describe("App query workspace", () => {
     expect(await within(header).findByRole("checkbox", { name: "Group by video" })).toBeInTheDocument();
     expect(within(header).getByText("KIS")).toBeInTheDocument();
     expect(within(header).getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
+  });
+
+  it("filters displayed results by program without changing the search payload", async () => {
+    const response = searchResponse("KIS");
+    response.results = [
+      { ...response.results[0]!, result_id: "result-l21", video_id: "L21_V001" },
+      { ...response.results[0]!, result_id: "result-l22", video_id: "L22_V001" },
+      { ...response.results[0]!, result_id: "result-l25", video_id: "L25_V001" },
+      { ...response.results[0]!, result_id: "result-l26", video_id: "L26_V001" },
+      { ...response.results[0]!, result_id: "result-other", video_id: "L27_V001" },
+    ];
+    const fetchMock = setupApi(() => jsonResponse(response));
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(await screen.findByLabelText(/^Query KIS/), "query");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(await screen.findByText("L25_V001")).toBeInTheDocument();
+    expect(screen.getByText("L26_V001")).toBeInTheDocument();
+    expect(screen.getByText("L27_V001")).toBeInTheDocument();
+
+    const program = screen.getByRole("combobox", { name: "Program" });
+    expect(within(program).getByRole("option", { name: "ALL" })).toBeInTheDocument();
+    expect(within(program).getByRole("option", { name: "HTV 60 Giây" })).toBeInTheDocument();
+    expect(within(program).getByRole("option", { name: "Giải đua xe đạp" })).toBeInTheDocument();
+    expect(within(program).getByRole("option", { name: "Múa lân" })).toBeInTheDocument();
+    expect(within(program).getByRole("option", { name: "Ôn thi THPT" })).toBeInTheDocument();
+    expect(within(program).getByRole("option", { name: "Món ngon mỗi ngày" })).toBeInTheDocument();
+
+    await user.selectOptions(program, "L25");
+    expect(screen.getByText("L25_V001")).toBeInTheDocument();
+    expect(screen.queryByText("L26_V001")).not.toBeInTheDocument();
+    expect(screen.queryByText("L27_V001")).not.toBeInTheDocument();
+
+    await user.selectOptions(program, "L21_L22");
+    expect(screen.getByText("L21_V001")).toBeInTheDocument();
+    expect(screen.getByText("L22_V001")).toBeInTheDocument();
+    expect(screen.queryByText("L25_V001")).not.toBeInTheDocument();
+    expect(searchPayload(fetchMock)).not.toHaveProperty("program");
   });
 
   it("submits the typed KIS payload with shared controls", async () => {
@@ -252,16 +293,16 @@ describe("App query workspace", () => {
 
     await user.click(await screen.findByRole("tab", { name: /TRAKE/ }));
     await user.type(screen.getByLabelText(/^Main query TRAKE/), "chuỗi nhảy cao");
-    await user.type(screen.getByLabelText("Event 1"), "giậm nhảy");
-    await user.type(screen.getByLabelText("Event 2"), "bay qua xà");
+    await user.type(screen.getByLabelText("EVENT 1"), "giậm nhảy");
+    await user.type(screen.getByLabelText("EVENT 2"), "bay qua xà");
 
-    await user.selectOptions(screen.getByLabelText("Event count"), "1");
-    expect(screen.queryByLabelText("Event 2")).not.toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Event count"), "2");
-    expect(screen.getByLabelText("Event 2")).toHaveValue("bay qua xà");
+    await user.selectOptions(screen.getByLabelText("EVENT count"), "1");
+    expect(screen.queryByLabelText("EVENT 2")).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("EVENT count"), "2");
+    expect(screen.getByLabelText("EVENT 2")).toHaveValue("bay qua xà");
 
-    await user.selectOptions(screen.getByLabelText("Event count"), "3");
-    await user.type(screen.getByLabelText("Event 3"), "tiếp đất");
+    await user.selectOptions(screen.getByLabelText("EVENT count"), "3");
+    await user.type(screen.getByLabelText("EVENT 3"), "tiếp đất");
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     await screen.findByText("Không tìm thấy candidate");
@@ -315,12 +356,12 @@ describe("App query workspace", () => {
       renderApp();
 
     await user.type(await screen.findByLabelText(/^Query KIS/), "tháo máy ảnh rồi lau lens");
-    await user.click(screen.getByLabelText("Query Understanding & Planning"));
+    await user.click(screen.getByLabelText("Query Decomposition"));
     expect(screen.getByLabelText(/^Enhance query/)).toBeDisabled();
     expect(screen.getByRole("button", { name: "Search" })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Execute" }));
-    const visualQuery = await screen.findByLabelText("Visual query event 1");
+    const visualQuery = await screen.findByLabelText("Visual query EVENT 1");
     expect(visualQuery).toHaveValue("a person disassembling a camera");
     await user.clear(visualQuery);
     await user.type(visualQuery, "a detached camera lens on a purple towel");
@@ -345,7 +386,7 @@ describe("App query workspace", () => {
     });
 
       await user.click(screen.getByRole("tab", { name: /VQA/ }));
-      expect(screen.queryByLabelText("Query Understanding & Planning")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Query Decomposition")).not.toBeInTheDocument();
     },
     15_000,
   );
