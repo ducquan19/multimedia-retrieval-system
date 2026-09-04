@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe("VideoLookup", () => {
-  it("pastes adjacent sheet cells and opens the video at the pasted frame with Enter", async () => {
+  it("pastes adjacent sheet cells and opens the video paused at the pasted frame", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -23,7 +23,9 @@ describe("VideoLookup", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    const pauseMock = vi
+      .spyOn(HTMLMediaElement.prototype, "pause")
+      .mockImplementation(() => undefined);
     const user = userEvent.setup();
     render(<VideoLookup />);
 
@@ -48,7 +50,8 @@ describe("VideoLookup", () => {
     expect(screen.getByRole("dialog", { name: "L21_V003" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "Current frame ID" })).toHaveValue(125);
     expect(video.currentTime).toBeCloseTo(125 / 25);
-    expect(video).toHaveAttribute("autoplay");
+    expect(video).not.toHaveAttribute("autoplay");
+    expect(pauseMock).toHaveBeenCalled();
   });
 
   it("opens a video-only modal by ID and keeps frame navigation below the player", async () => {

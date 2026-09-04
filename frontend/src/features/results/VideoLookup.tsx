@@ -134,7 +134,7 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
     if (event.target === event.currentTarget) onClose();
   };
 
-  const setVideoFrame = (requestedFrame: number, pauseAfterSeek = true) => {
+  const setVideoFrame = (requestedFrame: number) => {
     const video = videoRef.current;
     if (!video || !videoSource) return;
 
@@ -143,7 +143,7 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
       : Number.POSITIVE_INFINITY;
     const targetFrame = Math.min(Math.max(0, Math.round(requestedFrame)), maxFrame);
     video.currentTime = targetFrame / videoSource.fps;
-    if (pauseAfterSeek) video.pause();
+    video.pause();
     setFrameInput(String(targetFrame));
     setFrameCopyStatus("idle");
   };
@@ -219,9 +219,8 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
                   className="detail-modal__video"
                   src={resolveMediaUrl(videoSource.url)}
                   controls
-                  autoPlay
                   preload="metadata"
-                  onLoadedMetadata={() => setVideoFrame(initialFrameId, false)}
+                  onLoadedMetadata={() => setVideoFrame(initialFrameId)}
                   onTimeUpdate={updatePlayingFrame}
                 >
                   Your browser does not support video playback.
