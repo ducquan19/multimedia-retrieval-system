@@ -92,7 +92,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [kisPlan, setKisPlan] = useState<KISQueryPlan | null>(null);
   const [vqaQuery, setVqaQuery] = useState("");
   const [trakeMainQuery, setTrakeMainQuery] = useState("");
-  const initialEventCount = Math.min(4, config.max_trake_events);
+  const initialEventCount = Math.min(3, config.max_trake_events);
   const [eventCount, setEventCount] = useState(initialEventCount);
   const [eventQueries, setEventQueries] = useState<string[]>(() =>
     Array.from({ length: initialEventCount }, () => ""),
@@ -102,6 +102,28 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [groupSort, setGroupSort] = useState<GroupSort>("score");
   const [programFilter, setProgramFilter] = useState<ProgramFilter>("ALL");
   const activeController = useRef<AbortController | null>(null);
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(400);
+
+  const startResizing = (mouseDownEvent: React.MouseEvent) => {
+    mouseDownEvent.preventDefault();
+    const startX = mouseDownEvent.clientX;
+    const startWidth = sidebarWidth;
+
+    const doDrag = (dragEvent: MouseEvent) => {
+      setSidebarWidth(Math.max(250, Math.min(800, startWidth + dragEvent.clientX - startX)));
+    };
+
+    const stopDrag = () => {
+      document.documentElement.removeEventListener('mousemove', doDrag, false);
+      document.documentElement.removeEventListener('mouseup', stopDrag, false);
+      document.body.style.cursor = '';
+    };
+
+    document.documentElement.addEventListener('mousemove', doDrag, false);
+    document.documentElement.addEventListener('mouseup', stopDrag, false);
+    document.body.style.cursor = 'col-resize';
+  };
 
   const searchMutation = useMutation<SearchResponse, unknown, SearchMutationVariables>({
     mutationFn: ({ payload, signal }) => search(payload, signal),
@@ -333,9 +355,9 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
 
   return (
     <section className="workspace" aria-label="Retrieval workspace">
-      <aside className="workspace__sidebar" aria-label="Query controls">
+      <aside className="workspace__sidebar" aria-label="Query controls" style={{ width: sidebarWidth, flexShrink: 0 }}>
         <header className="workspace__brand">
-          <span>AIC Retrieval Inspector</span>
+          <span>Media Retrieval System</span>
           <label className="theme-switch">
             <span className="visually-hidden">Dark mode</span>
             <input
@@ -540,7 +562,6 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 onChange={(event) => setVqaQuery(event.target.value)}
                 onKeyDown={submitQueryOnEnter}
                 aria-keyshortcuts="Enter Shift+Enter"
-                placeholder="Ví dụ: chiếc ly người phụ nữ đang cầm có màu gì?"
                 rows={6}
               />
             </label>
@@ -549,8 +570,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           {activeType === "TRAKE" && (
             <div className="trake-fields">
               <label className="field" htmlFor="trake-main-query">
-                <span>Main query TRAKE</span>
-                <small>Mô tả toàn bộ chuỗi sự kiện theo trình tự thời gian.</small>
+                <span>Query TRAKE</span>
                 <textarea
                   id="trake-main-query"
                   value={trakeMainQuery}
@@ -558,32 +578,30 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                   onChange={(event) => setTrakeMainQuery(event.target.value)}
                   onKeyDown={submitQueryOnEnter}
                   aria-keyshortcuts="Enter Shift+Enter"
-                  rows={4}
+                  rows={3}
                 />
               </label>
 
-              <label className="top-k-row" htmlFor="event-count">
+              <div className="trake-event-count-row">
                 <span>EVENT count</span>
                 <select
                   id="event-count"
                   value={eventCount}
                   onChange={(event) => changeEventCount(Number(event.target.value))}
-                  style={{ width: "6rem", padding: "0.45rem 0.6rem" }}
                 >
-                  {Array.from({ length: config.max_trake_events }, (_, index) => index + 1).map(
-                    (count) => (
-                      <option key={count} value={count}>
-                        {count}
-                      </option>
-                    ),
-                  )}
+                  {Array.from({ length: config.max_trake_events }, (_, i) => i + 1).map((count) => (
+                    <option key={count} value={count}>{count}</option>
+                  ))}
                 </select>
-              </label>
+              </div>
 
               <div className="event-grid">
                 {eventQueries.slice(0, eventCount).map((query, index) => (
-                  <label className="field event-field" key={index} htmlFor={`event-${index + 1}`}>
-                    <span>EVENT {index + 1}</span>
+                  <label className="event-field" key={index} htmlFor={`event-${index + 1}`}>
+                    <div className="event-field__header">
+                      <span className="event-field__badge">{index + 1}</span>
+                      <span className="event-field__label">EVENT {index + 1}</span>
+                    </div>
                     <textarea
                       id={`event-${index + 1}`}
                       value={query}
@@ -591,7 +609,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                       onChange={(event) => updateEventQuery(index, event.target.value)}
                       onKeyDown={submitQueryOnEnter}
                       aria-keyshortcuts="Enter Shift+Enter"
-                      rows={3}
+                      rows={2}
                     />
                   </label>
                 ))}
@@ -614,7 +632,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 onChange={(event) => setEnhanceQuery(event.target.checked)}
               />
             </label>
-            
+
             {searchMutation.data?.warnings?.length ? (
               <div className="sidebar-warning">
                 <small><strong>Warning</strong></small>
@@ -629,7 +647,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                   <p>{searchMutation.data.enhanced_query.replace("- ", "")}</p>
                 </div>
               )}
-            
+
             {searchMutation.variables?.payload.enhance_query &&
               searchMutation.data?.applied_weights && (
                 <div className="sidebar-weights">
@@ -745,6 +763,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           />
         </footer>
       </aside>
+
+      <div className="sidebar-resizer" onMouseDown={startResizing} aria-hidden="true" title="Drag to resize sidebar" />
 
       <div className="workspace__results" aria-label="Search results">
         <header
