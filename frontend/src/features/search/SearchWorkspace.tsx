@@ -103,21 +103,30 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [programFilter, setProgramFilter] = useState<ProgramFilter>("ALL");
   const activeController = useRef<AbortController | null>(null);
 
+  const [normalSidebarWidth, setNormalSidebarWidth] = useState<number>(400);
   const [sidebarWidth, setSidebarWidth] = useState<number>(400);
+  const [isResizing, setIsResizing] = useState<boolean>(false);
 
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
     mouseDownEvent.preventDefault();
+    setIsResizing(true);
     const startX = mouseDownEvent.clientX;
     const startWidth = sidebarWidth;
 
     const doDrag = (dragEvent: MouseEvent) => {
-      setSidebarWidth(Math.max(250, Math.min(800, startWidth + dragEvent.clientX - startX)));
+      const maxAllowed = Math.max(800, Math.min(Math.round(window.innerWidth * 0.65), 1050));
+      const nextWidth = Math.max(280, Math.min(maxAllowed, startWidth + dragEvent.clientX - startX));
+      setSidebarWidth(nextWidth);
+      if (!queryUnderstanding || activeType !== "KIS") {
+        setNormalSidebarWidth(nextWidth);
+      }
     };
 
     const stopDrag = () => {
       document.documentElement.removeEventListener('mousemove', doDrag, false);
       document.documentElement.removeEventListener('mouseup', stopDrag, false);
       document.body.style.cursor = '';
+      setIsResizing(false);
     };
 
     document.documentElement.addEventListener('mousemove', doDrag, false);
@@ -134,7 +143,10 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     { query: string; signal: AbortSignal }
   >({
     mutationFn: ({ query, signal }) => planKisQuery(query, signal),
-    onSuccess: (plan) => setKisPlan(plan),
+    onSuccess: (plan) => {
+      setKisPlan(plan);
+      setSidebarWidth((prev) => Math.max(prev, 550));
+    },
   });
   const displayedResultCount =
     searchMutation.data?.results.filter((result) =>
@@ -166,6 +178,11 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     planMutation.reset();
     setValidationErrors([]);
     setActiveType(queryType);
+    if (queryType !== "KIS") {
+      setSidebarWidth(normalSidebarWidth);
+    } else if (queryUnderstanding) {
+      setSidebarWidth((prev) => Math.max(prev, 550));
+    }
   };
 
   const changeEventCount = (nextCount: number) => {
@@ -197,7 +214,12 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     setQueryUnderstanding(enabled);
     setKisPlan(null);
     planMutation.reset();
-    if (enabled) setEnhanceQuery(false);
+    if (enabled) {
+      setEnhanceQuery(false);
+      setSidebarWidth((prev) => Math.max(prev, 550));
+    } else {
+      setSidebarWidth(normalSidebarWidth);
+    }
   };
 
   const understandKisQuery = () => {
@@ -355,7 +377,15 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
 
   return (
     <section className="workspace" aria-label="Retrieval workspace">
-      <aside className="workspace__sidebar" aria-label="Query controls" style={{ width: sidebarWidth, flexShrink: 0 }}>
+      <aside
+        className="workspace__sidebar"
+        aria-label="Query controls"
+        style={{
+          width: sidebarWidth,
+          flexShrink: 0,
+          transition: isResizing ? "none" : "width 0.24s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      >
         <header className="workspace__brand">
           <span>Media Retrieval System</span>
           <label className="theme-switch">
@@ -416,7 +446,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
               <section className="query-planning-card">
                 <div className="query-planning-card__header">
                   <label className="query-planning-toggle" htmlFor="query-understanding">
-                    <strong>Query Decomposition</strong>
+                    <strong>Multi-Event Planning</strong>
                     <input
                       id="query-understanding"
                       type="checkbox"
@@ -425,18 +455,18 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                       onChange={(event) => toggleQueryUnderstanding(event.target.checked)}
                     />
                   </label>
-                </div>
 
-                {queryUnderstanding && (
-                  <button
-                    type="button"
-                    className="query-plan__generate"
-                    onClick={understandKisQuery}
-                    disabled={planMutation.isPending}
-                  >
-                    {planMutation.isPending ? "Executing…" : "Execute"}
-                  </button>
-                )}
+                  {queryUnderstanding && (
+                    <button
+                      type="button"
+                      className="query-plan__generate"
+                      onClick={understandKisQuery}
+                      disabled={planMutation.isPending}
+                    >
+                      {planMutation.isPending ? "Executing…" : "Execute"}
+                    </button>
+                  )}
+                </div>
 
                 {queryUnderstanding && (planMutation.isError || kisPlan) && (
                   <section className="query-plan" aria-label="KIS query plan">
@@ -487,32 +517,34 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                               </button>
                             </header>
                             <p className="query-plan-event__source">{planEvent.source_span_vi}</p>
-                            <label className="field">
-                              <span>Visual query (English)</span>
-                              <textarea
-                                aria-label={`Visual query EVENT ${planEvent.event_index}`}
-                                value={planEvent.visual_query_en ?? ""}
-                                onChange={(event) =>
-                                  updatePlanEvent(index, {
-                                    visual_query_en: event.target.value || null,
-                                  })
-                                }
-                                rows={2}
-                              />
-                            </label>
-                            <label className="field">
-                              <span>ASR query (Vietnamese)</span>
-                              <textarea
-                                aria-label={`ASR query EVENT ${planEvent.event_index}`}
-                                value={planEvent.asr_query_vi ?? ""}
-                                onChange={(event) =>
-                                  updatePlanEvent(index, {
-                                    asr_query_vi: event.target.value || null,
-                                  })
-                                }
-                                rows={2}
-                              />
-                            </label>
+                            <div className="query-plan-event__fields">
+                              <label className="field">
+                                <span>Visual query (English)</span>
+                                <textarea
+                                  aria-label={`Visual query EVENT ${planEvent.event_index}`}
+                                  value={planEvent.visual_query_en ?? ""}
+                                  onChange={(event) =>
+                                    updatePlanEvent(index, {
+                                      visual_query_en: event.target.value || null,
+                                    })
+                                  }
+                                  rows={2}
+                                />
+                              </label>
+                              <label className="field">
+                                <span>ASR query (Vietnamese)</span>
+                                <textarea
+                                  aria-label={`ASR query EVENT ${planEvent.event_index}`}
+                                  value={planEvent.asr_query_vi ?? ""}
+                                  onChange={(event) =>
+                                    updatePlanEvent(index, {
+                                      asr_query_vi: event.target.value || null,
+                                    })
+                                  }
+                                  rows={2}
+                                />
+                              </label>
+                            </div>
                             <label className="field field--compact">
                               <span>Importance</span>
                               <select
