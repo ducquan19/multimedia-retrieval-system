@@ -61,6 +61,13 @@ async function dresRequest<T>(
   init: RequestInit = {},
 ): Promise<T> {
   let response: Response;
+
+  const method = init.method ?? "GET";
+  console.log(`[DRES] ${method} ${url}`);
+  if (init.body) {
+    console.log("[DRES] Request body:", init.body);
+  }
+
   try {
     response = await fetch(url, {
       ...init,
@@ -69,25 +76,41 @@ async function dresRequest<T>(
         ...init.headers,
       },
     });
-  } catch {
-    throw new DresApiError("Cannot connect to DRES server.");
+  } catch (err) {
+    console.error("[DRES] Network error:", err);
+    throw new DresApiError("Không thể kết nối tới DRES server. Kiểm tra URL và kết nối mạng.");
   }
+
+  console.log(`[DRES] Response: ${response.status} ${response.statusText}`);
 
   if (!response.ok) {
     let detail = "";
     try {
-      const body = (await response.json()) as { description?: string; message?: string };
-      detail = body.description ?? body.message ?? "";
+      const text = await response.text();
+      console.error("[DRES] Error response body:", text);
+      console.error("[DRES] Response headers:", Object.fromEntries(response.headers.entries()));
+      try {
+        const body = JSON.parse(text) as Record<string, unknown>;
+        detail =
+          (typeof body.description === "string" ? body.description : "") ||
+          (typeof body.message === "string" ? body.message : "") ||
+          (typeof body.detail === "string" ? body.detail : "") ||
+          text;
+      } catch {
+        detail = text;
+      }
     } catch {
       // fall through
     }
     throw new DresApiError(
-      detail || `DRES request failed (HTTP ${response.status})`,
+      `[HTTP ${response.status}] ${detail || response.statusText || "Request failed"}`,
       response.status,
     );
   }
 
-  return (await response.json()) as T;
+  const data = (await response.json()) as T;
+  console.log("[DRES] Success:", data);
+  return data;
 }
 
 function stripTrailingSlash(url: string): string {
