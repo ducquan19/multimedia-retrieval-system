@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getPublicConfig } from "../api/client";
 import { SearchWorkspace } from "../features/search/SearchWorkspace";
+import { DresPanel } from "../features/dres/DresPanel";
 
 import "./app.css";
 
@@ -27,6 +28,7 @@ export function App() {
         )}
         {configQuery.data && <SearchWorkspace config={configQuery.data} />}
       </main>
+      <DresPanel />
     </div>
   );
 }
