@@ -35,8 +35,15 @@ class Settings(BaseSettings):
     faiss_siglip_filename: str = "indexing/siglip.index"
     faiss_beit3_filename: str = "indexing/beit3.index"
     sqlite_db_filename: str = "metadata.db"
+    object_index_filename: str = "objects_index.json"
     es_url: str = "http://localhost:9200"
     enable_reranking: bool = False
+
+    # DRES submission (credentials only live in .env; the browser never sees them)
+    dres_base_url: str = "https://eventretrieval.one"
+    dres_username: str | None = None
+    dres_password: str | None = None
+    dres_log_filename: str = "dres_submissions.jsonl"
 
     @property
     def faiss_siglip_path(self) -> Path:
@@ -45,6 +52,10 @@ class Settings(BaseSettings):
     @property
     def faiss_beit3_path(self) -> Path:
         return self.data_root / self.faiss_beit3_filename
+
+    @property
+    def object_index_path(self) -> Path:
+        return self.data_root / self.object_index_filename
 
     @property
     def sqlite_db_path(self) -> Path:

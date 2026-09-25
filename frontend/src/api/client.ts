@@ -1,5 +1,9 @@
 import type {
+  DresEvaluation,
+  DresSubmitRequest,
+  DresSubmitResponse,
   KISQueryPlan,
+  ObjectLabelsResponse,
   PublicConfig,
   SearchRequest,
   SearchResponse,
@@ -93,6 +97,22 @@ export function planKisQuery(query: string, signal?: AbortSignal): Promise<KISQu
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
     signal,
+  });
+}
+
+export function getObjectLabels(signal?: AbortSignal): Promise<ObjectLabelsResponse> {
+  return requestJson<ObjectLabelsResponse>("/api/objects/labels", { signal });
+}
+
+export function getDresEvaluations(signal?: AbortSignal): Promise<DresEvaluation[]> {
+  return requestJson<DresEvaluation[]>("/api/dres/evaluations", { signal });
+}
+
+export function submitToDres(payload: DresSubmitRequest): Promise<DresSubmitResponse> {
+  return requestJson<DresSubmitResponse>("/api/dres/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 

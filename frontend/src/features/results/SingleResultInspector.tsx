@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import type {
   KISSearchResponse,
@@ -82,7 +82,12 @@ export function SingleResultInspector({
       {groupByVideo ? (
         <div className="result-video-groups">
           {videoGroups.map(([videoId, results]) => (
-            <section className="result-video-group" data-testid="video-group" key={videoId}>
+            <section
+              className="result-video-group"
+              data-testid="video-group"
+              key={videoId}
+              style={{ "--group-columns": Math.min(results.length, 5) } as CSSProperties}
+            >
               <header className="result-video-group__heading">
                 <h4>{videoId}</h4>
                 <span>{results.length} result{results.length === 1 ? "" : "s"}</span>
@@ -113,7 +118,19 @@ export function SingleResultInspector({
         </ol>
       )}
 
-      {selected && <ResultDetailModal result={selected.result} onClose={closeDetail} />}
+      {selected && (
+        <ResultDetailModal
+          result={selected.result}
+          onClose={closeDetail}
+          submitTarget={{
+            kind: "single",
+            videoId: selected.result.video_id,
+            frameId: selected.result.frame_id,
+            defaultMode: response.query_type,
+            answer: globalVQAAnswer,
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -145,15 +162,15 @@ function ResultCard({
               className="result-card__image"
             />
           </button>
+          <span className="score-badge result-card__score">
+            {formatScore(result.similarity_score)}
+          </span>
         </div>
 
         <div className="result-card__body">
           <div className="result-card__title-row">
-            <div>
-              <strong>{result.video_id}</strong>
-              <span>{result.frame_id}</span>
-            </div>
-            <span className="score-badge">{formatScore(result.similarity_score)}</span>
+            <strong>{result.video_id}</strong>
+            <span>{result.frame_id}</span>
           </div>
         </div>
       </article>

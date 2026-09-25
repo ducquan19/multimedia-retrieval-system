@@ -62,6 +62,15 @@ class KISQueryPlanRequest(BaseModel):
     query: QueryText
 
 
+class ObjectQueryTerm(BaseModel):
+    """One detected-object requirement, e.g. at least 2 "Person"."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    label: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
+    min_count: int = Field(default=1, ge=1, le=50)
+
+
 class QueryVariants(BaseModel):
     variants: list[str] = Field(
         description="Exactly 1 highly descriptive English variation of the original query.",
@@ -80,6 +89,18 @@ class QueryVariants(BaseModel):
             "Weight for ASR speech search (e.g. spoken dialog, conversations). "
             "Value from 0.0 to 1.0."
         ),
+    )
+    w_obj: float = Field(
+        default=0.0,
+        description="Weight for detected-object search. Value from 0.0 to 1.0.",
+    )
+    asr_query_vi: str | None = Field(
+        default=None,
+        description="Vietnamese keywords likely to be spoken, used for ASR BM25 search.",
+    )
+    objects: tuple[ObjectQueryTerm, ...] = Field(
+        default=(),
+        description="Detector classes that should be visible in the target frame.",
     )
 
 
@@ -116,6 +137,7 @@ class BaseSearchRequest(BaseModel):
     use_reranking: bool = False
     search_sources: SearchSources = Field(default_factory=SearchSources)
     model_choices: list[Literal["siglip", "beit3"]] = Field(default_factory=lambda: ["siglip"])
+    object_query: tuple[ObjectQueryTerm, ...] = Field(default=(), max_length=10)
 
 
 class KISSearchRequest(BaseSearchRequest):
@@ -213,6 +235,7 @@ class KISSearchResponse(BaseModel):
     applied_weights: dict[str, float] | None = None
     warnings: list[str] = Field(default_factory=list)
     query_plan: KISQueryPlan | None = None
+    auto_object_query: tuple[ObjectQueryTerm, ...] = ()
     results: tuple[SingleSearchResult, ...]
 
 
@@ -223,6 +246,7 @@ class VQASearchResponse(BaseModel):
     model_choices: list[str] = Field(default_factory=list)
     applied_weights: dict[str, float] | None = None
     warnings: list[str] = Field(default_factory=list)
+    auto_object_query: tuple[ObjectQueryTerm, ...] = ()
     results: tuple[SingleSearchResult, ...]
 
 
@@ -240,3 +264,8 @@ SearchResponse = Annotated[
     KISSearchResponse | VQASearchResponse | TRAKESearchResponse,
     Field(discriminator="query_type"),
 ]
+
+
+class ObjectLabelsResponse(BaseModel):
+    available: bool
+    labels: tuple[str, ...]

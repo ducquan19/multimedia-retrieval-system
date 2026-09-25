@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 
 import { getVideoSource, resolveMediaUrl } from "../../api/client";
 import type { VideoSourceResponse } from "../../api/types";
+import { DresSubmitPanel, type SubmitTarget } from "../submission/DresSubmitPanel";
 import { ResultImage } from "./ResultImage";
 import { useModalAccessibility } from "./useModalAccessibility";
 
@@ -19,13 +20,15 @@ export interface ResultDetail {
 interface ResultDetailModalProps {
   result: ResultDetail;
   onClose: () => void;
+  /** When set, the modal offers a DRES submission for this result. */
+  submitTarget?: SubmitTarget;
 }
 
 export function formatScore(score: number): string {
   return score.toFixed(4);
 }
 
-export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
+export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetailModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -36,6 +39,12 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
   const [videoStatus, setVideoStatus] = useState<"idle" | "loading" | "error">("idle");
   const [frameInput, setFrameInput] = useState(String(result.frame_id));
   const [frameCopyStatus, setFrameCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [showSubmit, setShowSubmit] = useState(false);
+  const parsedFrameInput = Number(frameInput);
+  const currentFrame =
+    videoSource && frameInput.trim() !== "" && Number.isInteger(parsedFrameInput)
+      ? parsedFrameInput
+      : null;
 
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) onClose();
@@ -161,6 +170,16 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
             </button>
           </div>
           <div className="detail-modal__header-actions">
+            {submitTarget && (
+              <button
+                type="button"
+                onClick={() => setShowSubmit((open) => !open)}
+                aria-expanded={showSubmit}
+                className="detail-keyframe-action detail-submit-action"
+              >
+                Submit DRES
+              </button>
+            )}
             <button
               type="button"
               onClick={toggleVideo}
@@ -274,6 +293,14 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
           </div>
 
           <div className="detail-modal__content">
+            {submitTarget && showSubmit && (
+              <DresSubmitPanel
+                target={submitTarget}
+                currentFrame={currentFrame}
+                onCancel={() => setShowSubmit(false)}
+              />
+            )}
+
             <section className="detail-section" aria-labelledby="asr-heading">
               <h3 id="asr-heading">ASR transcript</h3>
               <p>{result.asr_text || "No ASR transcript available."}</p>
@@ -286,6 +313,9 @@ export function ResultDetailModal({ result, onClose }: ResultDetailModalProps) {
                   {result.objects.map((object, index) => (
                     <li key={`${String(object.label ?? "object")}-${index}`}>
                       {String(object.label ?? `Object ${index + 1}`)}
+                      {typeof object.count === "number" && object.count > 1 && (
+                        <span>×{object.count}</span>
+                      )}
                       {typeof object.score === "number" && (
                         <span>{formatScore(object.score)}</span>
                       )}

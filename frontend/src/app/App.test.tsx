@@ -222,10 +222,11 @@ describe("App query workspace", () => {
     expect(searchPayload(fetchMock)).not.toHaveProperty("program");
 
     await user.click(screen.getByRole("button", { name: "Search" }));
-    const resetProgram = await screen.findByRole("combobox", { name: "Program" });
-    expect(resetProgram).toHaveValue("ALL");
-    expect(screen.getByText("L25_V001")).toBeInTheDocument();
-    expect(screen.getByText("L26_V001")).toBeInTheDocument();
+    const keptProgram = await screen.findByRole("combobox", { name: "Program" });
+    expect(keptProgram).toHaveValue("L21_L22");
+    expect(screen.getByText("L21_V001")).toBeInTheDocument();
+    expect(screen.getByText("L22_V001")).toBeInTheDocument();
+    expect(screen.queryByText("L25_V001")).not.toBeInTheDocument();
   });
 
   it("submits the typed KIS payload with shared controls", async () => {
