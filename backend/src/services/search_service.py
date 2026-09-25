@@ -1,11 +1,15 @@
 from pathlib import Path
 
+from core.constants import MANUAL_OBJECT_WEIGHT
 from infrastructure.query_enhancer import QueryEnhancer
 from infrastructure.retrieval import RetrievalEngine
+from repositories.object_repository import KeyframeObjectRepository
 from schemas.search import (
     KISQueryPlan,
     KISSearchRequest,
     KISSearchResponse,
+    ObjectQueryTerm,
+    QueryVariants,
     SearchRequest,
     SearchResponse,
     SingleSearchResult,
@@ -29,12 +33,14 @@ class SearchService:
         max_trake_events: int,
         max_query_length: int,
         data_root: Path,
+        object_repository: KeyframeObjectRepository | None = None,
     ) -> None:
         self._retrieval_engine = retrieval_engine
         self._query_enhancer = query_enhancer
         self._max_trake_events = max_trake_events
         self._max_query_length = max_query_length
         self._data_root = data_root
+        self._object_repository = object_repository
 
     def plan_kis(self, query: str) -> KISQueryPlan:
         if len(query) > self._max_query_length:
@@ -55,19 +61,25 @@ class SearchService:
                 f"TRAKE supports at most {self._max_trake_events} events in this deployment"
             )
 
-        warnings = []
+        warnings: list[str] = []
         applied_weights = None
-        search_sources = getattr(request, "search_sources", None)
-        default_w_vis = 1.0 if getattr(search_sources, "image", True) else 0.0
-        default_w_asr = 1.0 if getattr(search_sources, "asr", False) else 0.0
+        auto_objects: tuple[ObjectQueryTerm, ...] = ()
+        sources = request.search_sources
+        default_weights = {
+            "w_vis": 1.0 if sources.image else 0.0,
+            "w_asr": 1.0 if sources.asr else 0.0,
+            "w_obj": 1.0 if sources.object and request.object_query else 0.0,
+        }
 
         query_plan = request.query_plan if isinstance(request, KISSearchRequest) else None
+        planned = isinstance(request, KISSearchRequest) and request.query_understanding
+        self._validate_object_query(request, planned)
 
         if isinstance(request, TRAKESearchRequest):
             original_query = request.main_query
             if request.enhance_query:
                 queries_dict = {event.event_index: event.query for event in request.events}
-                enhanced_queries = self._query_enhancer.enhance_batch(queries_dict)
+                enhanced_queries = self._query_enhancer.enhance_batch(queries_dict, sources)
                 if not enhanced_queries:
                     warnings.append(
                         "Gemini API quota exceeded or failed. Falling back to original "
@@ -75,25 +87,22 @@ class SearchService:
                     )
                     enhanced_queries = None
                     enhanced_query_str = None
-                    applied_weights = {
-                        "w_vis": default_w_vis,
-                        "w_asr": default_w_asr,
-                    }
+                    applied_weights = default_weights
                 else:
                     enhanced_query_str = "\n".join(
-                        f"Event {k}: {v.variants[0] if v and v.variants else ''}"
-                        for k, v in enhanced_queries.items()
+                        f"Event {k}: {self._describe_enhanced(v, request)}"
+                        for k, v in sorted(enhanced_queries.items())
                     )
-                    first_v = next(iter(enhanced_queries.values()), None)
+                    first_v = enhanced_queries.get(request.events[0].event_index)
                     if first_v:
-                        applied_weights = {
-                            "w_vis": first_v.w_vis,
-                            "w_asr": first_v.w_asr,
-                        }
+                        applied_weights = self._effective_weights(first_v, request)
+                    auto_objects = tuple(
+                        term for v in enhanced_queries.values() for term in v.objects
+                    )
             else:
                 enhanced_queries = None
                 enhanced_query_str = None
-        elif isinstance(request, KISSearchRequest) and request.query_understanding:
+        elif planned:
             original_query = request.query
             enhanced_queries = query_plan
             enhanced_query_str = None
@@ -101,13 +110,13 @@ class SearchService:
         else:
             original_query = request.query
             if request.enhance_query:
-                enhanced_queries = self._query_enhancer.enhance(original_query, request.query_type)
+                enhanced_queries = self._query_enhancer.enhance(
+                    original_query, request.query_type, sources
+                )
                 if enhanced_queries and enhanced_queries.variants:
-                    enhanced_query_str = f"- {enhanced_queries.variants[0]}"
-                    applied_weights = {
-                        "w_vis": enhanced_queries.w_vis,
-                        "w_asr": enhanced_queries.w_asr,
-                    }
+                    enhanced_query_str = f"- {self._describe_enhanced(enhanced_queries, request)}"
+                    applied_weights = self._effective_weights(enhanced_queries, request)
+                    auto_objects = enhanced_queries.objects
                 else:
                     warnings.append(
                         "Gemini API quota exceeded or failed. Falling back to original "
@@ -115,13 +124,13 @@ class SearchService:
                     )
                     enhanced_query_str = None
                     enhanced_queries = None
-                    applied_weights = {
-                        "w_vis": default_w_vis,
-                        "w_asr": default_w_asr,
-                    }
+                    applied_weights = default_weights
             else:
                 enhanced_queries = None
                 enhanced_query_str = None
+
+        if not planned:
+            warnings.extend(self._object_warnings(request, auto_objects))
 
         model_choices = getattr(request, "model_choices", [])
 
@@ -136,6 +145,7 @@ class SearchService:
                 applied_weights=applied_weights,
                 warnings=warnings,
                 query_plan=query_plan,
+                auto_object_query=auto_objects,
                 results=self._only_single_results(results),
             )
         if isinstance(request, VQASearchRequest):
@@ -146,6 +156,7 @@ class SearchService:
                 model_choices=model_choices,
                 applied_weights=applied_weights,
                 warnings=warnings,
+                auto_object_query=auto_objects,
                 results=self._only_single_results(results),
             )
         return TRAKESearchResponse(
@@ -157,6 +168,59 @@ class SearchService:
             warnings=warnings,
             results=self._only_trake_results(results),
         )
+
+    @staticmethod
+    def _validate_object_query(request: SearchRequest, planned: bool) -> None:
+        if planned or not request.search_sources.object or request.object_query:
+            return
+        if not request.enhance_query:
+            raise SearchValidationError(
+                "object_query must contain at least one object when the Object source is "
+                "enabled, unless Enhance query picks the objects automatically"
+            )
+
+    @staticmethod
+    def _effective_weights(enhanced: QueryVariants, request: SearchRequest) -> dict[str, float]:
+        """Gemini weights gated by the enabled sources, as the retrieval engine applies them."""
+        sources = request.search_sources
+        w_obj = enhanced.w_obj if enhanced.objects else 0.0
+        if request.object_query:
+            w_obj = max(w_obj, MANUAL_OBJECT_WEIGHT)
+        return {
+            "w_vis": enhanced.w_vis if sources.image else 0.0,
+            "w_asr": enhanced.w_asr if sources.asr else 0.0,
+            "w_obj": w_obj if sources.object else 0.0,
+        }
+
+    @staticmethod
+    def _describe_enhanced(enhanced: QueryVariants, request: SearchRequest) -> str:
+        parts = [enhanced.variants[0]]
+        if request.search_sources.asr and enhanced.asr_query_vi:
+            parts.append(f"ASR: {enhanced.asr_query_vi}")
+        if request.search_sources.object and enhanced.objects:
+            parts.append(
+                "Objects: "
+                + ", ".join(f"{term.label} ≥{term.min_count}" for term in enhanced.objects)
+            )
+        return " | ".join(parts)
+
+    def _object_warnings(
+        self, request: SearchRequest, auto_objects: tuple[ObjectQueryTerm, ...]
+    ) -> list[str]:
+        if not request.search_sources.object:
+            return []
+        if self._object_repository is None or not self._object_repository.available:
+            return [
+                "Object index is unavailable, so the Object source was ignored. "
+                "Run scripts/build_object_index.py."
+            ]
+        warnings = []
+        unknown = self._object_repository.unknown_labels(request.object_query)
+        if unknown:
+            warnings.append(f"Unknown object labels were ignored: {', '.join(unknown)}")
+        if request.enhance_query and not request.object_query and not auto_objects:
+            warnings.append("Gemini found no detectable objects in the query.")
+        return warnings
 
     def _validate_query_lengths(self, request: SearchRequest) -> None:
         if isinstance(request, TRAKESearchRequest):

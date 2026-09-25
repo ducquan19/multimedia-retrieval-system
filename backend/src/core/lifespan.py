@@ -8,6 +8,7 @@ from core.logger import SimpleLogger
 from infrastructure.blip2_reranker import BLIP2Reranker
 from infrastructure.embedding_service import EmbeddingService
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
+from repositories.object_repository import KeyframeObjectRepository
 from repositories.text_repository import KeyframeTextRepository
 from repositories.vector_repository import KeyframeVectorRepository
 from services.retrieval_service import RetrievalService
@@ -63,6 +64,15 @@ async def lifespan(app: FastAPI):
             intro_exclusion_policy,
         )
         
+        # 4b. Object Repository (detected objects per keyframe)
+        logger.info(f"Loading object index from {resolved_settings.object_index_path}...")
+        object_repository = KeyframeObjectRepository(
+            resolved_settings.object_index_path,
+            keyframe_repository,
+            intro_exclusion_policy,
+        )
+        object_repository.load()
+
         # 5. Reranker
         logger.info(
             "Initializing BLIP-2 Reranker "
@@ -81,12 +91,16 @@ async def lifespan(app: FastAPI):
             blip2_reranker=blip2_reranker,
             embedding_service=embedding_service,
             intro_exclusion_policy=intro_exclusion_policy,
+            object_repository=object_repository,
         )
         
         # 7. Query Enhancer
         logger.info("Initializing Query Enhancer...")
         from infrastructure.query_enhancer import GeminiQueryEnhancer
-        query_enhancer = GeminiQueryEnhancer(api_key=resolved_settings.gemini_api_key)
+        query_enhancer = GeminiQueryEnhancer(
+            api_key=resolved_settings.gemini_api_key,
+            object_labels=object_repository.labels(),
+        )
         
         # 8. Search Service
         logger.info("Initializing Search Service...")
@@ -95,11 +109,13 @@ async def lifespan(app: FastAPI):
             query_enhancer=query_enhancer,
             max_trake_events=resolved_settings.max_trake_events,
             max_query_length=resolved_settings.max_query_length,
-            data_root=resolved_settings.data_root
+            data_root=resolved_settings.data_root,
+            object_repository=object_repository,
         )
         
         # Attach to app.state
         app.state.search_service = search_service
+        app.state.object_repository = object_repository
         
         logger.info("Application startup completed successfully.")
         

@@ -3,9 +3,12 @@ import math
 import time
 import uuid
 
+from core.constants import MANUAL_OBJECT_WEIGHT
 from core.intro_exclusion import IntroExclusionPolicy
 from infrastructure.blip2_reranker import BLIP2Reranker
 from infrastructure.embedding_service import EmbeddingService
+from models.keyframe import Keyframe
+from repositories.object_repository import KeyframeObjectRepository
 from repositories.text_repository import KeyframeTextRepository
 from repositories.vector_repository import KeyframeVectorRepository
 from schemas.retrieval import ScoredCandidate
@@ -13,6 +16,7 @@ from schemas.search import (
     KISQueryPlan,
     KISQueryPlanEvent,
     KISSearchRequest,
+    ObjectQueryTerm,
     QueryVariants,
     SearchRequest,
     SearchSources,
@@ -38,6 +42,7 @@ class RetrievalService:
         blip2_reranker: BLIP2Reranker,
         embedding_service: EmbeddingService,
         intro_exclusion_policy: IntroExclusionPolicy | None = None,
+        object_repository: KeyframeObjectRepository | None = None,
     ) -> None:
         self._siglip_repo = siglip_vector_repo
         self._beit3_repo = beit3_vector_repo
@@ -45,6 +50,7 @@ class RetrievalService:
         self._blip2_reranker = blip2_reranker
         self._embedding_service = embedding_service
         self._intro_exclusion_policy = intro_exclusion_policy or IntroExclusionPolicy()
+        self._object_repository = object_repository
 
     def retrieve(
         self,
@@ -68,17 +74,41 @@ class RetrievalService:
         enhanced: QueryVariants | None = None,
         use_reranking: bool = False,
         asr_query: str | None = None,
+        object_query: tuple[ObjectQueryTerm, ...] = (),
     ) -> list[ScoredCandidate]:
-        visual_queries = (
-            enhanced.variants if enhanced and enhanced.w_vis > 0 else ([] if enhanced else [query])
-        )
+        use_image = getattr(search_sources, "image", True)
+        use_asr = getattr(search_sources, "asr", False)
+        use_object = getattr(search_sources, "object", False)
 
-        w_vis = (
-            enhanced.w_vis if enhanced else (1.0 if getattr(search_sources, "image", True) else 0.0)
+        # Manual object terms come first; Gemini only adds labels that are not already there.
+        object_terms = self._merge_object_terms(
+            object_query, enhanced.objects if enhanced else ()
         )
-        w_asr = (
-            enhanced.w_asr if enhanced else (1.0 if getattr(search_sources, "asr", False) else 0.0)
-        )
+        if not use_object or self._object_repository is None:
+            object_terms = ()
+
+        # Sources are the modalities the user allows; Gemini weights modulate them.
+        if enhanced:
+            w_vis = enhanced.w_vis if use_image else 0.0
+            w_asr = enhanced.w_asr if use_asr else 0.0
+            w_obj = enhanced.w_obj if enhanced.objects else 0.0
+            if object_query:
+                w_obj = max(w_obj, MANUAL_OBJECT_WEIGHT)
+            w_obj = w_obj if object_terms else 0.0
+            if w_vis + w_asr + w_obj == 0:
+                # Gemini weighted only disabled modalities: fall back to the enabled ones.
+                w_vis = 1.0 if use_image else 0.0
+                w_asr = 1.0 if use_asr else 0.0
+                w_obj = 1.0 if object_terms else 0.0
+        else:
+            w_vis = 1.0 if use_image else 0.0
+            w_asr = 1.0 if use_asr else 0.0
+            w_obj = 1.0 if object_terms else 0.0
+
+        visual_queries = (enhanced.variants if enhanced else [query]) if w_vis > 0 else []
+        if not asr_query and enhanced and enhanced.asr_query_vi:
+            # Spoken keywords sharpen BM25; the raw query keeps recall for paraphrases.
+            asr_query = f"{enhanced.asr_query_vi} {query}"
 
         siglip_candidates_lists = []
         beit3_candidates_lists = []
@@ -94,9 +124,10 @@ class RetrievalService:
                 beit3_candidates_lists.append(self._beit3_repo.search(query_vector, fetch_k))
 
         asr_cands = []
-        if search_sources and getattr(search_sources, "asr", False) and w_asr > 0:
+        if w_asr > 0:
+            # Every keyframe of a shot shares its transcript, so over-fetch to cover more shots.
             asr_cands = self._text_repository.search_text(
-                asr_query or query, ["asr_text"], None, fetch_k
+                asr_query or query, ["asr_text"], None, min(fetch_k * 3, 10_000)
             )
 
         siglip_candidates_lists = [
@@ -109,8 +140,12 @@ class RetrievalService:
         ]
         asr_cands = self._intro_exclusion_policy.filter_candidates(asr_cands)
 
+        obj_cands = []
+        if w_obj > 0:
+            obj_cands = self._object_repository.search(object_terms, fetch_k)
+
         cmap = {}
-        for cands in siglip_candidates_lists + beit3_candidates_lists + [asr_cands]:
+        for cands in siglip_candidates_lists + beit3_candidates_lists + [asr_cands, obj_cands]:
             for c in cands:
                 if c.image_path not in cmap:
                     cmap[c.image_path] = c
@@ -142,12 +177,45 @@ class RetrievalService:
             return {k: (v - min_s) / range_s for k, v in d.items()}
 
         vis_norm = norm_dict(vis_srrf)
-        asr_norm = norm_dict({c.image_path: c.similarity_score for c in asr_cands})
 
-        # 3. Final Score Fusion
+        # BM25 is divided by the best hit so the weakest hit still counts, and a shot's
+        # score is shared by all its keyframes, including visual candidates ASR missed.
+        asr_by_segment: dict[str, float] = {}
+        asr_max = max((c.similarity_score for c in asr_cands), default=0.0)
+        for c in asr_cands:
+            segment = c.keyframe.segment_id or c.image_path
+            score = c.similarity_score / asr_max if asr_max > 0 else 0.0
+            asr_by_segment[segment] = max(asr_by_segment.get(segment, 0.0), score)
+        asr_norm = {
+            p: asr_by_segment.get(c.keyframe.segment_id or p, 0.0) for p, c in cmap.items()
+        }
+
+        # Object scores are already in [0, 1] and comparable across keyframes, so every
+        # candidate (not only the object top-k) is scored directly instead of normalized.
+        obj_scores = (
+            {
+                p: self._object_repository.score(c.keyframe.keyframe_id, object_terms)
+                for p, c in cmap.items()
+            }
+            if w_obj > 0
+            else {}
+        )
+
+        # 3. Final Score Fusion: weights are renormalized over modalities that returned
+        # candidates, so an empty modality (e.g. ES offline) does not flatten the scores.
+        active_weights = {
+            "vis": w_vis if vis_norm else 0.0,
+            "asr": w_asr if asr_cands else 0.0,
+            "obj": w_obj if obj_cands else 0.0,
+        }
+        weight_sum = sum(active_weights.values()) or 1.0
         final_scores = {}
         for p in cmap:
-            final_scores[p] = w_vis * vis_norm.get(p, 0.0) + w_asr * asr_norm.get(p, 0.0)
+            final_scores[p] = (
+                active_weights["vis"] * vis_norm.get(p, 0.0)
+                + active_weights["asr"] * asr_norm.get(p, 0.0)
+                + active_weights["obj"] * obj_scores.get(p, 0.0)
+            ) / weight_sum
 
         top_paths = sorted(final_scores.keys(), key=lambda x: final_scores[x], reverse=True)[
             :fetch_k
@@ -162,6 +230,13 @@ class RetrievalService:
         # Repository-level filters protect recall; this is a final invariant check
         # before any caller performs ranking or temporal reasoning.
         return self._intro_exclusion_policy.filter_candidates(candidates)
+
+    @staticmethod
+    def _merge_object_terms(
+        manual: tuple[ObjectQueryTerm, ...], automatic: tuple[ObjectQueryTerm, ...]
+    ) -> tuple[ObjectQueryTerm, ...]:
+        labels = {term.label.casefold() for term in manual}
+        return manual + tuple(term for term in automatic if term.label.casefold() not in labels)
 
     def _retrieve_single(
         self, request: SearchRequest, enhanced_queries: QueryVariants | None = None
@@ -178,6 +253,7 @@ class RetrievalService:
             search_sources,
             enhanced_queries,
             getattr(request, "use_reranking", False),
+            object_query=request.object_query,
         )
 
         results = []
@@ -193,7 +269,7 @@ class RetrievalService:
                     image_path=keyframe.image_path,
                     segment_id=keyframe.segment_id or "",
                     asr_text=keyframe.asr_text or "",
-                    objects=keyframe.objects or [],
+                    objects=self._objects_for(keyframe),
                     similarity_score=candidate.similarity_score,
                     answer="",
                 )
@@ -370,7 +446,7 @@ class RetrievalService:
                     image_path=keyframe.image_path,
                     segment_id=keyframe.segment_id or "",
                     asr_text=keyframe.asr_text or "",
-                    objects=keyframe.objects or [],
+                    objects=self._objects_for(keyframe),
                     similarity_score=candidate.similarity_score,
                     answer="",
                 )
@@ -403,6 +479,7 @@ class RetrievalService:
             search_sources,
             enhanced_for_first,
             use_reranking,
+            object_query=request.object_query,
         )
 
         if not first_candidates:
@@ -418,7 +495,12 @@ class RetrievalService:
         for event in request.events[1:]:
             event_enhanced = enhanced_queries.get(event.event_index) if enhanced_queries else None
             candidates = self._search_candidates(
-                event.query, model_choices, fetch_k, search_sources, event_enhanced
+                event.query,
+                model_choices,
+                fetch_k,
+                search_sources,
+                event_enhanced,
+                object_query=request.object_query,
             )
             next_beams: list[tuple[float, list[tuple[ScoredCandidate, float, float]]]] = []
 
@@ -489,7 +571,7 @@ class RetrievalService:
                         keyframe_url=self._media_url(c.image_path),
                         segment_id=c.keyframe.segment_id or "",
                         asr_text=c.keyframe.asr_text or "",
-                        objects=c.keyframe.objects or [],
+                        objects=self._objects_for(c.keyframe),
                         similarity_score=c.similarity_score,
                     )
                 )
@@ -505,6 +587,13 @@ class RetrievalService:
             )
 
         return tuple(results)
+
+    def _objects_for(self, keyframe: Keyframe) -> list[dict]:
+        if keyframe.objects:
+            return keyframe.objects
+        if self._object_repository is None:
+            return []
+        return self._object_repository.objects_for(keyframe.keyframe_id)
 
     @staticmethod
     def _media_url(image_path: str) -> str:

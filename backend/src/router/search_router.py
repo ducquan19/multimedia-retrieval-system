@@ -1,8 +1,18 @@
 from fastapi import APIRouter, HTTPException
 
-from core.dependencies import SearchServiceDependency, SettingsDependency
+from core.dependencies import (
+    ObjectRepositoryDependency,
+    SearchServiceDependency,
+    SettingsDependency,
+)
 from repositories.keyframe_metadata_repository import KeyframeMetadataError
-from schemas.search import KISQueryPlan, KISQueryPlanRequest, SearchRequest, SearchResponse
+from schemas.search import (
+    KISQueryPlan,
+    KISQueryPlanRequest,
+    ObjectLabelsResponse,
+    SearchRequest,
+    SearchResponse,
+)
 from schemas.video import VideoSourceResponse
 from services.retrieval_service import RetrievalDataError
 from services.search_service import SearchValidationError
@@ -56,6 +66,11 @@ async def search(payload: SearchRequest, service: SearchServiceDependency) -> Se
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/objects/labels", response_model=ObjectLabelsResponse)
+def get_object_labels(repository: ObjectRepositoryDependency) -> ObjectLabelsResponse:
+    return ObjectLabelsResponse(available=repository.available, labels=repository.labels())
 
 
 @router.get("/videos/{video_id}/source", response_model=VideoSourceResponse)
