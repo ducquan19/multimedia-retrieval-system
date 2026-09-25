@@ -12,6 +12,7 @@ import {
   QUERY_TYPES,
   type KISQueryPlan,
   type KISQueryPlanEvent,
+  type ObjectQueryTerm,
   type PublicConfig,
   type QueryType,
   type SearchRequest,
@@ -21,6 +22,8 @@ import {
 import { SingleResultInspector } from "../results/SingleResultInspector";
 import { TrakeResultInspector } from "../results/TrakeResultInspector";
 import { VideoLookup } from "../results/VideoLookup";
+import { ObjectQueryInput } from "./ObjectQueryInput";
+import { SearchInsight } from "./SearchInsight";
 
 const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
   { key: "image", label: "Image" },
@@ -87,6 +90,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     object: false,
   });
   const [modelChoices, setModelChoices] = useState<Array<"siglip" | "beit3">>(["siglip"]);
+  const [objectTerms, setObjectTerms] = useState<ObjectQueryTerm[]>([]);
   const [kisQuery, setKisQuery] = useState("");
   const [queryUnderstanding, setQueryUnderstanding] = useState(false);
   const [kisPlan, setKisPlan] = useState<KISQueryPlan | null>(null);
@@ -283,6 +287,10 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     if (modelChoices.length === 0) {
       errors.push("Chọn ít nhất một model.");
     }
+    const usesObjectSource = sources.object && !(activeType === "KIS" && queryUnderstanding);
+    if (usesObjectSource && objectTerms.length === 0 && !enhanceQuery) {
+      errors.push("Thêm ít nhất một object hoặc bật Enhance query để tự chọn object.");
+    }
 
     const common = {
       top_k: parsedTopK,
@@ -290,6 +298,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       use_reranking: useReranking,
       search_sources: sources,
       model_choices: modelChoices,
+      ...(usesObjectSource && objectTerms.length > 0 ? { object_query: objectTerms } : {}),
     };
 
     let payload: SearchRequest;
@@ -359,7 +368,6 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     activeController.current = controller;
     setGroupByVideo(false);
     setGroupSort("score");
-    setProgramFilter("ALL");
     searchMutation.mutate({ payload, signal: controller.signal });
   };
 
@@ -602,7 +610,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           {activeType === "TRAKE" && (
             <div className="trake-fields">
               <label className="field" htmlFor="trake-main-query">
-                <span>Query TRAKE</span>
+                <span>Main query TRAKE</span>
                 <textarea
                   id="trake-main-query"
                   value={trakeMainQuery}
@@ -614,7 +622,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 />
               </label>
 
-              <div className="trake-event-count-row">
+              <label className="trake-event-count-row" htmlFor="event-count">
                 <span>EVENT count</span>
                 <select
                   id="event-count"
@@ -625,17 +633,18 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                     <option key={count} value={count}>{count}</option>
                   ))}
                 </select>
-              </div>
+              </label>
 
               <div className="event-grid">
                 {eventQueries.slice(0, eventCount).map((query, index) => (
                   <label className="event-field" key={index} htmlFor={`event-${index + 1}`}>
                     <div className="event-field__header">
-                      <span className="event-field__badge">{index + 1}</span>
+                      <span className="event-field__badge" aria-hidden="true">{index + 1}</span>
                       <span className="event-field__label">EVENT {index + 1}</span>
                     </div>
                     <textarea
                       id={`event-${index + 1}`}
+                      aria-label={`EVENT ${index + 1}`}
                       value={query}
                       maxLength={config.max_query_length}
                       onChange={(event) => updateEventQuery(index, event.target.value)}
@@ -664,32 +673,6 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 onChange={(event) => setEnhanceQuery(event.target.checked)}
               />
             </label>
-
-            {searchMutation.data?.warnings?.length ? (
-              <div className="sidebar-warning">
-                <small><strong>Warning</strong></small>
-                {searchMutation.data.warnings.map((w, i) => <p key={i}>⚠️ {w}</p>)}
-              </div>
-            ) : null}
-
-            {searchMutation.variables?.payload.enhance_query &&
-              searchMutation.data?.enhanced_query && (
-                <div className="sidebar-enhanced-query">
-                  <small><strong>Enhanced:</strong></small>
-                  <p>{searchMutation.data.enhanced_query.replace("- ", "")}</p>
-                </div>
-              )}
-
-            {searchMutation.variables?.payload.enhance_query &&
-              searchMutation.data?.applied_weights && (
-                <div className="sidebar-weights">
-                  <small><strong>Weights Applied:</strong></small>
-                  <p>
-                    <span>VIS: {searchMutation.data.applied_weights.w_vis.toFixed(2)}</span>
-                    <span>ASR: {searchMutation.data.applied_weights.w_asr.toFixed(2)}</span>
-                  </p>
-                </div>
-              )}
           </div>
 
           <label className="toggle-row" htmlFor="use-reranking">
@@ -754,6 +737,15 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
               </label>
             ))}
           </fieldset>
+
+          {sources.object && (
+            <ObjectQueryInput
+              terms={objectTerms}
+              onChange={setObjectTerms}
+              disabled={activeType === "KIS" && queryUnderstanding}
+              autoObjects={enhanceQuery}
+            />
+          )}
 
           {validationErrors.length > 0 && (
             <div className="form-errors" role="alert">
@@ -865,6 +857,17 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             ) : null}
           </div>
         </header>
+        {!searchMutation.isPending && searchMutation.data && (
+          <SearchInsight
+            response={searchMutation.data}
+            payload={searchMutation.variables?.payload}
+            objectTerms={objectTerms}
+            onPinObject={(term) => {
+              setObjectTerms((current) => [...current, term]);
+              setSources((current) => ({ ...current, object: true }));
+            }}
+          />
+        )}
         <div className="result-zone__content">
           <SearchState
             mutation={searchMutation}

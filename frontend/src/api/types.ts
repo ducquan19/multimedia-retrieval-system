@@ -9,12 +9,18 @@ export interface SearchSources {
   object: boolean;
 }
 
+export interface ObjectQueryTerm {
+  label: string;
+  min_count: number;
+}
+
 interface BaseSearchRequest {
   top_k: TopK;
   enhance_query: boolean;
   use_reranking: boolean;
   search_sources: SearchSources;
   model_choices: ("siglip" | "beit3")[];
+  object_query?: ObjectQueryTerm[];
 }
 
 export type KISSearchMode = "single_anchor" | "multi_anchor" | "temporal_sequence";
@@ -96,6 +102,7 @@ export interface TRAKESearchResult {
 export interface AppliedWeights {
   w_vis: number;
   w_asr: number;
+  w_obj?: number;
 }
 
 interface BaseSearchResponse {
@@ -109,11 +116,13 @@ interface BaseSearchResponse {
 export interface KISSearchResponse extends BaseSearchResponse {
   query_type: "KIS";
   query_plan?: KISQueryPlan | null;
+  auto_object_query?: ObjectQueryTerm[];
   results: SingleSearchResult[];
 }
 
 export interface VQASearchResponse extends BaseSearchResponse {
   query_type: "VQA";
+  auto_object_query?: ObjectQueryTerm[];
   results: SingleSearchResult[];
 }
 
@@ -131,6 +140,39 @@ export interface PublicConfig {
   max_trake_events: number;
   max_query_length: number;
   max_answer_length: number;
+}
+
+export interface ObjectLabelsResponse {
+  available: boolean;
+  labels: string[];
+}
+
+export interface DresEvaluation {
+  id: string;
+  name: string;
+  type: string | null;
+  status: string | null;
+}
+
+export type DresAnswer =
+  | { mediaItemName: string; start: number; end: number }
+  | { text: string };
+
+export interface DresSubmitBody {
+  answerSets: { answers: DresAnswer[] }[];
+}
+
+export interface DresSubmitRequest extends DresSubmitBody {
+  evaluation_id: string;
+  allow_duplicate?: boolean;
+}
+
+export interface DresSubmitResponse {
+  accepted: boolean;
+  status_code: number;
+  submission: string | null;
+  description: string | null;
+  body: DresSubmitBody;
 }
 
 export interface VideoSourceResponse {

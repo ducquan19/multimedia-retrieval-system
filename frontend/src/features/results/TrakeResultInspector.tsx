@@ -26,6 +26,8 @@ interface TrakeResultInspectorProps {
 
 interface SelectedEvent {
   result: ResultDetail;
+  row: TRAKESearchResult;
+  eventIndex: number;
   trigger: HTMLButtonElement;
 }
 
@@ -50,7 +52,12 @@ export function TrakeResultInspector({
     event: TRAKEEventResult,
     trigger: HTMLButtonElement,
   ) => {
-    setSelected({ result: { ...event, video_id: row.video_id }, trigger });
+    setSelected({
+      result: { ...event, video_id: row.video_id },
+      row,
+      eventIndex: event.event_index,
+      trigger,
+    });
   };
 
   const closeDetail = useCallback(() => {
@@ -93,7 +100,18 @@ export function TrakeResultInspector({
         </ol>
       </div>
 
-      {selected && <ResultDetailModal result={selected.result} onClose={closeDetail} />}
+      {selected && (
+        <ResultDetailModal
+          result={selected.result}
+          onClose={closeDetail}
+          submitTarget={{
+            kind: "trake",
+            videoId: selected.row.video_id,
+            frameIds: selected.row.events.map((event) => event.frame_id),
+            eventIndex: selected.eventIndex,
+          }}
+        />
+      )}
     </section>
   );
 }
