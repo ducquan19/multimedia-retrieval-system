@@ -74,7 +74,15 @@ class RetrievalService:
             if self._traffic_repository is None or not self._traffic_repository.available:
                 raise RetrievalDataError("Traffic metadata is not available")
             allowed_ids = self._traffic_repository.allowed_ids(request.filters)
+        elif isinstance(request, KISSearchRequest) and not request.include_traffic:
+            allowed_ids = self._non_traffic_ids()
         return self._retrieve_single(request, enhanced, allowed_ids)
+
+    def _non_traffic_ids(self) -> np.ndarray | None:
+        """FAISS ids outside the traffic videos, or None (no restriction) without traffic data."""
+        if self._traffic_repository is None or not self._traffic_repository.available:
+            return None
+        return self._traffic_repository.non_traffic_ids()
 
     def _search_candidates(
         self,
@@ -299,6 +307,7 @@ class RetrievalService:
         )
         candidates_by_event: dict[int, list[ScoredCandidate]] = {}
         retrieval_events = (primary_anchor,) if plan.search_mode == "single_anchor" else plan.events
+        allowed_ids = None if request.include_traffic else self._non_traffic_ids()
 
         for event in retrieval_events:
             sources = SearchSources(
@@ -320,6 +329,7 @@ class RetrievalService:
                 enhanced=enhanced,
                 use_reranking=request.use_reranking,
                 asr_query=event.asr_query_vi,
+                allowed_ids=allowed_ids,
             )
 
         anchor_candidates = candidates_by_event[primary_anchor.event_index]
@@ -492,11 +502,7 @@ class RetrievalService:
         search_sources = getattr(request, "search_sources", None)
         use_reranking = getattr(request, "use_reranking", False)
         # TRAKE is never asked about the traffic videos, so they are left out entirely.
-        allowed_ids = (
-            self._traffic_repository.non_traffic_ids()
-            if self._traffic_repository is not None and self._traffic_repository.available
-            else None
-        )
+        allowed_ids = self._non_traffic_ids()
 
         # 1. Forward Pass: Fetch candidates for all events using per-event enhanced queries
         first_event = request.events[0]

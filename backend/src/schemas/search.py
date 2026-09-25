@@ -145,6 +145,8 @@ class KISSearchRequest(BaseSearchRequest):
     query: QueryText
     query_understanding: bool = False
     query_plan: KISQueryPlan | None = None
+    # Traffic-camera videos (N) have their own TRAFFIC tab, so KIS leaves them out by default.
+    include_traffic: bool = False
 
     @model_validator(mode="after")
     def validate_query_understanding(self) -> "KISSearchRequest":

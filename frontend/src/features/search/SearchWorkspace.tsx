@@ -131,6 +131,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [kisQuery, setKisQuery] = useState("");
   const [queryUnderstanding, setQueryUnderstanding] = useState(false);
   const [kisPlan, setKisPlan] = useState<KISQueryPlan | null>(null);
+  const [includeTraffic, setIncludeTraffic] = useState(false);
   const [trafficQuery, setTrafficQuery] = useState("");
   const [trafficFilters, setTrafficFilters] = useState<TrafficFilters>(EMPTY_TRAFFIC_FILTERS);
   const [trakeMainQuery, setTrakeMainQuery] = useState("");
@@ -394,6 +395,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
         ...(queryUnderstanding && kisPlan
           ? { query_understanding: true, query_plan: kisPlan }
           : {}),
+        include_traffic: includeTraffic,
         ...common,
       };
     } else if (activeType === "TRAFFIC") {
@@ -807,6 +809,20 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
               onChange={(event) => setUseReranking(event.target.checked)}
             />
           </label>
+
+          {activeType === "KIS" && (
+            <label className="toggle-row" htmlFor="include-traffic">
+              <span>
+                <strong>Include traffic videos (N)</strong>
+              </span>
+              <input
+                id="include-traffic"
+                type="checkbox"
+                checked={includeTraffic}
+                onChange={(event) => setIncludeTraffic(event.target.checked)}
+              />
+            </label>
+          )}
 
           <fieldset className="source-options embedding-model-options">
             <legend>Embedding Model</legend>
