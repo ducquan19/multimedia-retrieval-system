@@ -10,3 +10,4 @@ tensorboardX
 torchmetrics
 google-genai
 orjson
+youtube-transcript-api
