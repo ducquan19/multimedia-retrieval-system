@@ -84,6 +84,34 @@ enabled, **Understand query** sends the raw Vietnamese description to
 queries in English, Vietnamese ASR queries, event importance, and temporal strategy.
 Review the plan and then run Search.
 
+### Hybrid search and Enhance query
+
+Search fuses three sources: **Image** (SigLIP / BEiT-3), **ASR** (BM25 over transcripts) and
+**Object** (detected objects, see step 5 below). The checked sources are the modalities a
+search may use. With **Enhance query**, Gemini rewrites the query into English, extracts
+Vietnamese spoken keywords for ASR, picks detector classes (only from the labels in
+`objects_index.json`) with minimum counts, and predicts a weight per modality. Objects typed
+manually are always kept and Gemini's objects are added to them. Weights are renormalized over
+the sources that actually returned candidates, and an ASR hit scores every keyframe of its shot.
+
+### DRES submission
+
+Set `AIC_DRES_USERNAME` and `AIC_DRES_PASSWORD` in `.env` (optionally `AIC_DRES_BASE_URL`,
+default `https://eventretrieval.one`). The backend logs in, keeps the DRES session and renews it
+when it expires; the browser never sees the credentials.
+
+Open a result's detail and press **Submit DRES**. Pick the evaluation, review the editable
+fields and the request body preview, then press **Xác nhận nộp**:
+
+- **KIS**: `mediaItemName` + `start`/`end` in ms (default `frame_id / fps × 1000`).
+- **VQA** (available on KIS results too): `QA-<ANSWER>-<VIDEO_ID>-<TIME(ms)>`.
+- **TRAKE**: `TR-<VIDEO_ID>-<FRAME_ID1>,<FRAME_ID2>,...` from the whole candidate row.
+
+When the video player is open, **Dùng frame đang xem** takes the time (or, for TRAKE, that
+event's frame) from the frame being watched. Every answer DRES judged is appended to
+`data/dres_submissions.jsonl`; resending an identical answer to the same evaluation is refused
+unless you confirm **Vẫn nộp lại**.
+
 ### 4. Run the application
 
 Start the backend and frontend together (run Elasticsearch via Docker first if using ASR):
@@ -107,7 +135,7 @@ Because datasets and models are large, they are excluded from Git.
 
 1. **Download Kaggle Data**: Download the required datasets from Kaggle and extract them directly into `data/`:
    - [Embeddings](https://kaggle.com/datasets/c7b426cfb41d654ce995b9e35eb3a108167d65a6640caf0cd6af82e18d58b89a)
-   - [Keyframes](https://kaggle.com/datasets/f6e43dae6bac933014eb004ae691fa652168994855a67a4e1f3850d9182478e3)
+   - [Keyframes Batch 1](https://kaggle.com/datasets/d7aa43eea17237235450ede4a409cb562ff02d218a1340f4d6bdcdfe19a9d50c)
    - [ASR Data](https://kaggle.com/datasets/e2642647173eb4867e6f7ca12b592843b60e5ddb16dc76f08288fd816c6d0fd5)
    - [BEiT-3 checkpoint](https://kaggle.com/datasets/d41406373d9f714c275a2fd01c5222f46437b426c357abf603195a41eafa3228)
 2. **Build FAISS Index**: The Kaggle dataset only contains raw `.npy` embeddings. Run the indexing script to build `.index` files:
@@ -122,8 +150,13 @@ Because datasets and models are large, they are excluded from Git.
    ```powershell
    python scripts/build_es_index.py
    ```
-5. **Local Video Playback**: Place your raw `.mp4` video files into `data/videos/<video_id>.mp4`. The application allows you to seamlessly open these videos locally at exact keyframe timestamps directly from the UI using the "Open Local Video" feature!
-6. **BEiT-3 Checkpoint**: Create a `checkpoint` folder in `data/checkpoint/` and place `beit3.spm` and `beit3_base_patch16_384_coco_retrieval.pth` inside it if using the BEiT-3 retriever.
+5. **Build Object Index**: Required for the **Object** search source. Reads `objects/<video_id>/<n>.json`, `map-keyframes/<video_id>.csv` and `scenes/<video_id>.scenes.csv`, then writes `data/objects_index.json`. Keyframes of the M, N and S sets are matched to the provided keyframe with the same `frame_idx`; the self-extracted L keyframes receive the merged objects of every provided keyframe in the same shot. Restart the backend after rebuilding.
+   ```powershell
+   python scripts/build_object_index.py
+   ```
+   Detections below `--min-score` (default `0.3`) are dropped; `--shot-level-prefixes` (default `L`) selects the sets mapped by shot.
+6. **Local Video Playback**: Place your raw `.mp4` video files into `data/videos/<video_id>.mp4`. The application allows you to seamlessly open these videos locally at exact keyframe timestamps directly from the UI using the "Open Local Video" feature!
+7. **BEiT-3 Checkpoint**: Create a `checkpoint` folder in `data/checkpoint/` and place `beit3.spm` and `beit3_base_patch16_384_coco_retrieval.pth` inside it if using the BEiT-3 retriever.
 
 ### Expected Layout
 
