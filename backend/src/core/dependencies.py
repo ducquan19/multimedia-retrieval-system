@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request
 
 from core.config import Settings
 from infrastructure.hf_signed_url import HuggingFaceUrlSigner
+from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
 from repositories.object_repository import KeyframeObjectRepository
 from repositories.traffic_repository import TrafficMetadataRepository
 from services.dres_service import DresSubmissionService
@@ -36,6 +37,13 @@ def get_object_repository(request: Request) -> KeyframeObjectRepository:
     return repository
 
 
+def get_keyframe_repository(request: Request) -> KeyframeMetadataRepository:
+    repository = getattr(request.app.state, "keyframe_repository", None)
+    if repository is None:
+        raise HTTPException(status_code=503, detail="Keyframe metadata is not ready yet.")
+    return repository
+
+
 def get_traffic_repository(request: Request) -> TrafficMetadataRepository:
     repository = getattr(request.app.state, "traffic_repository", None)
     if repository is None:
@@ -58,6 +66,9 @@ SearchServiceDependency = Annotated[SearchService, Depends(get_search_service)]
 DresServiceDependency = Annotated[DresSubmissionService, Depends(get_dres_service)]
 ObjectRepositoryDependency = Annotated[
     KeyframeObjectRepository, Depends(get_object_repository)
+]
+KeyframeRepositoryDependency = Annotated[
+    KeyframeMetadataRepository, Depends(get_keyframe_repository)
 ]
 TrafficRepositoryDependency = Annotated[
     TrafficMetadataRepository, Depends(get_traffic_repository)

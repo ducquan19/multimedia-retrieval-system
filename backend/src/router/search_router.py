@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from core.dependencies import (
+    KeyframeRepositoryDependency,
     ObjectRepositoryDependency,
     PrivateUrlSignerDependency,
     SearchServiceDependency,
@@ -16,7 +17,7 @@ from schemas.search import (
     SearchResponse,
     TrafficOptionsResponse,
 )
-from schemas.video import VideoSourceResponse
+from schemas.video import VideoKeyframe, VideoKeyframesResponse, VideoSourceResponse
 from services.retrieval_service import RetrievalDataError
 from services.search_service import SearchValidationError
 from services.video_source_service import (
@@ -84,6 +85,38 @@ def get_object_labels(repository: ObjectRepositoryDependency) -> ObjectLabelsRes
 @router.get("/traffic/options", response_model=TrafficOptionsResponse)
 def get_traffic_options(repository: TrafficRepositoryDependency) -> TrafficOptionsResponse:
     return repository.options()
+
+
+@router.get("/videos/{video_id}/keyframes", response_model=VideoKeyframesResponse)
+def get_video_keyframes(
+    video_id: str,
+    keyframes: KeyframeRepositoryDependency,
+    objects: ObjectRepositoryDependency,
+    frame_id: int = Query(ge=0),
+    radius: int = Query(default=8, ge=1, le=60),
+) -> VideoKeyframesResponse:
+    """Keyframes around frame_id in the same video, for temporal context browsing."""
+    try:
+        window, center_index = keyframes.neighbors(video_id, frame_id, radius)
+    except KeyframeMetadataError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not window:
+        raise HTTPException(status_code=404, detail=f"No keyframes for video {video_id}.")
+    return VideoKeyframesResponse(
+        video_id=video_id,
+        center_index=center_index,
+        keyframes=[
+            VideoKeyframe(
+                frame_id=item.frame_id,
+                time_ms=item.time_ms,
+                keyframe_url=f"/media/{item.image_path}",
+                segment_id=item.segment_id or "",
+                asr_text=item.asr_text or "",
+                objects=item.objects or objects.objects_for(item.keyframe_id),
+            )
+            for item in window
+        ],
+    )
 
 
 @router.get("/videos/{video_id}/source", response_model=VideoSourceResponse)

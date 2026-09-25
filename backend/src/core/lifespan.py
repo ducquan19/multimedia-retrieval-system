@@ -128,6 +128,7 @@ async def lifespan(app: FastAPI):
         # Attach to app.state
         app.state.search_service = search_service
         app.state.object_repository = object_repository
+        app.state.keyframe_repository = keyframe_repository
         app.state.traffic_repository = traffic_repository
         
         logger.info("Application startup completed successfully.")
