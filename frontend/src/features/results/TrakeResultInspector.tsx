@@ -10,6 +10,7 @@ import type {
   TRAKEEventResult,
   TRAKESearchResponse,
   TRAKESearchResult,
+  VideoKeyframe,
 } from "../../api/types";
 import {
   type ResultDetail,
@@ -60,6 +61,21 @@ export function TrakeResultInspector({
     });
   };
 
+  // Picking a neighbouring keyframe replaces this EVENT's frame in the submission.
+  const navigateDetail = useCallback((keyframe: VideoKeyframe) => {
+    setSelected((current) => {
+      if (!current) return current;
+      const events = current.row.events.map((event) =>
+        event.event_index === current.eventIndex ? { ...event, ...keyframe } : event,
+      );
+      return {
+        ...current,
+        result: { ...current.result, ...keyframe },
+        row: { ...current.row, events },
+      };
+    });
+  }, []);
+
   const closeDetail = useCallback(() => {
     const trigger = selected?.trigger;
     setSelected(null);
@@ -104,6 +120,7 @@ export function TrakeResultInspector({
         <ResultDetailModal
           result={selected.result}
           onClose={closeDetail}
+          onNavigate={navigateDetail}
           submitTarget={{
             kind: "trake",
             videoId: selected.row.video_id,

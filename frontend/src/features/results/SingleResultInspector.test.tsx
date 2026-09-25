@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import type {
   SingleSearchResult,
   VQASearchResponse,
 } from "../../api/types";
+import { renderWithQuery as render } from "../../test/renderWithQuery";
 import { SingleResultInspector } from "./SingleResultInspector";
 
 const results: SingleSearchResult[] = [
@@ -80,6 +81,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function stubVideoApi() {
+  const fetchMock = vi.fn((input: RequestInfo | URL) =>
+    Promise.resolve(
+      String(input).includes("/keyframes?")
+        ? jsonResponse({
+            video_id: "L01_V001",
+            center_index: 1,
+            keyframes: [400, 505, 610].map((frameId) => ({
+              frame_id: frameId,
+              keyframe_url: `/media/keyframes/L01_V001/${frameId}.jpg`,
+              segment_id: "",
+              asr_text: `ASR at ${frameId}`,
+              objects: [],
+            })),
+          })
+        : jsonResponse({
+            video_id: "L01_V001",
+            url: "/media/videos/L01_V001.mp4",
+            source: "local",
+            fps: 25,
+          }),
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
 describe("SingleResultInspector", () => {
   it("renders essential metadata and a consistently formatted score", () => {
     render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
@@ -129,19 +164,31 @@ describe("SingleResultInspector", () => {
     expect(screen.getByLabelText("VQA Answer")).toHaveValue("edited answer A");
   });
 
-  it("plays the video from the keyframe timestamp", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          video_id: "L01_V001",
-          url: "/media/videos/L01_V001.mp4",
-          source: "local",
-          fps: 25,
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+  it("moves to a neighbouring keyframe from the strip and with the arrow keys", async () => {
+    stubVideoApi();
+    const user = userEvent.setup();
+    render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open details for L01_V001, frame 505" }),
     );
-    vi.stubGlobal("fetch", fetchMock);
+    const strip = await screen.findByRole("region", { name: "Temporal context" });
+    expect(
+      await within(strip).findByRole("button", { name: "Keyframe 505" }),
+    ).toHaveAttribute("aria-current", "true");
+
+    await user.click(within(strip).getByRole("button", { name: "Keyframe 610" }));
+    const dialog = screen.getByRole("dialog");
+    const title = within(dialog).getByRole("heading", { level: 2 });
+    expect(title).toHaveTextContent("610");
+    expect(within(dialog).getByText("ASR at 610")).toBeInTheDocument();
+
+    await user.keyboard("{ArrowLeft}");
+    expect(title).toHaveTextContent("505");
+  });
+
+  it("plays the video from the keyframe timestamp", async () => {
+    const fetchMock = stubVideoApi();
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
     const user = userEvent.setup();

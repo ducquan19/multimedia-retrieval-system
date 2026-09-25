@@ -1,10 +1,11 @@
-import { type MouseEvent, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { getVideoSource, resolveMediaUrl } from "../../api/client";
-import type { VideoSourceResponse } from "../../api/types";
+import type { VideoKeyframe, VideoSourceResponse } from "../../api/types";
 import { DresSubmitPanel, type SubmitTarget } from "../submission/DresSubmitPanel";
 import { ResultImage } from "./ResultImage";
+import { TemporalStrip, useVideoKeyframes } from "./TemporalStrip";
 import { useModalAccessibility } from "./useModalAccessibility";
 
 export interface ResultDetail {
@@ -26,6 +27,15 @@ interface ResultDetailModalProps {
   onClose: () => void;
   /** When set, the modal offers a DRES submission for this result. */
   submitTarget?: SubmitTarget;
+  /** When set, the modal shows neighbouring keyframes and moves to the one picked. */
+  onNavigate?: (keyframe: VideoKeyframe) => void;
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+  );
 }
 
 export function formatScore(score: number): string {
@@ -42,7 +52,12 @@ export function formatMs(ms: number): string {
   ).padStart(3, "0")}`;
 }
 
-export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetailModalProps) {
+export function ResultDetailModal({
+  result,
+  onClose,
+  submitTarget,
+  onNavigate,
+}: ResultDetailModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -68,6 +83,8 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
     timeMode && videoSource && timeInput.trim() !== "" && Number.isInteger(parsedTimeInput)
       ? parsedTimeInput
       : null;
+
+  const neighbours = useVideoKeyframes(result.video_id, result.frame_id, Boolean(onNavigate));
 
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) onClose();
@@ -177,6 +194,37 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
       : result.frame_id;
     navigateToFrame((Number.isFinite(currentFrame) ? currentFrame : fallbackFrame) + offset);
   };
+
+  // Moving to another keyframe keeps the player open and seeks it there.
+  const shownKeyframeRef = useRef({ frameId: result.frame_id, timeMs: keyframeTimeMs });
+  useEffect(() => {
+    const shown = shownKeyframeRef.current;
+    if (shown.frameId === result.frame_id && shown.timeMs === keyframeTimeMs) return;
+    shownKeyframeRef.current = { frameId: result.frame_id, timeMs: keyframeTimeMs };
+    setFrameInput(String(result.frame_id));
+    setTimeInput(String(keyframeTimeMs ?? ""));
+    setCopyStatus("idle");
+    seekKeyframe()?.pause();
+  });
+
+  const stepKeyframe = (offset: number) => {
+    const next = neighbours.keyframes[neighbours.centerIndex + offset];
+    if (onNavigate && neighbours.centerIndex >= 0 && next) onNavigate(next);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.altKey || event.ctrlKey || event.metaKey || isTypingTarget(event.target)) return;
+      event.preventDefault();
+      const offset = event.key === "ArrowLeft" ? -1 : 1;
+      // Shift moves keyframe by keyframe even while the video is open.
+      if (videoSource && !event.shiftKey) stepFrame(offset);
+      else stepKeyframe(offset);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  });
 
   const copyCurrentFrame = async () => {
     try {
@@ -357,6 +405,16 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
                       : "Copy"}
                 </button>
               </div>
+            )}
+
+            {onNavigate && (
+              <TemporalStrip
+                keyframes={neighbours.keyframes}
+                currentFrameId={result.frame_id}
+                isLoading={neighbours.query.isPending}
+                isError={neighbours.query.isError}
+                onSelect={onNavigate}
+              />
             )}
           </div>
 

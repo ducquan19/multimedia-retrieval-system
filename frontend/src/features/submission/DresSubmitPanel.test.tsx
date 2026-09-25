@@ -117,6 +117,31 @@ describe("DRES submission", () => {
     ]);
   });
 
+  it("logs each submission and warns before submitting the same video again", async () => {
+    setupApi();
+    const user = userEvent.setup();
+    const target: SubmitTarget = {
+      kind: "single",
+      videoId: "L01_V001",
+      frameId: 505,
+      defaultMode: "KIS",
+      answer: "",
+    };
+    const { unmount } = renderModal(target);
+
+    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await waitFor(() => expect(screen.getByLabelText("Start (ms)")).toHaveValue(20200));
+    await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
+    expect(await screen.findByText("CORRECT")).toBeInTheDocument();
+    unmount();
+
+    renderModal(target);
+    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    expect(await screen.findByRole("note")).toHaveTextContent(
+      /Đã nộp L01_V001 1 lần .*CORRECT.*20200–20200 ms/,
+    );
+  });
+
   it("offers a VQA submission from a KIS result with the typed answer", async () => {
     const fetchMock = setupApi();
     const user = userEvent.setup();

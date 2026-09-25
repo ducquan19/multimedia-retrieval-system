@@ -4,6 +4,7 @@ import type {
   KISSearchResponse,
   SingleSearchResult,
   TrafficSearchResponse,
+  VideoKeyframe,
   VQASearchResponse,
 } from "../../api/types";
 import { ResultDetailModal, formatMs, formatScore } from "./ResultDetailModal";
@@ -56,6 +57,16 @@ export function SingleResultInspector({
         : left.frame_id - right.frame_id,
     ),
   ] as const);
+  const navigateDetail = useCallback((keyframe: VideoKeyframe) => {
+    setSelected((current) =>
+      current && {
+        ...current,
+        // Traffic clock time belongs to the original keyframe only.
+        result: { ...current.result, ...keyframe, clock_time: null },
+      },
+    );
+  }, []);
+
   const closeDetail = useCallback(() => {
     const trigger = selected?.trigger;
     setSelected(null);
@@ -123,6 +134,7 @@ export function SingleResultInspector({
         <ResultDetailModal
           result={selected.result}
           onClose={closeDetail}
+          onNavigate={navigateDetail}
           submitTarget={{
             kind: "single",
             videoId: selected.result.video_id,

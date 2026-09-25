@@ -166,7 +166,10 @@ describe("Object search source", () => {
     );
     expect(searchPayload(fetchMock)).not.toHaveProperty("object_query");
     expect(await screen.findByText("OBJ: 0.90")).toBeInTheDocument();
+    expect(screen.getByText("1 auto objects")).toBeInTheDocument();
 
+    // The insight starts collapsed; expanding it reveals the pinnable object chips.
+    await user.click(screen.getByRole("button", { name: "Mở rộng search insight" }));
     await user.click(screen.getByRole("button", { name: "Pin Bicycle" }));
 
     expect(screen.getByLabelText("Min count Bicycle")).toHaveValue("2");

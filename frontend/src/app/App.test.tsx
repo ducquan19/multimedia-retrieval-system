@@ -213,6 +213,87 @@ describe("App query workspace", () => {
     expect(within(header).getByRole("combobox", { name: "Program" })).toHaveValue("ALL");
   });
 
+  it("fills every TRAKE EVENT from one pasted E1/E2/... block", async () => {
+    const fetchMock = setupApi(() => jsonResponse(searchResponse("TRAKE", { empty: true })));
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(await screen.findByRole("tab", { name: /TRAKE/ }));
+    await user.click(screen.getByLabelText(/^Main query TRAKE/));
+    await user.paste("E1: xe buýt dừng lại\nE2: hành khách xuống xe\nE3: xe chạy đi\nE4: đèn đỏ");
+
+    expect(screen.getByLabelText(/^Main query TRAKE/)).toHaveValue("");
+    expect(screen.getByLabelText("EVENT count")).toHaveValue("4");
+    expect(screen.getByLabelText("EVENT 1")).toHaveValue("xe buýt dừng lại");
+    expect(screen.getByLabelText("EVENT 4")).toHaveValue("đèn đỏ");
+
+    // A shorter paste into an EVENT box shrinks the count.
+    await user.click(screen.getByLabelText("EVENT 2"));
+    await user.paste("E1: a\nE2: b");
+    expect(screen.getByLabelText("EVENT count")).toHaveValue("2");
+    expect(screen.queryByLabelText("EVENT 3")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() =>
+      expect(searchPayload(fetchMock)).toMatchObject({
+        query_type: "TRAKE",
+        events: [
+          { event_index: 1, query: "a" },
+          { event_index: 2, query: "b" },
+        ],
+      }),
+    );
+  });
+
+  it("warns when a pasted block has more EVENTs than allowed", async () => {
+    setupApi();
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(await screen.findByRole("tab", { name: /TRAKE/ }));
+    await user.click(screen.getByLabelText(/^Main query TRAKE/));
+    await user.paste("E1: a\nE2: b\nE3: c\nE4: d\nE5: e");
+
+    expect(screen.getByLabelText("EVENT count")).toHaveValue("4");
+    expect(screen.getByRole("alert")).toHaveTextContent("Đã dán 5 EVENT, tối đa 4");
+  });
+
+  it("keeps an ordinary paste as plain text", async () => {
+    setupApi();
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(await screen.findByRole("tab", { name: /TRAKE/ }));
+    await user.click(screen.getByLabelText(/^Main query TRAKE/));
+    await user.paste("một đoạn mô tả");
+    expect(screen.getByLabelText(/^Main query TRAKE/)).toHaveValue("một đoạn mô tả");
+    expect(screen.getByLabelText("EVENT count")).toHaveValue("3");
+  });
+
+  it("restores a previous query from the history", async () => {
+    setupApi();
+    const user = userEvent.setup();
+    renderApp();
+
+    const query = await screen.findByLabelText(/^Query KIS/);
+    expect(screen.queryByRole("combobox", { name: "Query history" })).not.toBeInTheDocument();
+    await user.type(query, "first query");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.clear(query);
+    await user.type(query, "second query");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    const history = screen.getByRole("combobox", { name: "Query history" });
+    expect(
+      within(history)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["Lịch sử truy vấn (2)", "second query", "first query"]);
+
+    await user.selectOptions(history, "1");
+    expect(query).toHaveValue("first query");
+  });
+
   it("filters displayed results by program without changing the search payload", async () => {
     const response = searchResponse("KIS");
     response.results = [
@@ -221,6 +302,10 @@ describe("App query workspace", () => {
       { ...response.results[0]!, result_id: "result-l25", video_id: "L25_V001" },
       { ...response.results[0]!, result_id: "result-l26", video_id: "L26_V001" },
       { ...response.results[0]!, result_id: "result-other", video_id: "L27_V001" },
+      { ...response.results[0]!, result_id: "result-m", video_id: "M03_V002" },
+      { ...response.results[0]!, result_id: "result-l23", video_id: "L23_V004" },
+      { ...response.results[0]!, result_id: "result-s", video_id: "S01-V001" },
+      { ...response.results[0]!, result_id: "result-n", video_id: "N014-V001" },
     ];
     const fetchMock = setupApi(() => jsonResponse(response));
     const user = userEvent.setup();
@@ -233,28 +318,50 @@ describe("App query workspace", () => {
     expect(screen.getByText("L26_V001")).toBeInTheDocument();
     expect(screen.getByText("L27_V001")).toBeInTheDocument();
 
+    // Options come from the programs present in the results, with their counts.
     const program = screen.getByRole("combobox", { name: "Program" });
-    expect(within(program).getByRole("option", { name: "ALL" })).toBeInTheDocument();
-    expect(within(program).getByRole("option", { name: "HTV 60 Giây" })).toBeInTheDocument();
-    expect(within(program).getByRole("option", { name: "Giải đua xe đạp" })).toBeInTheDocument();
-    expect(within(program).getByRole("option", { name: "Múa lân" })).toBeInTheDocument();
-    expect(within(program).getByRole("option", { name: "Ôn thi THPT" })).toBeInTheDocument();
-    expect(within(program).getByRole("option", { name: "Món ngon mỗi ngày" })).toBeInTheDocument();
+    expect(
+      within(program)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual([
+      "ALL",
+      "Camera giao thông (1)",
+      "Đua xe đạp (2)",
+      "L27 (1)",
+      "Món ngon mỗi ngày (1)",
+      "Ôn thi THPT (1)",
+      "Tin tức (3)",
+    ]);
 
     await user.selectOptions(program, "L25");
     expect(screen.getByText("L25_V001")).toBeInTheDocument();
     expect(screen.queryByText("L26_V001")).not.toBeInTheDocument();
     expect(screen.queryByText("L27_V001")).not.toBeInTheDocument();
 
-    await user.selectOptions(program, "L21_L22");
+    await user.selectOptions(program, "L27");
+    expect(screen.getByText("L27_V001")).toBeInTheDocument();
+    expect(screen.queryByText("L25_V001")).not.toBeInTheDocument();
+
+    await user.selectOptions(program, "CYCLING");
+    expect(screen.getByText("L23_V004")).toBeInTheDocument();
+    expect(screen.getByText("S01-V001")).toBeInTheDocument();
+    expect(screen.queryByText("M03_V002")).not.toBeInTheDocument();
+
+    await user.selectOptions(program, "TRAFFIC");
+    expect(screen.getByText("N014-V001")).toBeInTheDocument();
+    expect(screen.queryByText("S01-V001")).not.toBeInTheDocument();
+
+    await user.selectOptions(program, "NEWS");
     expect(screen.getByText("L21_V001")).toBeInTheDocument();
     expect(screen.getByText("L22_V001")).toBeInTheDocument();
+    expect(screen.getByText("M03_V002")).toBeInTheDocument();
     expect(screen.queryByText("L25_V001")).not.toBeInTheDocument();
     expect(searchPayload(fetchMock)).not.toHaveProperty("program");
 
     await user.click(screen.getByRole("button", { name: "Search" }));
     const keptProgram = await screen.findByRole("combobox", { name: "Program" });
-    expect(keptProgram).toHaveValue("L21_L22");
+    expect(keptProgram).toHaveValue("NEWS");
     expect(screen.getByText("L21_V001")).toBeInTheDocument();
     expect(screen.getByText("L22_V001")).toBeInTheDocument();
     expect(screen.queryByText("L25_V001")).not.toBeInTheDocument();
@@ -386,9 +493,17 @@ describe("App query workspace", () => {
     await user.click(screen.getByLabelText(/^Enhance query/));
     await user.click(screen.getByRole("button", { name: "Search" }));
 
-    const enhanced = await screen.findByText("Enhanced:");
-    expect(enhanced).toBeInTheDocument();
+    // Collapsed to one summary line by default, with the full text still readable.
+    const expand = await screen.findByRole("button", { name: "Mở rộng search insight" });
+    expect(expand).toHaveTextContent("Enhanced: [Mock enhanced KIS] original query");
+
+    await user.click(expand);
+    expect(screen.getByText("Enhanced:")).toBeInTheDocument();
     expect(screen.getByText("[Mock enhanced KIS] original query")).toBeInTheDocument();
+    expect(window.localStorage.getItem("aic-search-insight-open")).toBe("true");
+
+    await user.click(screen.getByRole("button", { name: "Thu gọn search insight" }));
+    expect(screen.getByRole("button", { name: "Mở rộng search insight" })).toBeInTheDocument();
   });
 
   it(
@@ -444,11 +559,12 @@ describe("App query workspace", () => {
     await user.type(await screen.findByLabelText(/^Query KIS/), "visual query");
     await user.click(screen.getByRole("button", { name: "Search" }));
     await screen.findByRole("checkbox", { name: "Group by video" });
-    expect(screen.queryByText("Weights Applied:")).not.toBeInTheDocument();
+    expect(screen.queryByText("VIS: 1.00")).not.toBeInTheDocument();
 
     await user.click(screen.getByLabelText(/^Enhance query/));
     await user.click(screen.getByRole("button", { name: "Search" }));
-    expect(await screen.findByText("Weights Applied:")).toBeInTheDocument();
+    // Weight chips stay visible in the collapsed summary line.
+    expect(await screen.findByText("VIS: 1.00")).toBeInTheDocument();
   });
 
   it("renders loading and friendly API error states", async () => {

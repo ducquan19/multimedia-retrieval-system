@@ -1,4 +1,5 @@
 import {
+  type ClipboardEvent,
   type FormEvent,
   type KeyboardEvent,
   useEffect,
@@ -23,9 +24,12 @@ import {
 import { SingleResultInspector } from "../results/SingleResultInspector";
 import { TrakeResultInspector } from "../results/TrakeResultInspector";
 import { VideoLookup } from "../results/VideoLookup";
+import { SubmissionLogButton } from "../submission/SubmissionLogButton";
 import { ObjectQueryInput } from "./ObjectQueryInput";
+import { type QueryHistoryEntry, QueryHistorySelect, useQueryHistory } from "./QueryHistory";
 import { SearchInsight } from "./SearchInsight";
 import { EMPTY_TRAFFIC_FILTERS, TrafficFilterPanel } from "./TrafficFilterPanel";
+import { parseTrakeEvents } from "./trakeEventParser";
 
 const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
   { key: "image", label: "Image" },
@@ -34,20 +38,51 @@ const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
 ];
 
 type GroupSort = "score" | "time";
-type ProgramFilter = "ALL" | "L21_L22" | "L23" | "L24" | "L25" | "L26";
+/** "ALL" or a key returned by programOf. */
+type ProgramFilter = string;
 const DARK_MODE_STORAGE_KEY = "aic-retrieval-theme";
-const PROGRAM_PREFIXES: Record<Exclude<ProgramFilter, "ALL">, readonly string[]> = {
-  L21_L22: ["L21", "L22"],
-  L23: ["L23"],
-  L24: ["L24"],
-  L25: ["L25"],
-  L26: ["L26"],
+const PROGRAM_LABELS: Record<string, string> = {
+  NEWS: "Tin tức",
+  CYCLING: "Đua xe đạp",
+  TRAFFIC: "Camera giao thông",
+  L24: "Múa lân",
+  L25: "Ôn thi THPT",
+  L26: "Món ngon mỗi ngày",
 };
 
+/** Program keys by video prefix; the same content from batch 1 and batch 2 shares one key. */
+const PROGRAM_BY_PREFIX: Record<string, string> = {
+  L21: "NEWS",
+  L22: "NEWS",
+  M: "NEWS",
+  L23: "CYCLING",
+  S: "CYCLING",
+  N: "TRAFFIC",
+};
+
+/** L videos group by program code; batch 2 by collection letter (M01_V001 -> M). */
+function programOf(videoId: string): string {
+  const prefix = videoId.split(/[_-]/, 1)[0] ?? videoId;
+  const code = prefix.startsWith("L") ? prefix : prefix.charAt(0);
+  return PROGRAM_BY_PREFIX[code] ?? code;
+}
+
 function matchesProgram(videoId: string, program: ProgramFilter): boolean {
-  return (
-    program === "ALL" || PROGRAM_PREFIXES[program].some((prefix) => videoId.startsWith(prefix))
-  );
+  return program === "ALL" || programOf(videoId) === program;
+}
+
+function programOptions(videoIds: string[], selected: ProgramFilter) {
+  const counts = new Map<string, number>();
+  for (const videoId of videoIds) {
+    const program = programOf(videoId);
+    counts.set(program, (counts.get(program) ?? 0) + 1);
+  }
+  // Keep the current choice listed so a new search does not silently drop it.
+  if (selected !== "ALL" && !counts.has(selected)) counts.set(selected, 0);
+  return Array.from(counts, ([key, count]) => ({
+    key,
+    label: `${PROGRAM_LABELS[key] ?? key} (${count})`,
+  })).sort((left, right) => left.label.localeCompare(right.label, "vi"));
 }
 
 function prefersDarkMode(): boolean {
@@ -109,6 +144,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [groupSort, setGroupSort] = useState<GroupSort>("score");
   const [programFilter, setProgramFilter] = useState<ProgramFilter>("ALL");
   const activeController = useRef<AbortController | null>(null);
+  const queryHistory = useQueryHistory();
 
   const [normalSidebarWidth, setNormalSidebarWidth] = useState<number>(400);
   const [sidebarWidth, setSidebarWidth] = useState<number>(400);
@@ -159,6 +195,10 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     searchMutation.data?.results.filter((result) =>
       matchesProgram(result.video_id, programFilter),
     ).length ?? 0;
+  const resultProgramOptions = programOptions(
+    searchMutation.data?.results.map((result) => result.video_id) ?? [],
+    programFilter,
+  );
   const showProgramFilter =
     !searchMutation.isPending &&
     Boolean(searchMutation.data?.results.length) &&
@@ -214,6 +254,25 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     setEventQueries((current) =>
       current.map((query, queryIndex) => (queryIndex === index ? value : query)),
     );
+  };
+
+  /** Pasting "E1: ...
+E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
+  const pasteTrakeEvents = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const parsed = parseTrakeEvents(event.clipboardData.getData("text"));
+    if (!parsed) return;
+    event.preventDefault();
+    if (parsed.events.length > config.max_trake_events) {
+      setValidationErrors([
+        `Đã dán ${parsed.events.length} EVENT, tối đa ${config.max_trake_events}. Chỉ giữ ${config.max_trake_events} EVENT đầu.`,
+      ]);
+    } else {
+      setValidationErrors([]);
+    }
+    const count = Math.min(parsed.events.length, config.max_trake_events);
+    if (parsed.mainQuery) setTrakeMainQuery(parsed.mainQuery);
+    setEventQueries(parsed.events.slice(0, count));
+    setEventCount(count);
   };
 
   const changeKisQuery = (value: string) => {
@@ -389,6 +448,36 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     setGroupByVideo(false);
     setGroupSort("score");
     searchMutation.mutate({ payload, signal: controller.signal });
+    queryHistory.record(
+      payload.query_type === "TRAKE"
+        ? {
+            type: "TRAKE",
+            at: Date.now(),
+            mainQuery: payload.main_query ?? "",
+            events: payload.events.map((event) => event.query),
+          }
+        : {
+            type: payload.query_type === "TRAFFIC" ? "TRAFFIC" : "KIS",
+            at: Date.now(),
+            query: payload.query,
+          },
+    );
+  };
+
+  const restoreQuery = (entry: QueryHistoryEntry) => {
+    setValidationErrors([]);
+    if (entry.type === "KIS") changeKisQuery(entry.query);
+    else if (entry.type === "TRAFFIC") setTrafficQuery(entry.query);
+    else {
+      const count = Math.min(Math.max(entry.events.length, 1), config.max_trake_events);
+      setTrakeMainQuery(entry.mainQuery);
+      setEventQueries(
+        Array.from({ length: Math.max(count, eventQueries.length) }, (_, index) =>
+          entry.events[index] ?? "",
+        ),
+      );
+      setEventCount(count);
+    }
   };
 
   const submitQueryOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -455,6 +544,11 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           aria-labelledby={`tab-${activeType}`}
           className="query-panel"
         >
+          <QueryHistorySelect
+            type={activeType}
+            entries={queryHistory.entries}
+            onRestore={restoreQuery}
+          />
           {activeType === "KIS" && (
             <div className="kis-query-zone">
               <label className="field field--query-only" htmlFor="kis-query">
@@ -641,7 +735,9 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                   maxLength={config.max_query_length}
                   onChange={(event) => setTrakeMainQuery(event.target.value)}
                   onKeyDown={submitQueryOnEnter}
+                  onPaste={pasteTrakeEvents}
                   aria-keyshortcuts="Enter Shift+Enter"
+                  placeholder={"Dán cả truy vấn để tự tách EVENT:\nE1: ...\nE2: ...\nE3: ..."}
                   rows={3}
                 />
               </label>
@@ -673,6 +769,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                       maxLength={config.max_query_length}
                       onChange={(event) => updateEventQuery(index, event.target.value)}
                       onKeyDown={submitQueryOnEnter}
+                      onPaste={pasteTrakeEvents}
                       aria-keyshortcuts="Enter Shift+Enter"
                       rows={2}
                     />
@@ -871,19 +968,20 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                 aria-label="Program"
                 value={programFilter}
                 onChange={(event) =>
-                  setProgramFilter(event.target.value as ProgramFilter)
+                  setProgramFilter(event.target.value)
                 }
               >
                 <option value="ALL">ALL</option>
-                <option value="L21_L22">HTV 60 Giây</option>
-                <option value="L23">Giải đua xe đạp</option>
-                <option value="L24">Múa lân</option>
-                <option value="L25">Ôn thi THPT</option>
-                <option value="L26">Món ngon mỗi ngày</option>
+                {resultProgramOptions.map(({ key, label }) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </label>
           )}
           <div className="result-zone__header-end">
+            <SubmissionLogButton />
             {searchMutation.data?.results.length ? (
               <span className="mini-badge">{searchMutation.data.query_type}</span>
             ) : null}

@@ -1,12 +1,13 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
   TRAKEEventResult,
   TRAKESearchResponse,
   TRAKESearchResult,
 } from "../../api/types";
+import { renderWithQuery as render } from "../../test/renderWithQuery";
 import { TrakeResultInspector } from "./TrakeResultInspector";
 
 function event(eventIndex: number, frameId: number, label: string): TRAKEEventResult {
@@ -54,6 +55,10 @@ function rows(): HTMLElement[] {
   return screen.getAllByTestId("trake-row");
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("TrakeResultInspector", () => {
   it("renders exactly N event cells in fixed Event 1..N order", () => {
     render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
@@ -82,6 +87,47 @@ describe("TrakeResultInspector", () => {
     );
     await user.keyboard("{Escape}");
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("replaces the open EVENT's frame in the submission when moving to a neighbour", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        const body = url.includes("/keyframes?")
+          ? {
+              video_id: "L01_V001",
+              center_index: 1,
+              keyframes: [140, 151, 162].map((frameId) => ({
+                frame_id: frameId,
+                keyframe_url: `/media/keyframes/${frameId}.jpg`,
+                segment_id: "",
+                asr_text: "",
+                objects: [],
+              })),
+            }
+          : url.endsWith("/api/dres/evaluations")
+            ? [{ id: "ev1", name: "Round 1", type: null, status: "ACTIVE" }]
+            : {};
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open EVENT 2 details for L01_V001, frame 151" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    expect(screen.getByLabelText("Frame IDs")).toHaveValue("101,151,203");
+
+    await user.click(await screen.findByRole("button", { name: "Keyframe 162" }));
+    expect(screen.getByLabelText("Frame IDs")).toHaveValue("101,162,203");
   });
 
   it.each([

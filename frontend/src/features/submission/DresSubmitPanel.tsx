@@ -8,6 +8,7 @@ import {
   submitToDres,
 } from "../../api/client";
 import type { DresSubmitBody, DresSubmitResponse } from "../../api/types";
+import { appendSubmissionLog, formatClock, useSubmissionLog } from "./submissionLog";
 
 const EVALUATION_STORAGE_KEY = "aic-dres-evaluation";
 
@@ -74,6 +75,12 @@ function normalizeFrameIds(value: string): string {
     .join(",");
 }
 
+function describeAnswer(body: DresSubmitBody): string {
+  const answer = body.answerSets[0]?.answers[0];
+  if (!answer) return "";
+  return "text" in answer ? answer.text : `${answer.start}–${answer.end} ms`;
+}
+
 function readStoredEvaluation(): string | null {
   try {
     return window.localStorage.getItem(EVALUATION_STORAGE_KEY);
@@ -128,7 +135,36 @@ export function DresSubmitPanel({
   const submitMutation = useMutation<DresSubmitResponse, unknown, boolean>({
     mutationFn: (allowDuplicate) =>
       submitToDres({ evaluation_id: evaluationId, ...body, allow_duplicate: allowDuplicate }),
+    onSuccess: (response) =>
+      logSubmission(
+        response.submission ?? (response.accepted ? "Đã nộp" : "Nộp thất bại"),
+        response.accepted,
+      ),
+    onError: (error) => {
+      // A 409 is the backend's duplicate guard: nothing reached DRES.
+      if (error instanceof ApiError && error.status === 409) return;
+      logSubmission(error instanceof ApiError ? error.message : "Lỗi kết nối", false);
+    },
   });
+
+  // The modal can move to another keyframe; start over from the new target.
+  const targetKey =
+    target.kind === "trake"
+      ? `${target.videoId}|${target.frameIds.join(",")}`
+      : `${target.videoId}|${target.frameId}|${target.timeMs ?? ""}`;
+  const { reset: resetSubmission } = submitMutation;
+  useEffect(() => {
+    setStart(null);
+    setEnd(null);
+    if (target.kind === "trake") setFrameIds(target.frameIds.join(","));
+    resetSubmission();
+  }, [targetKey, resetSubmission]);
+
+  const submissionLog = useSubmissionLog();
+  const previousForVideo = submissionLog.filter(
+    (entry) => entry.videoId === target.videoId && entry.evaluationId === evaluationId,
+  );
+  const lastForVideo = previousForVideo[0];
 
   const evaluations = evaluationsQuery.data ?? [];
   useEffect(() => {
@@ -187,6 +223,18 @@ export function DresSubmitPanel({
       setEnd(ms);
     }
   };
+
+  function logSubmission(verdict: string, ok: boolean) {
+    appendSubmissionLog({
+      at: Date.now(),
+      evaluationId,
+      mode,
+      videoId: target.videoId,
+      answer: describeAnswer(body),
+      verdict,
+      ok,
+    });
+  }
 
   const duplicateError =
     submitMutation.error instanceof ApiError && submitMutation.error.status === 409;
@@ -328,6 +376,14 @@ export function DresSubmitPanel({
               : `Dùng frame đang xem (${currentFrame})`}
           </button>
         )
+      )}
+
+      {lastForVideo && !locked && (
+        <p className="dres-panel__history" role="note">
+          Đã nộp {target.videoId} {previousForVideo.length} lần trong evaluation này — lần cuối{" "}
+          {formatClock(lastForVideo.at)}: <strong>{lastForVideo.verdict}</strong> (
+          {lastForVideo.answer})
+        </p>
       )}
 
       <pre className="dres-panel__preview" aria-label="Request body">

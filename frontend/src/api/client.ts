@@ -8,6 +8,7 @@ import type {
   SearchRequest,
   SearchResponse,
   TrafficOptions,
+  VideoKeyframesResponse,
   VideoSourceResponse,
 } from "./types";
 
@@ -127,6 +128,19 @@ export function getVideoSource(
 ): Promise<VideoSourceResponse> {
   return requestJson<VideoSourceResponse>(
     `/api/videos/${encodeURIComponent(videoId)}/source`,
+    { signal },
+  );
+}
+
+export function getVideoKeyframes(
+  videoId: string,
+  frameId: number,
+  radius: number,
+  signal?: AbortSignal,
+): Promise<VideoKeyframesResponse> {
+  const params = new URLSearchParams({ frame_id: String(frameId), radius: String(radius) });
+  return requestJson<VideoKeyframesResponse>(
+    `/api/videos/${encodeURIComponent(videoId)}/keyframes?${params}`,
     { signal },
   );
 }

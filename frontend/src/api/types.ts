@@ -236,3 +236,19 @@ export interface VideoSourceResponse {
   /** Original pts of the first frame: original ms = currentTime * 1000 + time_offset_ms. */
   time_offset_ms?: number;
 }
+
+export interface VideoKeyframe {
+  frame_id: number;
+  time_ms?: number | null;
+  keyframe_url: string;
+  segment_id: string;
+  asr_text: string;
+  objects: Record<string, unknown>[];
+}
+
+export interface VideoKeyframesResponse {
+  video_id: string;
+  /** Index in `keyframes` of the keyframe closest to the requested frame. */
+  center_index: number;
+  keyframes: VideoKeyframe[];
+}
