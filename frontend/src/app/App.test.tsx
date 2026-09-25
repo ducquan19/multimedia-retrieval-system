@@ -382,12 +382,28 @@ describe("App query workspace", () => {
     expect(searchPayload(fetchMock)).toEqual({
       query_type: "KIS",
       query: "người mở laptop",
+      include_traffic: false,
       top_k: 5,
       enhance_query: false,
       use_reranking: false,
       model_choices: ["siglip"],
       search_sources: { image: true, asr: true, object: false },
     });
+  });
+
+  it("lets KIS opt in to searching the traffic videos", async () => {
+    const fetchMock = setupApi(() => jsonResponse(searchResponse("KIS", { empty: true })));
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(await screen.findByLabelText(/^Query KIS/), "xe buýt đỏ");
+    const includeTraffic = screen.getByLabelText(/^Include traffic videos/);
+    expect(includeTraffic).not.toBeChecked();
+    await user.click(includeTraffic);
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    await screen.findByText("Không tìm thấy candidate");
+    expect(searchPayload(fetchMock)).toMatchObject({ query_type: "KIS", include_traffic: true });
   });
 
   it("uses Enter to search and Shift+Enter to insert a query newline", async () => {

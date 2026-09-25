@@ -48,6 +48,7 @@ export interface KISSearchRequest extends BaseSearchRequest {
   query: string;
   query_understanding?: boolean;
   query_plan?: KISQueryPlan;
+  include_traffic?: boolean;
 }
 
 export interface VQASearchRequest extends BaseSearchRequest {
