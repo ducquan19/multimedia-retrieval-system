@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AnyHttpUrl, Field, model_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     keyframes_filename: str = "keyframes.json"
     video_sources_filename: str = "video_sources.json"
+
+    # Private Hugging Face dataset for videos that cannot be public (read-only token)
+    hf_token: SecretStr | None = None
+    hf_private_repo: str = "dwctien/aic26-videos-private"
+    hf_signed_url_ttl_seconds: int = Field(default=2_700, ge=60)
 
     # Hybrid Retrieval settings
     faiss_siglip_filename: str = "indexing/siglip.index"

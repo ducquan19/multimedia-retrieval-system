@@ -1,12 +1,21 @@
 from fastapi import APIRouter, HTTPException
 
-from core.dependencies import SearchServiceDependency, SettingsDependency
+from core.dependencies import (
+    PrivateUrlSignerDependency,
+    SearchServiceDependency,
+    SettingsDependency,
+)
 from repositories.keyframe_metadata_repository import KeyframeMetadataError
 from schemas.search import KISQueryPlan, KISQueryPlanRequest, SearchRequest, SearchResponse
 from schemas.video import VideoSourceResponse
 from services.retrieval_service import RetrievalDataError
 from services.search_service import SearchValidationError
-from services.video_source_service import VideoSourceError, VideoSourceNotFound, VideoSourceService
+from services.video_source_service import (
+    VideoSourceError,
+    VideoSourceNotFound,
+    VideoSourceService,
+    VideoSourceUnavailable,
+)
 
 router = APIRouter(tags=["search"])
 
@@ -59,12 +68,19 @@ async def search(payload: SearchRequest, service: SearchServiceDependency) -> Se
 
 
 @router.get("/videos/{video_id}/source", response_model=VideoSourceResponse)
-def get_video_source(video_id: str, settings: SettingsDependency) -> VideoSourceResponse:
-    service = VideoSourceService(settings.data_root, settings.video_sources_filename)
+def get_video_source(
+    video_id: str,
+    settings: SettingsDependency,
+    signer: PrivateUrlSignerDependency,
+    refresh: bool = False,
+) -> VideoSourceResponse:
+    service = VideoSourceService(settings.data_root, settings.video_sources_filename, signer)
     try:
-        source = service.resolve(video_id)
+        source = service.resolve(video_id, refresh=refresh)
     except VideoSourceNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VideoSourceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except VideoSourceError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return VideoSourceResponse(

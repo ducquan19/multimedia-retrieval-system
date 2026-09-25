@@ -2,8 +2,10 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlparse
+
+from infrastructure.hf_signed_url import SignedUrlError
 
 
 class VideoSourceError(RuntimeError):
@@ -12,6 +14,14 @@ class VideoSourceError(RuntimeError):
 
 class VideoSourceNotFound(LookupError):
     """Raised when a video has neither a local file nor a remote source."""
+
+
+class VideoSourceUnavailable(RuntimeError):
+    """Raised when a private video cannot be signed (missing token or Hub failure)."""
+
+
+class PrivateUrlSigner(Protocol):
+    def sign(self, path_in_repo: str, *, refresh: bool = False) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -24,12 +34,19 @@ class ResolvedVideoSource:
 
 class VideoSourceService:
     _VIDEO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+    _PRIVATE_PATH_PATTERN = re.compile(r"^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*\.mp4$")
 
-    def __init__(self, data_root: Path, metadata_filename: str) -> None:
+    def __init__(
+        self,
+        data_root: Path,
+        metadata_filename: str,
+        private_signer: PrivateUrlSigner | None = None,
+    ) -> None:
         self._data_root = data_root.resolve()
         self._metadata_path = self._data_root / metadata_filename
+        self._private_signer = private_signer
 
-    def resolve(self, video_id: str) -> ResolvedVideoSource:
+    def resolve(self, video_id: str, *, refresh: bool = False) -> ResolvedVideoSource:
         if not self._VIDEO_ID_PATTERN.fullmatch(video_id):
             raise VideoSourceNotFound("Invalid video ID")
 
@@ -52,6 +69,25 @@ class VideoSourceService:
             return ResolvedVideoSource(
                 video_id=video_id,
                 url=remote_url,
+                source="remote",
+                fps=float(fps),
+            )
+
+        private_path = entry.get("private_path")
+        if isinstance(private_path, str):
+            if not self._PRIVATE_PATH_PATTERN.fullmatch(private_path):
+                raise VideoSourceError(f"Invalid private_path for video {video_id}")
+            if self._private_signer is None:
+                raise VideoSourceUnavailable(
+                    f"{video_id} is stored in the private repository; set AIC_HF_TOKEN to play it"
+                )
+            try:
+                url = self._private_signer.sign(private_path, refresh=refresh)
+            except SignedUrlError as exc:
+                raise VideoSourceUnavailable(str(exc)) from exc
+            return ResolvedVideoSource(
+                video_id=video_id,
+                url=url,
                 source="remote",
                 fps=float(fps),
             )

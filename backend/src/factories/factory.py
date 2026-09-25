@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core.config import Settings, get_settings
 from core.lifespan import lifespan
+from infrastructure.hf_signed_url import HuggingFaceUrlSigner
 from router.config_router import router as config_router
 from router.health_router import router as health_router
 from router.search_router import router as search_router
@@ -18,6 +19,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
+    app.state.private_url_signer = (
+        HuggingFaceUrlSigner(
+            resolved_settings.hf_token.get_secret_value(),
+            resolved_settings.hf_private_repo,
+            ttl_seconds=resolved_settings.hf_signed_url_ttl_seconds,
+        )
+        if resolved_settings.hf_token
+        else None
+    )
 
     app.add_middleware(
         CORSMiddleware,
