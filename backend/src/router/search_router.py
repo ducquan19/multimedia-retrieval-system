@@ -5,6 +5,7 @@ from core.dependencies import (
     PrivateUrlSignerDependency,
     SearchServiceDependency,
     SettingsDependency,
+    TrafficRepositoryDependency,
 )
 from repositories.keyframe_metadata_repository import KeyframeMetadataError
 from schemas.search import (
@@ -13,6 +14,7 @@ from schemas.search import (
     ObjectLabelsResponse,
     SearchRequest,
     SearchResponse,
+    TrafficOptionsResponse,
 )
 from schemas.video import VideoSourceResponse
 from services.retrieval_service import RetrievalDataError
@@ -79,6 +81,11 @@ def get_object_labels(repository: ObjectRepositoryDependency) -> ObjectLabelsRes
     return ObjectLabelsResponse(available=repository.available, labels=repository.labels())
 
 
+@router.get("/traffic/options", response_model=TrafficOptionsResponse)
+def get_traffic_options(repository: TrafficRepositoryDependency) -> TrafficOptionsResponse:
+    return repository.options()
+
+
 @router.get("/videos/{video_id}/source", response_model=VideoSourceResponse)
 def get_video_source(
     video_id: str,
@@ -100,4 +107,5 @@ def get_video_source(
         url=source.url,
         source=source.source,
         fps=source.fps,
+        time_offset_ms=source.time_offset_ms,
     )

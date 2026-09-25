@@ -25,6 +25,8 @@ class Keyframe(BaseModel):
     keyframe_id: str = Field(min_length=1, max_length=256)
     video_id: str = Field(min_length=1, max_length=128)
     frame_id: int = Field(ge=0)
+    # Original presentation time (ms) of frame_id; set for VFR videos where frame_id / fps is wrong.
+    time_ms: int | None = Field(default=None, ge=0)
     group_id: str | int | None = None
     image_path: str
     video_path: str | None = None

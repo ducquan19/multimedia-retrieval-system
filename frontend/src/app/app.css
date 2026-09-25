@@ -304,8 +304,8 @@ select:focus-visible {
   display: grid;
   place-items: center;
   gap: 0;
-  min-height: 2.5rem;
-  padding: 0.3rem 0.65rem;
+  min-height: 2rem;
+  padding: 0.2rem 0.65rem;
   color: #637068;
   text-align: center;
   background: #f1f4f0;
@@ -2716,7 +2716,7 @@ small.dres-panel__error {
   }
 
   .query-tab {
-    padding: 0.8rem;
+    padding: 0.35rem 0.65rem;
   }
 
   .event-grid {
@@ -2930,4 +2930,303 @@ small.dres-panel__error {
 
 :root[data-theme="dark"] .search-insight__note {
   color: var(--dark-muted);
+}
+
+/* TRAFFIC tab: query + metadata filters of the traffic-camera videos */
+.traffic-query-zone {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.traffic-filters {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: #f6f9f6;
+  border: 1px solid #dbe3dc;
+  border-radius: 0.75rem;
+}
+
+.traffic-filters__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #223c2d;
+  font-size: 0.85rem;
+}
+
+.traffic-filters__clear,
+.traffic-filters__select-all {
+  justify-self: start;
+  padding: 0.2rem 0.55rem;
+  color: #28543a;
+  background: transparent;
+  border: 1px solid #c8d4cd;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.traffic-filters__clear:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.traffic-filters__group {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.traffic-filters__label,
+.traffic-filters__group legend {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0;
+  color: #223c2d;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.traffic-filters__label small,
+.traffic-filters__group legend small,
+.traffic-filters__group > small {
+  color: #6b786f;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.traffic-filters__input,
+.traffic-filters__clock input {
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  color: #17211b;
+  background: #fff;
+  border: 1px solid #c8d4cd;
+  border-radius: 0.55rem;
+  font-size: 0.8rem;
+}
+
+.traffic-filters__cameras {
+  display: grid;
+  max-height: 11.5rem;
+  margin: 0;
+  padding: 0.25rem;
+  overflow-y: auto;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #dbe3dc;
+  border-radius: 0.55rem;
+}
+
+.traffic-filters__cameras label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.35rem;
+  color: #223c2d;
+  border-radius: 0.4rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.traffic-filters__cameras label:hover {
+  background: #edf3ee;
+}
+
+.traffic-filters__cameras label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.traffic-filters__cameras small {
+  color: #6b786f;
+  font-size: 0.68rem;
+}
+
+.traffic-filters__empty {
+  padding: 0.4rem;
+  color: #6b786f;
+  font-size: 0.76rem;
+}
+
+.traffic-filters__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.traffic-filters__chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  max-width: 100%;
+  padding: 0.15rem 0.2rem 0.15rem 0.55rem;
+  color: #223c2d;
+  background: #e3efe6;
+  border: 1px solid #cbdccf;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.traffic-filters__chips span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.traffic-filters__chips button {
+  width: 1.2rem;
+  height: 1.2rem;
+  color: #6b786f;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  line-height: 1;
+}
+
+.traffic-filters__chips button:hover {
+  color: #8b1a1a;
+  background: #fff1f1;
+}
+
+.traffic-filters__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.8rem;
+}
+
+.traffic-filters__options legend {
+  width: 100%;
+  margin-bottom: 0.35rem;
+}
+
+.traffic-filters__options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #415047;
+  font-size: 0.76rem;
+}
+
+.traffic-filters__clock {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #6b786f;
+}
+
+.traffic-filters__clock input {
+  flex: 1;
+}
+
+.traffic-filters__status {
+  margin: 0;
+  color: #6b786f;
+  font-size: 0.78rem;
+}
+
+.traffic-filters__status--error {
+  color: #8b1a1a;
+}
+
+.result-card__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-top: 0.15rem;
+  color: #6b786f;
+  font-size: 0.7rem;
+}
+
+.result-card__meta span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-card__meta span:last-child {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-modal__traffic {
+  color: #6b786f;
+  font-size: 0.8rem;
+}
+
+.result-zone__filtered {
+  color: #6b786f;
+  font-size: 0.78rem;
+}
+
+:root[data-theme="dark"] .traffic-filters {
+  background: var(--dark-surface);
+  border-color: var(--dark-border);
+}
+
+:root[data-theme="dark"] .traffic-filters__header,
+:root[data-theme="dark"] .traffic-filters__label,
+:root[data-theme="dark"] .traffic-filters__group legend,
+:root[data-theme="dark"] .traffic-filters__cameras label,
+:root[data-theme="dark"] .traffic-filters__chips li {
+  color: var(--dark-text);
+}
+
+:root[data-theme="dark"] .traffic-filters__label small,
+:root[data-theme="dark"] .traffic-filters__group legend small,
+:root[data-theme="dark"] .traffic-filters__group > small,
+:root[data-theme="dark"] .traffic-filters__cameras small,
+:root[data-theme="dark"] .traffic-filters__options label,
+:root[data-theme="dark"] .traffic-filters__empty,
+:root[data-theme="dark"] .traffic-filters__status,
+:root[data-theme="dark"] .traffic-filters__clock,
+:root[data-theme="dark"] .result-card__meta,
+:root[data-theme="dark"] .detail-modal__traffic,
+:root[data-theme="dark"] .result-zone__filtered {
+  color: var(--dark-muted);
+}
+
+:root[data-theme="dark"] .traffic-filters__input,
+:root[data-theme="dark"] .traffic-filters__clock input,
+:root[data-theme="dark"] .traffic-filters__cameras {
+  color: var(--dark-text);
+  background: var(--dark-input);
+  border-color: var(--dark-border-strong);
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] .traffic-filters__cameras label:hover {
+  background: var(--dark-accent-soft);
+}
+
+:root[data-theme="dark"] .traffic-filters__chips li {
+  background: var(--dark-accent-soft);
+  border-color: var(--dark-border);
+}
+
+:root[data-theme="dark"] .traffic-filters__clear,
+:root[data-theme="dark"] .traffic-filters__select-all {
+  color: var(--dark-accent-text);
+  border-color: var(--dark-border-strong);
+}
+
+:root[data-theme="dark"] .traffic-filters__chips button:hover {
+  color: #fecaca;
+  background: #3a2222;
+}
+
+:root[data-theme="dark"] .traffic-filters__status--error {
+  color: #fca5a5;
 }

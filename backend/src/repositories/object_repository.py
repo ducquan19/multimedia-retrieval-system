@@ -1,7 +1,7 @@
 import json
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -106,7 +106,13 @@ class KeyframeObjectRepository:
                 total += self._term_score(match[0], match[1], min_count)
         return total / len(terms)
 
-    def search(self, terms: Sequence[ObjectQueryTerm], top_k: int) -> list[ScoredCandidate]:
+    def search(
+        self,
+        terms: Sequence[ObjectQueryTerm],
+        top_k: int,
+        allowed: Callable[[str], bool] | None = None,
+    ) -> list[ScoredCandidate]:
+        """Top-k keyframes by object match; ``allowed`` keeps only matching keyframe ids."""
         resolved = self._resolve(terms)
         if not resolved:
             return []
@@ -114,6 +120,8 @@ class KeyframeObjectRepository:
         totals: dict[str, float] = {}
         for label, min_count in resolved:
             for keyframe_id, score, count in self._postings.get(label, ()):
+                if allowed is not None and not allowed(keyframe_id):
+                    continue
                 totals[keyframe_id] = totals.get(keyframe_id, 0.0) + self._term_score(
                     score, count, min_count
                 )

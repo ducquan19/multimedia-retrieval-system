@@ -3,6 +3,8 @@ import math
 import time
 import uuid
 
+import numpy as np
+
 from core.constants import MANUAL_OBJECT_WEIGHT
 from core.intro_exclusion import IntroExclusionPolicy
 from infrastructure.blip2_reranker import BLIP2Reranker
@@ -10,6 +12,7 @@ from infrastructure.embedding_service import EmbeddingService
 from models.keyframe import Keyframe
 from repositories.object_repository import KeyframeObjectRepository
 from repositories.text_repository import KeyframeTextRepository
+from repositories.traffic_repository import TrafficMetadataRepository
 from repositories.vector_repository import KeyframeVectorRepository
 from schemas.retrieval import ScoredCandidate
 from schemas.search import (
@@ -24,6 +27,7 @@ from schemas.search import (
     TRAKEEventResult,
     TRAKESearchRequest,
     TRAKESearchResult,
+    TrafficSearchRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,6 +47,7 @@ class RetrievalService:
         embedding_service: EmbeddingService,
         intro_exclusion_policy: IntroExclusionPolicy | None = None,
         object_repository: KeyframeObjectRepository | None = None,
+        traffic_repository: TrafficMetadataRepository | None = None,
     ) -> None:
         self._siglip_repo = siglip_vector_repo
         self._beit3_repo = beit3_vector_repo
@@ -51,6 +56,7 @@ class RetrievalService:
         self._embedding_service = embedding_service
         self._intro_exclusion_policy = intro_exclusion_policy or IntroExclusionPolicy()
         self._object_repository = object_repository
+        self._traffic_repository = traffic_repository
 
     def retrieve(
         self,
@@ -63,7 +69,12 @@ class RetrievalService:
         if isinstance(request, KISSearchRequest) and isinstance(enhanced_queries, KISQueryPlan):
             return self._retrieve_planned_kis(request, enhanced_queries)
         enhanced = enhanced_queries if isinstance(enhanced_queries, QueryVariants) else None
-        return self._retrieve_single(request, enhanced)
+        allowed_ids = None
+        if isinstance(request, TrafficSearchRequest):
+            if self._traffic_repository is None or not self._traffic_repository.available:
+                raise RetrievalDataError("Traffic metadata is not available")
+            allowed_ids = self._traffic_repository.allowed_ids(request.filters)
+        return self._retrieve_single(request, enhanced, allowed_ids)
 
     def _search_candidates(
         self,
@@ -75,7 +86,9 @@ class RetrievalService:
         use_reranking: bool = False,
         asr_query: str | None = None,
         object_query: tuple[ObjectQueryTerm, ...] = (),
+        allowed_ids: np.ndarray | None = None,
     ) -> list[ScoredCandidate]:
+        """Fused candidates; ``allowed_ids`` restricts every modality to those FAISS ids."""
         use_image = getattr(search_sources, "image", True)
         use_asr = getattr(search_sources, "asr", False)
         use_object = getattr(search_sources, "object", False)
@@ -116,12 +129,16 @@ class RetrievalService:
         if "siglip" in model_choices:
             for vq in visual_queries:
                 query_vector = self._embedding_service.get_siglip_embedding(vq)
-                siglip_candidates_lists.append(self._siglip_repo.search(query_vector, fetch_k))
+                siglip_candidates_lists.append(
+                    self._siglip_repo.search(query_vector, fetch_k, allowed_ids)
+                )
 
         if "beit3" in model_choices:
             for vq in visual_queries:
                 query_vector = self._embedding_service.get_beit3_embedding(vq)
-                beit3_candidates_lists.append(self._beit3_repo.search(query_vector, fetch_k))
+                beit3_candidates_lists.append(
+                    self._beit3_repo.search(query_vector, fetch_k, allowed_ids)
+                )
 
         asr_cands = []
         if w_asr > 0:
@@ -129,6 +146,9 @@ class RetrievalService:
             asr_cands = self._text_repository.search_text(
                 asr_query or query, ["asr_text"], None, min(fetch_k * 3, 10_000)
             )
+            if allowed_ids is not None:
+                allowed_keyframes = self._keyframe_ids(allowed_ids)
+                asr_cands = [c for c in asr_cands if c.keyframe.keyframe_id in allowed_keyframes]
 
         siglip_candidates_lists = [
             self._intro_exclusion_policy.filter_candidates(candidates)
@@ -142,7 +162,10 @@ class RetrievalService:
 
         obj_cands = []
         if w_obj > 0:
-            obj_cands = self._object_repository.search(object_terms, fetch_k)
+            allowed = None
+            if allowed_ids is not None:
+                allowed = self._keyframe_ids(allowed_ids).__contains__
+            obj_cands = self._object_repository.search(object_terms, fetch_k, allowed)
 
         cmap = {}
         for cands in siglip_candidates_lists + beit3_candidates_lists + [asr_cands, obj_cands]:
@@ -231,6 +254,10 @@ class RetrievalService:
         # before any caller performs ranking or temporal reasoning.
         return self._intro_exclusion_policy.filter_candidates(candidates)
 
+    def _keyframe_ids(self, faiss_ids: np.ndarray) -> set[str]:
+        keyframes = self._siglip_repo.keyframe_repository.load().keyframes
+        return {keyframes[i].keyframe_id for i in faiss_ids.tolist()}
+
     @staticmethod
     def _merge_object_terms(
         manual: tuple[ObjectQueryTerm, ...], automatic: tuple[ObjectQueryTerm, ...]
@@ -239,7 +266,10 @@ class RetrievalService:
         return manual + tuple(term for term in automatic if term.label.casefold() not in labels)
 
     def _retrieve_single(
-        self, request: SearchRequest, enhanced_queries: QueryVariants | None = None
+        self,
+        request: SearchRequest,
+        enhanced_queries: QueryVariants | None = None,
+        allowed_ids: np.ndarray | None = None,
     ) -> tuple[SingleSearchResult, ...]:
         model_choices = getattr(request, "model_choices", ["siglip"])
         fetch_k = request.top_k * 5
@@ -254,28 +284,9 @@ class RetrievalService:
             enhanced_queries,
             getattr(request, "use_reranking", False),
             object_query=request.object_query,
+            allowed_ids=allowed_ids,
         )
-
-        results = []
-        for rank, candidate in enumerate(candidates[: request.top_k], start=1):
-            keyframe = candidate.keyframe
-            results.append(
-                SingleSearchResult(
-                    result_id=candidate.result_id,
-                    rank=rank,
-                    video_id=keyframe.video_id,
-                    frame_id=keyframe.frame_id,
-                    keyframe_url=self._media_url(keyframe.image_path),
-                    image_path=keyframe.image_path,
-                    segment_id=keyframe.segment_id or "",
-                    asr_text=keyframe.asr_text or "",
-                    objects=self._objects_for(keyframe),
-                    similarity_score=candidate.similarity_score,
-                    answer="",
-                )
-            )
-
-        return tuple(results)
+        return self._single_results_from_candidates(candidates[: request.top_k])
 
     def _retrieve_planned_kis(
         self, request: KISSearchRequest, plan: KISQueryPlan
@@ -449,9 +460,24 @@ class RetrievalService:
                     objects=self._objects_for(keyframe),
                     similarity_score=candidate.similarity_score,
                     answer="",
+                    time_ms=keyframe.time_ms,
+                    **self._traffic_fields(keyframe),
                 )
             )
         return tuple(results)
+
+    def _traffic_fields(self, keyframe: Keyframe) -> dict[str, str | None]:
+        if self._traffic_repository is None:
+            return {}
+        video = self._traffic_repository.video(keyframe.video_id)
+        if video is None:
+            return {}
+        clock = self._traffic_repository.clock_time(keyframe)
+        return {
+            "camera_name": video.camera_name,
+            "clock_time": clock.strftime("%d/%m %H:%M:%S") if clock else None,
+            "weather": video.weather or None,
+        }
 
     def _retrieve_trake(
         self, request: TRAKESearchRequest, enhanced_queries: dict[int, QueryVariants] | None = None
@@ -465,6 +491,12 @@ class RetrievalService:
         fetch_k = request.top_k * 10
         search_sources = getattr(request, "search_sources", None)
         use_reranking = getattr(request, "use_reranking", False)
+        # TRAKE is never asked about the traffic videos, so they are left out entirely.
+        allowed_ids = (
+            self._traffic_repository.non_traffic_ids()
+            if self._traffic_repository is not None and self._traffic_repository.available
+            else None
+        )
 
         # 1. Forward Pass: Fetch candidates for all events using per-event enhanced queries
         first_event = request.events[0]
@@ -480,6 +512,7 @@ class RetrievalService:
             enhanced_for_first,
             use_reranking,
             object_query=request.object_query,
+            allowed_ids=allowed_ids,
         )
 
         if not first_candidates:
@@ -501,6 +534,7 @@ class RetrievalService:
                 search_sources,
                 event_enhanced,
                 object_query=request.object_query,
+                allowed_ids=allowed_ids,
             )
             next_beams: list[tuple[float, list[tuple[ScoredCandidate, float, float]]]] = []
 

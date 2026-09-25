@@ -2,6 +2,12 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+# The final-round guide writes KIS times as strings ("start": "<TIME(ms)>"); integers are
+# accepted too. The value is forwarded to DRES exactly as received.
+TimeMs = Annotated[int, Field(ge=0)] | Annotated[
+    str, StringConstraints(strip_whitespace=True, pattern=r"^\d{1,12}$")
+]
+
 EvaluationId = Annotated[
     str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9_-]{1,128}$")
 ]
@@ -15,8 +21,8 @@ class DresAnswer(BaseModel):
     media_item_name: str | None = Field(
         default=None, alias="mediaItemName", min_length=1, max_length=128
     )
-    start: int | None = Field(default=None, ge=0)
-    end: int | None = Field(default=None, ge=0)
+    start: TimeMs | None = None
+    end: TimeMs | None = None
     text: str | None = Field(default=None, min_length=1, max_length=4_000)
 
     @model_validator(mode="after")
@@ -27,7 +33,7 @@ class DresAnswer(BaseModel):
             return self
         if self.media_item_name is None or self.start is None or self.end is None:
             raise ValueError("an answer needs either text or mediaItemName, start and end")
-        if self.start > self.end:
+        if int(self.start) > int(self.end):
             raise ValueError("start must not be after end")
         return self
 

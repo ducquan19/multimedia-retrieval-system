@@ -34,6 +34,7 @@ function searchResponse(
     model_choices: ["siglip"],
     applied_weights: options.weights ? { w_vis: 1, w_asr: 0 } : null,
     warnings: [],
+    ...(queryType === "TRAFFIC" ? { filtered_keyframes: 904 } : {}),
     results: options.empty
       ? []
       : [
@@ -54,6 +55,27 @@ function searchResponse(
 }
 
 type SearchHandler = (init: RequestInit) => Response | Promise<Response>;
+
+const trafficOptions = {
+  available: true,
+  cameras: [
+    {
+      camera_id: "C001",
+      name: "An Dương Vương - Lê Hồng Phong",
+      streets: ["An Dương Vương", "Lê Hồng Phong"],
+      video_ids: ["N001-V001", "N001-V002", "N001-V003"],
+    },
+    {
+      camera_id: "C002",
+      name: "Cộng Quỳnh - Bùi Viện",
+      streets: ["Cộng Quỳnh", "Bùi Viện"],
+      video_ids: ["N014-V001"],
+    },
+  ],
+  dates: ["2026-06-10", "2026-06-15"],
+  dayparts: ["morning", "midday", "night"],
+  weathers: ["dry", "wet"],
+};
 
 const queryPlan: KISQueryPlan = {
   search_mode: "temporal_sequence",
@@ -82,6 +104,7 @@ function setupApi(
     if (url.endsWith("/api/config")) return Promise.resolve(jsonResponse(publicConfig));
     if (url.endsWith("/api/search/kis/plan")) return Promise.resolve(planHandler(init));
     if (url.endsWith("/api/search")) return Promise.resolve(searchHandler(init));
+    if (url.endsWith("/api/traffic/options")) return Promise.resolve(jsonResponse(trafficOptions));
     return Promise.resolve(jsonResponse({ detail: "Not found" }, 404));
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -116,7 +139,7 @@ afterEach(() => {
 });
 
 describe("App query workspace", () => {
-  it("renders the mock shell and switches between KIS, VQA and TRAKE tabs", async () => {
+  it("renders the mock shell and switches between TRAKE, KIS and TRAFFIC tabs", async () => {
     setupApi();
     const user = userEvent.setup();
     renderApp();
@@ -128,8 +151,16 @@ describe("App query workspace", () => {
     expect(screen.getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open" })).toBeDisabled();
 
-    await user.click(screen.getByRole("tab", { name: /VQA/ }));
-    expect(screen.getByLabelText(/^Query VQA/)).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "TRAKE",
+      "KIS",
+      "TRAFFIC",
+    ]);
+
+    await user.click(screen.getByRole("tab", { name: /TRAFFIC/ }));
+    expect(screen.getByLabelText(/^Query TRAFFIC/)).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Traffic filters" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("ASR")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Query KIS/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /TRAKE/ }));
@@ -272,26 +303,32 @@ describe("App query workspace", () => {
     expect(searchPayload(fetchMock)).toMatchObject({ query: "dòng một\ndòng hai" });
   });
 
-  it("submits the typed VQA payload without an answer field", async () => {
-    const fetchMock = setupApi(() => jsonResponse(searchResponse("VQA", { empty: true })));
+  it("submits a TRAFFIC query with metadata filters and no ASR source", async () => {
+    const fetchMock = setupApi(() => jsonResponse(searchResponse("TRAFFIC", { empty: true })));
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(await screen.findByRole("tab", { name: /VQA/ }));
-    await user.type(screen.getByLabelText(/^Query VQA/), "chiếc ly màu gì?");
+    await user.click(await screen.findByRole("tab", { name: /TRAFFIC/ }));
+    await user.type(screen.getByLabelText(/^Query TRAFFIC/), "xe buýt xanh rẽ trái");
+    await user.type(await screen.findByLabelText(/^Tên đường/), "le hong phong");
+    const cameras = screen.getByRole("list", { name: "Cameras" });
+    expect(within(cameras).queryByText("Cộng Quỳnh - Bùi Viện")).not.toBeInTheDocument();
+    await user.click(within(cameras).getByLabelText(/An Dương Vương - Lê Hồng Phong/));
+    await user.click(screen.getByLabelText("Tối"));
+    await user.click(screen.getByLabelText("Mưa / đường ướt"));
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     await screen.findByText("Không tìm thấy candidate");
     expect(searchPayload(fetchMock)).toEqual({
-      query_type: "VQA",
-      query: "chiếc ly màu gì?",
+      query_type: "TRAFFIC",
+      query: "xe buýt xanh rẽ trái",
+      filters: { camera_ids: ["C001"], dates: [], dayparts: ["night"], weathers: ["wet"] },
       top_k: 100,
       enhance_query: false,
       use_reranking: false,
       model_choices: ["siglip"],
       search_sources: { image: true, asr: false, object: false },
     });
-    expect(searchPayload(fetchMock)).not.toHaveProperty("answer");
   });
 
   it("keeps hidden TRAKE event text and submits continuous event indices", async () => {
@@ -393,7 +430,7 @@ describe("App query workspace", () => {
       },
     });
 
-      await user.click(screen.getByRole("tab", { name: /VQA/ }));
+      await user.click(screen.getByRole("tab", { name: /TRAFFIC/ }));
       expect(screen.queryByLabelText("Query Decomposition")).not.toBeInTheDocument();
     },
     15_000,

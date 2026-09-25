@@ -4,6 +4,7 @@ from core.constants import MANUAL_OBJECT_WEIGHT
 from infrastructure.query_enhancer import QueryEnhancer
 from infrastructure.retrieval import RetrievalEngine
 from repositories.object_repository import KeyframeObjectRepository
+from repositories.traffic_repository import TrafficMetadataRepository
 from schemas.search import (
     KISQueryPlan,
     KISSearchRequest,
@@ -16,6 +17,8 @@ from schemas.search import (
     TRAKESearchRequest,
     TRAKESearchResponse,
     TRAKESearchResult,
+    TrafficSearchRequest,
+    TrafficSearchResponse,
     VQASearchRequest,
     VQASearchResponse,
 )
@@ -34,6 +37,7 @@ class SearchService:
         max_query_length: int,
         data_root: Path,
         object_repository: KeyframeObjectRepository | None = None,
+        traffic_repository: TrafficMetadataRepository | None = None,
     ) -> None:
         self._retrieval_engine = retrieval_engine
         self._query_enhancer = query_enhancer
@@ -41,6 +45,7 @@ class SearchService:
         self._max_query_length = max_query_length
         self._data_root = data_root
         self._object_repository = object_repository
+        self._traffic_repository = traffic_repository
 
     def plan_kis(self, query: str) -> KISQueryPlan:
         if len(query) > self._max_query_length:
@@ -134,6 +139,16 @@ class SearchService:
 
         model_choices = getattr(request, "model_choices", [])
 
+        filtered_keyframes = 0
+        if isinstance(request, TrafficSearchRequest):
+            if self._traffic_repository is None or not self._traffic_repository.available:
+                raise SearchValidationError(
+                    "Traffic metadata is unavailable (data/traffic_camera/cameras.json)."
+                )
+            filtered_keyframes = int(self._traffic_repository.allowed_ids(request.filters).size)
+            if filtered_keyframes == 0:
+                warnings.append("No traffic keyframe matches the selected filters.")
+
         results = self._retrieval_engine.retrieve(request, enhanced_queries)
 
         if isinstance(request, KISSearchRequest):
@@ -146,6 +161,18 @@ class SearchService:
                 warnings=warnings,
                 query_plan=query_plan,
                 auto_object_query=auto_objects,
+                results=self._only_single_results(results),
+            )
+        if isinstance(request, TrafficSearchRequest):
+            return TrafficSearchResponse(
+                query_type="TRAFFIC",
+                original_query=original_query,
+                enhanced_query=enhanced_query_str,
+                model_choices=model_choices,
+                applied_weights=applied_weights,
+                warnings=warnings,
+                auto_object_query=auto_objects,
+                filtered_keyframes=filtered_keyframes,
                 results=self._only_single_results(results),
             )
         if isinstance(request, VQASearchRequest):

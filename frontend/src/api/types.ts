@@ -1,4 +1,4 @@
-export const QUERY_TYPES = ["KIS", "VQA", "TRAKE"] as const;
+export const QUERY_TYPES = ["TRAKE", "KIS", "TRAFFIC"] as const;
 export type QueryType = (typeof QUERY_TYPES)[number];
 
 export type TopK = number;
@@ -66,7 +66,29 @@ export interface TRAKESearchRequest extends BaseSearchRequest {
   events: TRAKEEventQuery[];
 }
 
-export type SearchRequest = KISSearchRequest | VQASearchRequest | TRAKESearchRequest;
+export type Daypart = "morning" | "midday" | "night";
+export type Weather = "dry" | "wet";
+
+export interface TrafficFilters {
+  camera_ids: string[];
+  dates: string[];
+  dayparts: Daypart[];
+  weathers: Weather[];
+  clock_from?: string;
+  clock_to?: string;
+}
+
+export interface TrafficSearchRequest extends BaseSearchRequest {
+  query_type: "TRAFFIC";
+  query: string;
+  filters: TrafficFilters;
+}
+
+export type SearchRequest =
+  | KISSearchRequest
+  | VQASearchRequest
+  | TRAKESearchRequest
+  | TrafficSearchRequest;
 
 export interface SingleSearchResult {
   result_id: string;
@@ -79,6 +101,11 @@ export interface SingleSearchResult {
   objects: Record<string, unknown>[];
   similarity_score: number;
   answer: string;
+  /** Original presentation time (ms) for VFR videos; absent -> frame_id / fps. */
+  time_ms?: number | null;
+  camera_name?: string | null;
+  clock_time?: string | null;
+  weather?: string | null;
 }
 
 export interface TRAKEEventResult {
@@ -131,7 +158,33 @@ export interface TRAKESearchResponse extends BaseSearchResponse {
   results: TRAKESearchResult[];
 }
 
-export type SearchResponse = KISSearchResponse | VQASearchResponse | TRAKESearchResponse;
+export interface TrafficSearchResponse extends BaseSearchResponse {
+  query_type: "TRAFFIC";
+  auto_object_query?: ObjectQueryTerm[];
+  filtered_keyframes: number;
+  results: SingleSearchResult[];
+}
+
+export type SearchResponse =
+  | KISSearchResponse
+  | VQASearchResponse
+  | TRAKESearchResponse
+  | TrafficSearchResponse;
+
+export interface TrafficCamera {
+  camera_id: string;
+  name: string;
+  streets: string[];
+  video_ids: string[];
+}
+
+export interface TrafficOptions {
+  available: boolean;
+  cameras: TrafficCamera[];
+  dates: string[];
+  dayparts: Daypart[];
+  weathers: Weather[];
+}
 
 export interface PublicConfig {
   min_top_k: number;
@@ -155,7 +208,7 @@ export interface DresEvaluation {
 }
 
 export type DresAnswer =
-  | { mediaItemName: string; start: number; end: number }
+  | { mediaItemName: string; start: string; end: string }
   | { text: string };
 
 export interface DresSubmitBody {
@@ -180,4 +233,6 @@ export interface VideoSourceResponse {
   url: string;
   source: "local" | "remote";
   fps: number;
+  /** Original pts of the first frame: original ms = currentTime * 1000 + time_offset_ms. */
+  time_offset_ms?: number;
 }

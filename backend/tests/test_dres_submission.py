@@ -99,6 +99,19 @@ def test_submit_kis_logs_in_once_and_forwards_the_exact_body(tmp_path: Path) -> 
     ]
 
 
+def test_string_times_from_the_final_round_guide_are_forwarded_verbatim(tmp_path: Path) -> None:
+    fake = FakeDres()
+    api = _api(_service(tmp_path, fake))
+    answer = {"mediaItemName": "N001-V001", "start": "20200", "end": "20200"}
+
+    response = api.post(
+        "/api/dres/submit", json={"evaluation_id": "ev1", "answerSets": [{"answers": [answer]}]}
+    )
+
+    assert response.status_code == 200
+    assert fake.submissions[0][2] == {"answerSets": [{"answers": [answer]}]}
+
+
 def test_expired_session_is_renewed_transparently(tmp_path: Path) -> None:
     fake = FakeDres()
     api = _api(_service(tmp_path, fake))
@@ -142,6 +155,8 @@ def test_missing_credentials_return_503(tmp_path: Path) -> None:
     "answer",
     [
         {"mediaItemName": "L21_V001", "start": 5, "end": 1},
+        {"mediaItemName": "L21_V001", "start": "900", "end": "1000.5"},
+        {"mediaItemName": "L21_V001", "start": "1200", "end": "900"},
         {"mediaItemName": "L21_V001", "start": 5},
         {"text": "TR-L21_V001-1,2", "start": 5},
         {},

@@ -30,6 +30,7 @@ class ResolvedVideoSource:
     url: str
     source: str
     fps: float
+    time_offset_ms: int = 0
 
 
 class VideoSourceService:
@@ -54,6 +55,9 @@ class VideoSourceService:
         fps = entry.get("fps")
         if not isinstance(fps, int | float) or isinstance(fps, bool) or fps <= 0:
             raise VideoSourceError(f"Invalid fps for video {video_id}")
+        offset = entry.get("time_offset_ms", 0)
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+            raise VideoSourceError(f"Invalid time_offset_ms for video {video_id}")
 
         local_path = self._data_root / "videos" / f"{video_id}.mp4"
         if local_path.is_file():
@@ -62,6 +66,7 @@ class VideoSourceService:
                 url=f"/media/videos/{video_id}.mp4",
                 source="local",
                 fps=float(fps),
+                time_offset_ms=offset,
             )
 
         remote_url = entry.get("remote_url")
@@ -71,6 +76,7 @@ class VideoSourceService:
                 url=remote_url,
                 source="remote",
                 fps=float(fps),
+                time_offset_ms=offset,
             )
 
         private_path = entry.get("private_path")
@@ -90,6 +96,7 @@ class VideoSourceService:
                 url=url,
                 source="remote",
                 fps=float(fps),
+                time_offset_ms=offset,
             )
         raise VideoSourceNotFound(f"Video source not found for {video_id}")
 

@@ -183,8 +183,32 @@ class TRAKESearchRequest(BaseSearchRequest):
         return self
 
 
+ClockText = Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
+
+
+class TrafficFilters(BaseModel):
+    """Metadata filters of the traffic videos; an empty list means no restriction."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    camera_ids: tuple[str, ...] = Field(default=(), max_length=200)
+    dates: tuple[str, ...] = Field(default=(), max_length=50)
+    dayparts: tuple[Literal["morning", "midday", "night"], ...] = ()
+    weathers: tuple[Literal["dry", "wet"], ...] = ()
+    clock_from: ClockText | None = None
+    clock_to: ClockText | None = None
+
+
+class TrafficSearchRequest(BaseSearchRequest):
+    """Single-frame search restricted to the traffic-camera videos (N)."""
+
+    query_type: Literal["TRAFFIC"]
+    query: QueryText
+    filters: TrafficFilters = Field(default_factory=TrafficFilters)
+
+
 SearchRequest = Annotated[
-    KISSearchRequest | VQASearchRequest | TRAKESearchRequest,
+    KISSearchRequest | VQASearchRequest | TRAKESearchRequest | TrafficSearchRequest,
     Field(discriminator="query_type"),
 ]
 
@@ -203,6 +227,11 @@ class SingleSearchResult(BaseModel):
     objects: list[dict[str, Any]]
     similarity_score: float
     answer: str = ""
+    # Original presentation time of the frame (ms) for VFR videos; None -> frame_id / fps.
+    time_ms: int | None = None
+    camera_name: str | None = None
+    clock_time: str | None = None
+    weather: str | None = None
 
 
 class TRAKEEventResult(BaseModel):
@@ -260,8 +289,20 @@ class TRAKESearchResponse(BaseModel):
     results: tuple[TRAKESearchResult, ...]
 
 
+class TrafficSearchResponse(BaseModel):
+    query_type: Literal["TRAFFIC"]
+    original_query: str
+    enhanced_query: str | None
+    model_choices: list[str] = Field(default_factory=list)
+    applied_weights: dict[str, float] | None = None
+    warnings: list[str] = Field(default_factory=list)
+    auto_object_query: tuple[ObjectQueryTerm, ...] = ()
+    filtered_keyframes: int = 0
+    results: tuple[SingleSearchResult, ...]
+
+
 SearchResponse = Annotated[
-    KISSearchResponse | VQASearchResponse | TRAKESearchResponse,
+    KISSearchResponse | VQASearchResponse | TRAKESearchResponse | TrafficSearchResponse,
     Field(discriminator="query_type"),
 ]
 
@@ -269,3 +310,20 @@ SearchResponse = Annotated[
 class ObjectLabelsResponse(BaseModel):
     available: bool
     labels: tuple[str, ...]
+
+
+class TrafficCamera(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    camera_id: str
+    name: str
+    streets: tuple[str, ...]
+    video_ids: tuple[str, ...]
+
+
+class TrafficOptionsResponse(BaseModel):
+    available: bool
+    cameras: tuple[TrafficCamera, ...]
+    dates: tuple[str, ...]
+    dayparts: tuple[str, ...]
+    weathers: tuple[str, ...]

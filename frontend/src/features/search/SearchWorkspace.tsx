@@ -18,12 +18,14 @@ import {
   type SearchRequest,
   type SearchResponse,
   type SearchSources,
+  type TrafficFilters,
 } from "../../api/types";
 import { SingleResultInspector } from "../results/SingleResultInspector";
 import { TrakeResultInspector } from "../results/TrakeResultInspector";
 import { VideoLookup } from "../results/VideoLookup";
 import { ObjectQueryInput } from "./ObjectQueryInput";
 import { SearchInsight } from "./SearchInsight";
+import { EMPTY_TRAFFIC_FILTERS, TrafficFilterPanel } from "./TrafficFilterPanel";
 
 const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
   { key: "image", label: "Image" },
@@ -94,7 +96,8 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [kisQuery, setKisQuery] = useState("");
   const [queryUnderstanding, setQueryUnderstanding] = useState(false);
   const [kisPlan, setKisPlan] = useState<KISQueryPlan | null>(null);
-  const [vqaQuery, setVqaQuery] = useState("");
+  const [trafficQuery, setTrafficQuery] = useState("");
+  const [trafficFilters, setTrafficFilters] = useState<TrafficFilters>(EMPTY_TRAFFIC_FILTERS);
   const [trakeMainQuery, setTrakeMainQuery] = useState("");
   const initialEventCount = Math.min(3, config.max_trake_events);
   const [eventCount, setEventCount] = useState(initialEventCount);
@@ -157,7 +160,12 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       matchesProgram(result.video_id, programFilter),
     ).length ?? 0;
   const showProgramFilter =
-    !searchMutation.isPending && Boolean(searchMutation.data?.results.length);
+    !searchMutation.isPending &&
+    Boolean(searchMutation.data?.results.length) &&
+    searchMutation.data?.query_type !== "TRAFFIC";
+  // Traffic videos have no speech, so ASR is never offered for TRAFFIC.
+  const effectiveSources: SearchSources =
+    activeType === "TRAFFIC" ? { ...sources, asr: false } : sources;
 
   useEffect(
     () => () => {
@@ -280,7 +288,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     }
     if (
       !(activeType === "KIS" && queryUnderstanding) &&
-      !Object.values(sources).some(Boolean)
+      !Object.values(effectiveSources).some(Boolean)
     ) {
       errors.push("Chọn ít nhất một nguồn tìm kiếm.");
     }
@@ -296,7 +304,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
       top_k: parsedTopK,
       enhance_query: activeType === "KIS" && queryUnderstanding ? false : enhanceQuery,
       use_reranking: useReranking,
-      search_sources: sources,
+      search_sources: effectiveSources,
       model_choices: modelChoices,
       ...(usesObjectSource && objectTerms.length > 0 ? { object_query: objectTerms } : {}),
     };
@@ -329,10 +337,22 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
           : {}),
         ...common,
       };
-    } else if (activeType === "VQA") {
-      const queryError = queryLengthError("Câu hỏi VQA", vqaQuery, config.max_query_length);
+    } else if (activeType === "TRAFFIC") {
+      const queryError = queryLengthError("Query TRAFFIC", trafficQuery, config.max_query_length);
       if (queryError) errors.push(queryError);
-      payload = { query_type: "VQA", query: vqaQuery.trim(), ...common };
+      if (
+        trafficFilters.clock_from &&
+        trafficFilters.clock_to &&
+        trafficFilters.clock_from > trafficFilters.clock_to
+      ) {
+        errors.push("Giờ bắt đầu phải trước giờ kết thúc.");
+      }
+      payload = {
+        query_type: "TRAFFIC",
+        query: trafficQuery.trim(),
+        filters: trafficFilters,
+        ...common,
+      };
     } else {
       if (trakeMainQuery.trim() && trakeMainQuery.trim().length > config.max_query_length) {
         errors.push(`Main query TRAKE không được vượt quá ${config.max_query_length} ký tự.`);
@@ -592,19 +612,23 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             </div>
           )}
 
-          {activeType === "VQA" && (
-            <label className="field field--query-only" htmlFor="vqa-query">
-              <span>Query VQA</span>
-              <textarea
-                id="vqa-query"
-                value={vqaQuery}
-                maxLength={config.max_query_length}
-                onChange={(event) => setVqaQuery(event.target.value)}
-                onKeyDown={submitQueryOnEnter}
-                aria-keyshortcuts="Enter Shift+Enter"
-                rows={6}
-              />
-            </label>
+          {activeType === "TRAFFIC" && (
+            <div className="traffic-query-zone">
+              <label className="field field--query-only" htmlFor="traffic-query">
+                <span>Query TRAFFIC</span>
+                <textarea
+                  id="traffic-query"
+                  value={trafficQuery}
+                  maxLength={config.max_query_length}
+                  onChange={(event) => setTrafficQuery(event.target.value)}
+                  onKeyDown={submitQueryOnEnter}
+                  aria-keyshortcuts="Enter Shift+Enter"
+                  placeholder="Mô tả xe, người, màu sắc, vị trí… (tên đường, giờ, thời tiết dùng bộ lọc)"
+                  rows={4}
+                />
+              </label>
+              <TrafficFilterPanel filters={trafficFilters} onChange={setTrafficFilters} />
+            </div>
           )}
 
           {activeType === "TRAKE" && (
@@ -724,7 +748,9 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
             disabled={activeType === "KIS" && queryUnderstanding}
           >
             <legend>Sources</legend>
-            {SOURCE_OPTIONS.map(({ key, label }) => (
+            {SOURCE_OPTIONS.filter(
+              ({ key }) => !(activeType === "TRAFFIC" && key === "asr"),
+            ).map(({ key, label }) => (
               <label key={key}>
                 <input
                   type="checkbox"
@@ -826,6 +852,12 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
                         <option value="time">Time</option>
                       </select>
                     </label>
+                  )}
+                  {searchMutation.data.query_type === "TRAFFIC" && (
+                    <span className="result-zone__filtered">
+                      {searchMutation.data.filtered_keyframes.toLocaleString("vi-VN")} keyframe
+                      qua bộ lọc
+                    </span>
                   )}
                 </div>
               )

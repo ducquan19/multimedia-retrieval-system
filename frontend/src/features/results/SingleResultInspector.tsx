@@ -3,13 +3,14 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 import type {
   KISSearchResponse,
   SingleSearchResult,
+  TrafficSearchResponse,
   VQASearchResponse,
 } from "../../api/types";
-import { ResultDetailModal, formatScore } from "./ResultDetailModal";
+import { ResultDetailModal, formatMs, formatScore } from "./ResultDetailModal";
 import { ResultImage } from "./ResultImage";
 
 interface SingleResultInspectorProps {
-  response: KISSearchResponse | VQASearchResponse;
+  response: KISSearchResponse | VQASearchResponse | TrafficSearchResponse;
   maxAnswerLength: number;
   groupByVideo?: boolean;
   groupSort?: "score" | "time";
@@ -126,7 +127,8 @@ export function SingleResultInspector({
             kind: "single",
             videoId: selected.result.video_id,
             frameId: selected.result.frame_id,
-            defaultMode: response.query_type,
+            timeMs: selected.result.time_ms ?? null,
+            defaultMode: response.query_type === "VQA" ? "VQA" : "KIS",
             answer: globalVQAAnswer,
           }}
         />
@@ -170,8 +172,18 @@ function ResultCard({
         <div className="result-card__body">
           <div className="result-card__title-row">
             <strong>{result.video_id}</strong>
-            <span>{result.frame_id}</span>
+            <span>
+              {result.time_ms !== null && result.time_ms !== undefined
+                ? formatMs(result.time_ms)
+                : result.frame_id}
+            </span>
           </div>
+          {result.camera_name && (
+            <div className="result-card__meta" title={result.camera_name}>
+              <span>{result.camera_name}</span>
+              {result.clock_time && <span>{result.clock_time.slice(6)}</span>}
+            </div>
+          )}
         </div>
       </article>
     </li>

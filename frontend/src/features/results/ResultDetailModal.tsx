@@ -15,6 +15,10 @@ export interface ResultDetail {
   asr_text: string;
   objects: Record<string, unknown>[];
   similarity_score: number;
+  time_ms?: number | null;
+  camera_name?: string | null;
+  clock_time?: string | null;
+  weather?: string | null;
 }
 
 interface ResultDetailModalProps {
@@ -26,6 +30,16 @@ interface ResultDetailModalProps {
 
 export function formatScore(score: number): string {
   return score.toFixed(4);
+}
+
+/** 83456 -> "01:23.456" */
+export function formatMs(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.floor((ms % 60_000) / 1000);
+  const millis = ms % 1000;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(
+    millis,
+  ).padStart(3, "0")}`;
 }
 
 export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetailModalProps) {
@@ -40,10 +54,19 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
   const [frameInput, setFrameInput] = useState(String(result.frame_id));
   const [frameCopyStatus, setFrameCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [showSubmit, setShowSubmit] = useState(false);
+  // VFR videos (traffic) are navigated by original time in ms instead of frame index.
+  const keyframeTimeMs = result.time_ms ?? null;
+  const timeMode = keyframeTimeMs !== null;
+  const [timeInput, setTimeInput] = useState(String(keyframeTimeMs ?? ""));
   const parsedFrameInput = Number(frameInput);
   const currentFrame =
-    videoSource && frameInput.trim() !== "" && Number.isInteger(parsedFrameInput)
+    !timeMode && videoSource && frameInput.trim() !== "" && Number.isInteger(parsedFrameInput)
       ? parsedFrameInput
+      : null;
+  const parsedTimeInput = Number(timeInput);
+  const currentTimeMs =
+    timeMode && videoSource && timeInput.trim() !== "" && Number.isInteger(parsedTimeInput)
+      ? parsedTimeInput
       : null;
 
   const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
@@ -66,6 +89,18 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
     }
   };
 
+  const setVideoTimeMs = (requestedMs: number): HTMLVideoElement | null => {
+    const video = videoRef.current;
+    if (!video || !videoSource) return null;
+    const offset = videoSource.time_offset_ms ?? 0;
+    const targetMs = Math.max(offset, Math.round(requestedMs));
+    // +1 ms keeps the seek inside the requested frame despite rounding of time_ms.
+    video.currentTime = (targetMs - offset + 1) / 1000;
+    setTimeInput(String(targetMs));
+    setFrameCopyStatus("idle");
+    return video;
+  };
+
   const setVideoFrame = (requestedFrame: number): HTMLVideoElement | null => {
     const video = videoRef.current;
     if (!video || !videoSource) return null;
@@ -80,21 +115,30 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
     return video;
   };
 
+  const seekKeyframe = () =>
+    keyframeTimeMs !== null ? setVideoTimeMs(keyframeTimeMs) : setVideoFrame(result.frame_id);
+
   const playFromKeyframe = () => {
-    const video = setVideoFrame(result.frame_id);
+    const video = seekKeyframe();
     if (!video) return;
     void video.play().catch(() => undefined);
   };
 
   const pauseAtKeyframe = () => {
-    const video = setVideoFrame(result.frame_id);
+    const video = seekKeyframe();
     video?.pause();
   };
 
   const updatePlayingFrame = () => {
     const video = videoRef.current;
     if (!video || !videoSource || document.activeElement === frameInputRef.current) return;
-    setFrameInput(String(Math.max(0, Math.round(video.currentTime * videoSource.fps))));
+    if (timeMode) {
+      setTimeInput(
+        String(Math.round(video.currentTime * 1000) + (videoSource.time_offset_ms ?? 0)),
+      );
+    } else {
+      setFrameInput(String(Math.max(0, Math.round(video.currentTime * videoSource.fps))));
+    }
     setFrameCopyStatus("idle");
   };
 
@@ -104,6 +148,12 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
   };
 
   const commitFrameInput = () => {
+    if (timeMode) {
+      const parsedMs = Number(timeInput);
+      if (Number.isFinite(parsedMs)) setVideoTimeMs(parsedMs)?.pause();
+      else updatePlayingFrame();
+      return;
+    }
     const parsedFrame = Number(frameInput);
     if (Number.isFinite(parsedFrame)) {
       navigateToFrame(parsedFrame);
@@ -113,6 +163,13 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
   };
 
   const stepFrame = (offset: number) => {
+    if (timeMode && videoSource) {
+      // VFR: step by one average frame duration.
+      const parsedMs = Number(timeInput);
+      const base = Number.isFinite(parsedMs) ? parsedMs : (keyframeTimeMs ?? 0);
+      setVideoTimeMs(base + offset * Math.round(1000 / videoSource.fps))?.pause();
+      return;
+    }
     const video = videoRef.current;
     const currentFrame = Number(frameInput);
     const fallbackFrame = video && videoSource
@@ -123,7 +180,7 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
 
   const copyCurrentFrame = async () => {
     try {
-      await navigator.clipboard.writeText(frameInput);
+      await navigator.clipboard.writeText(timeMode ? timeInput : frameInput);
       setFrameCopyStatus("copied");
     } catch {
       setFrameCopyStatus("failed");
@@ -154,8 +211,17 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
             <h2 id="detail-modal-title">
               <span>{result.video_id}</span>
               <span className="detail-modal__separator" aria-hidden="true">•</span>
-              <span className="detail-modal__frame">{result.frame_id}</span>
+              <span className="detail-modal__frame">
+                {keyframeTimeMs !== null ? `${formatMs(keyframeTimeMs)} (${keyframeTimeMs} ms)` : result.frame_id}
+              </span>
             </h2>
+            {result.camera_name && (
+              <span className="detail-modal__traffic">
+                {result.camera_name}
+                {result.clock_time && ` · ${result.clock_time}`}
+                {result.weather === "wet" && " · mưa/ướt"}
+              </span>
+            )}
             <button
               type="button"
               className="detail-copy-button"
@@ -251,10 +317,12 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
                   type="number"
                   min="0"
                   step="1"
-                  value={frameInput}
-                  aria-label="Current frame ID"
+                  value={timeMode ? timeInput : frameInput}
+                  aria-label={timeMode ? "Current time (ms)" : "Current frame ID"}
+                  title={timeMode ? "Thời gian gốc (ms)" : undefined}
                   onChange={(event) => {
-                    setFrameInput(event.target.value);
+                    if (timeMode) setTimeInput(event.target.value);
+                    else setFrameInput(event.target.value);
                     setFrameCopyStatus("idle");
                   }}
                   onBlur={commitFrameInput}
@@ -297,6 +365,7 @@ export function ResultDetailModal({ result, onClose, submitTarget }: ResultDetai
               <DresSubmitPanel
                 target={submitTarget}
                 currentFrame={currentFrame}
+                currentTimeMs={currentTimeMs}
                 onCancel={() => setShowSubmit(false)}
               />
             )}

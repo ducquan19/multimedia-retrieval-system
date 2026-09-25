@@ -14,13 +14,23 @@ const EVALUATION_STORAGE_KEY = "aic-dres-evaluation";
 export type SubmitMode = "KIS" | "VQA" | "TRAKE";
 
 export type SubmitTarget =
-  | { kind: "single"; videoId: string; frameId: number; defaultMode: "KIS" | "VQA"; answer: string }
+  | {
+      kind: "single";
+      videoId: string;
+      frameId: number;
+      /** Original presentation time (ms) of the keyframe, for VFR videos. */
+      timeMs?: number | null;
+      defaultMode: "KIS" | "VQA";
+      answer: string;
+    }
   | { kind: "trake"; videoId: string; frameIds: number[]; eventIndex: number };
 
 interface DresSubmitPanelProps {
   target: SubmitTarget;
   /** Frame currently shown by the video player, when it is open. */
   currentFrame: number | null;
+  /** Original time (ms) currently shown by the player, for VFR videos (overrides the frame). */
+  currentTimeMs?: number | null;
   onCancel: () => void;
 }
 
@@ -35,7 +45,12 @@ export function buildSubmitBody(
   if (mode === "KIS") {
     return {
       answerSets: [
-        { answers: [{ mediaItemName: fields.videoId, start: fields.start, end: fields.end }] },
+        {
+          answers: [
+            // The final-round guide sends the times as strings: "start": "<TIME(ms)>".
+            { mediaItemName: fields.videoId, start: String(fields.start), end: String(fields.end) },
+          ],
+        },
       ],
     };
   }
@@ -80,7 +95,12 @@ function toMs(value: string): number | null {
   return value.trim() !== "" && Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
-export function DresSubmitPanel({ target, currentFrame, onCancel }: DresSubmitPanelProps) {
+export function DresSubmitPanel({
+  target,
+  currentFrame,
+  currentTimeMs = null,
+  onCancel,
+}: DresSubmitPanelProps) {
   const [mode, setMode] = useState<SubmitMode>(
     target.kind === "trake" ? "TRAKE" : target.defaultMode,
   );
@@ -118,8 +138,13 @@ export function DresSubmitPanel({ target, currentFrame, onCancel }: DresSubmitPa
   }, [evaluations, evaluationId]);
 
   const fps = sourceQuery.data?.fps;
+  const targetTimeMs = target.kind === "single" ? (target.timeMs ?? null) : null;
   const keyframeMs =
-    target.kind === "single" && fps !== undefined ? frameToMs(target.frameId, fps) : null;
+    targetTimeMs !== null
+      ? targetTimeMs
+      : target.kind === "single" && fps !== undefined
+        ? frameToMs(target.frameId, fps)
+        : null;
   const startValue = start ?? (keyframeMs === null ? "" : String(keyframeMs));
   const endValue = end ?? (keyframeMs === null ? "" : String(keyframeMs));
   const startMs = toMs(startValue);
@@ -146,6 +171,11 @@ export function DresSubmitPanel({ target, currentFrame, onCancel }: DresSubmitPa
   }
 
   const applyCurrentFrame = () => {
+    if (target.kind === "single" && currentTimeMs !== null) {
+      setStart(String(currentTimeMs));
+      setEnd(String(currentTimeMs));
+      return;
+    }
     if (currentFrame === null) return;
     if (target.kind === "trake") {
       const frames = normalizeFrameIds(frameIds).split(",");
@@ -266,25 +296,38 @@ export function DresSubmitPanel({ target, currentFrame, onCancel }: DresSubmitPa
               </label>
             )}
           </div>
-          {sourceQuery.isError && (
+          {sourceQuery.isError && targetTimeMs === null && (
             <small className="dres-panel__error">
               Không lấy được FPS của video; hãy nhập thời gian (ms) thủ công.
             </small>
           )}
-          {fps !== undefined && (
+          {targetTimeMs !== null ? (
             <small className="dres-panel__hint">
-              Frame {target.kind === "single" ? target.frameId : ""} @ {fps} fps = {keyframeMs} ms
+              Keyframe tại {targetTimeMs} ms (thời gian gốc của video)
             </small>
+          ) : (
+            fps !== undefined && (
+              <small className="dres-panel__hint">
+                Frame {target.kind === "single" ? target.frameId : ""} @ {fps} fps = {keyframeMs} ms
+              </small>
+            )
           )}
         </>
       )}
 
-      {currentFrame !== null && !locked && (
+      {target.kind === "single" && currentTimeMs !== null && !locked ? (
         <button type="button" className="dres-panel__secondary" onClick={applyCurrentFrame}>
-          {target.kind === "trake"
-            ? `Dùng frame đang xem (${currentFrame}) cho EVENT ${target.eventIndex}`
-            : `Dùng frame đang xem (${currentFrame})`}
+          {`Dùng thời điểm đang xem (${currentTimeMs} ms)`}
         </button>
+      ) : (
+        currentFrame !== null &&
+        !locked && (
+          <button type="button" className="dres-panel__secondary" onClick={applyCurrentFrame}>
+            {target.kind === "trake"
+              ? `Dùng frame đang xem (${currentFrame}) cho EVENT ${target.eventIndex}`
+              : `Dùng frame đang xem (${currentFrame})`}
+          </button>
+        )
       )}
 
       <pre className="dres-panel__preview" aria-label="Request body">

@@ -40,11 +40,30 @@ class KeyframeVectorRepository:
             logger.warning("Index not found at %s. Creating empty index.", self.index_path)
             self._index = faiss.IndexFlatIP(self.index_dim)
 
-    def search(self, query_vector: np.ndarray, top_k: int) -> list[ScoredCandidate]:
+    @property
+    def keyframe_repository(self) -> KeyframeMetadataRepository:
+        return self._keyframe_repository
+
+    def search(
+        self, query_vector: np.ndarray, top_k: int, allowed_ids: np.ndarray | None = None
+    ) -> list[ScoredCandidate]:
+        """Top-k keyframes; ``allowed_ids`` restricts the search to those FAISS ids."""
         if self._index.ntotal == 0:
             return []
 
-        search_parameters = self._get_search_parameters()
+        if allowed_ids is None:
+            search_parameters = self._get_search_parameters()
+        else:
+            self._get_search_parameters()
+            if self._excluded_id_array is not None:
+                allowed_ids = np.setdiff1d(allowed_ids, self._excluded_id_array)
+            if allowed_ids.size == 0:
+                return []
+            allowed_ids = np.ascontiguousarray(allowed_ids, dtype=np.int64)
+            # The selector must outlive the search call, so keep it in a local.
+            selector = faiss.IDSelectorBatch(allowed_ids)
+            search_parameters = faiss.SearchParameters(sel=selector)
+            top_k = min(top_k, int(allowed_ids.size))
         distances, indices = self._index.search(query_vector, top_k, params=search_parameters)
         faiss_scores = self._format_single_search_result(distances, indices)
         return self._hydrate_candidates(faiss_scores)

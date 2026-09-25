@@ -7,6 +7,7 @@ import type {
   PublicConfig,
   SearchRequest,
   SearchResponse,
+  TrafficOptions,
   VideoSourceResponse,
 } from "./types";
 
@@ -102,6 +103,10 @@ export function planKisQuery(query: string, signal?: AbortSignal): Promise<KISQu
 
 export function getObjectLabels(signal?: AbortSignal): Promise<ObjectLabelsResponse> {
   return requestJson<ObjectLabelsResponse>("/api/objects/labels", { signal });
+}
+
+export function getTrafficOptions(signal?: AbortSignal): Promise<TrafficOptions> {
+  return requestJson<TrafficOptions>("/api/traffic/options", { signal });
 }
 
 export function getDresEvaluations(signal?: AbortSignal): Promise<DresEvaluation[]> {

@@ -111,7 +111,7 @@ describe("DRES submission", () => {
     expect(submitPayloads(fetchMock)).toEqual([
       {
         evaluation_id: "ev1",
-        answerSets: [{ answers: [{ mediaItemName: "L01_V001", start: 20000, end: 21000 }] }],
+        answerSets: [{ answers: [{ mediaItemName: "L01_V001", start: "20000", end: "21000" }] }],
         allow_duplicate: false,
       },
     ]);

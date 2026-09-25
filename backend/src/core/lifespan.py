@@ -10,6 +10,7 @@ from infrastructure.embedding_service import EmbeddingService
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
 from repositories.object_repository import KeyframeObjectRepository
 from repositories.text_repository import KeyframeTextRepository
+from repositories.traffic_repository import TrafficMetadataRepository
 from repositories.vector_repository import KeyframeVectorRepository
 from services.retrieval_service import RetrievalService
 from services.search_service import SearchService
@@ -73,6 +74,15 @@ async def lifespan(app: FastAPI):
         )
         object_repository.load()
 
+        # 4c. Traffic metadata (camera / time / weather filters of the N videos)
+        traffic_repository = TrafficMetadataRepository(
+            resolved_settings.data_root, keyframe_repository
+        )
+        traffic_repository.load()
+        if traffic_repository.available:
+            # Build the per-keyframe filter arrays now instead of on the first TRAFFIC query.
+            traffic_repository.traffic_ids()
+
         # 5. Reranker
         logger.info(
             "Initializing BLIP-2 Reranker "
@@ -92,6 +102,7 @@ async def lifespan(app: FastAPI):
             embedding_service=embedding_service,
             intro_exclusion_policy=intro_exclusion_policy,
             object_repository=object_repository,
+            traffic_repository=traffic_repository,
         )
         
         # 7. Query Enhancer
@@ -111,11 +122,13 @@ async def lifespan(app: FastAPI):
             max_query_length=resolved_settings.max_query_length,
             data_root=resolved_settings.data_root,
             object_repository=object_repository,
+            traffic_repository=traffic_repository,
         )
         
         # Attach to app.state
         app.state.search_service = search_service
         app.state.object_repository = object_repository
+        app.state.traffic_repository = traffic_repository
         
         logger.info("Application startup completed successfully.")
         

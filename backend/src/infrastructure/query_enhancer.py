@@ -140,6 +140,14 @@ class GeminiQueryEnhancer:
             Describe the frame that contains the answer; do NOT answer the question.
             Visual evidence usually dominates, but use ASR when the answer is spoken.
             """
+        elif query_type == "TRAFFIC":
+            task = f"""
+            The user describes one moment seen by a fixed traffic surveillance camera in
+            Ho Chi Minh City, in Vietnamese: "{query}".
+            Street names, dates, clock times, time of day and weather are applied as metadata
+            filters, so leave them out of the visual description. Describe the vehicles, people,
+            colors, positions in the frame and actions. There is no speech: asr_query_vi is null.
+            """
         else:
             task = f"""
             The user describes one moment of a video in Vietnamese: "{query}".
