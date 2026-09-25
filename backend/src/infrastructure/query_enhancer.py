@@ -255,6 +255,68 @@ class GeminiQueryEnhancer:
             logger.warning(f"Failed to enhance batch query with Gemini: {e}")
             return None
 
+    def plan_kis(self, query: str) -> KISQueryPlan | None:
+        """Turn a raw Vietnamese KIS description into an editable multimodal plan."""
+        if not self.client:
+            logger.warning("Gemini is unavailable; cannot create a KIS query plan.")
+            return None
+
+        cache_key = " ".join(query.split())
+        cached_plan = self._kis_plan_cache.get(cache_key)
+        if cached_plan is not None:
+            logger.info("Reusing cached KIS query plan without calling Gemini.")
+            return cached_plan
+
+        prompt = f"""
+        You plan retrieval for a Vietnamese Known Item Search (KIS) video query.
+        Convert the raw query below into a small, evidence-grounded search plan.
+
+        RAW QUERY:
+        {query}
+
+        RULES:
+        - This is KIS only. Do not answer a VQA question and do not create a TRAKE request.
+        - Split only when the text describes genuinely different visible moments over time.
+        - source_span_vi must be copied from or closely preserve evidence in the raw query.
+        - visual_query_en must describe only concrete content that could be visible in one frame.
+        - Put spoken content in asr_query_vi, in Vietnamese. Do not mix the full narrative into it.
+        - Omit pure background topics, editorial framing, and non-observable facts. Use context
+          only for low-priority evidence that is still searchable in visual or ASR data.
+        - Use inferred=true for world-knowledge deductions not literally stated, and add a warning.
+        - Select at least one visually distinctive or textually distinctive event as anchor.
+        - Prefer 1-4 events. Never invent people, objects, actions, speech, text, or ordering.
+        - search_mode is single_anchor for one decisive frame, multi_anchor for unordered evidence,
+          or temporal_sequence only when ordering is explicit (for example first/then/finally).
+        - confidence is confidence that the event faithfully represents the raw query, not a
+          retrieval score.
+        """
+
+        try:
+            response = self.client.models.generate_content(
+                model=_GEMINI_MODEL,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=_GeminiKISQueryPlan,
+                    temperature=0.1,
+                    max_output_tokens=1200,
+                    automatic_function_calling=genai.types.AutomaticFunctionCallingConfig(
+                        disable=True
+                    ),
+                ),
+            )
+            if response.parsed:
+                plan = KISQueryPlan.model_validate(response.parsed.model_dump())
+                if len(self._kis_plan_cache) >= _KIS_PLAN_CACHE_SIZE:
+                    del self._kis_plan_cache[next(iter(self._kis_plan_cache))]
+                self._kis_plan_cache[cache_key] = plan
+                logger.info("Gemini planned KIS query with %d event(s).", len(plan.events))
+                return plan
+            logger.warning("Gemini did not return a valid KIS query plan.")
+        except Exception as exc:
+            logger.warning("Failed to plan KIS query with Gemini: %s", exc)
+        return None
+
     def _output_rules(self, sources: SearchSources | None) -> str:
         enabled_note = ""
         if sources is not None:
