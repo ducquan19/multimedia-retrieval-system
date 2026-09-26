@@ -165,6 +165,36 @@ describe("DRES submission", () => {
     });
   });
 
+  it("explains a QA answer rejected by the temporal filter of a KIS task", async () => {
+    setupApi([
+      jsonResponse({
+        accepted: false,
+        status_code: 412,
+        submission: null,
+        description:
+          "Submission c5d77bb8 was rejected by filter: Submission does include non-temporal information.",
+        body: {},
+      }),
+    ]);
+    const user = userEvent.setup();
+    renderModal({
+      kind: "single",
+      videoId: "L01_V001",
+      frameId: 505,
+      defaultMode: "KIS",
+      answer: "13",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("radio", { name: "VQA" }));
+    await waitFor(() => expect(screen.getByLabelText("Time (ms)")).toHaveValue(20200));
+    await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Task đang chạy là KIS: DRES chỉ nhận mediaItemName + start/end, không nhận QA.",
+    );
+  });
+
   it("submits TRAKE frame IDs and asks before resending a duplicate", async () => {
     const fetchMock = setupApi([
       jsonResponse(

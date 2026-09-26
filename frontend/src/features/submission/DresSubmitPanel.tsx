@@ -81,6 +81,14 @@ function describeAnswer(body: DresSubmitBody): string {
   return "text" in answer ? answer.text : `${answer.start}–${answer.end} ms`;
 }
 
+/** Explain DRES filter rejections that mean "wrong answer type for the current task". */
+export function rejectionHint(message: string | null | undefined, mode: SubmitMode): string | null {
+  // DRES's temporal filter on KIS tasks rejects text (QA / TRAKE) answers with this message.
+  if (!message || mode === "KIS" || !/non-temporal/i.test(message)) return null;
+  const sent = mode === "VQA" ? "QA" : "TRAKE";
+  return `Task đang chạy là KIS: DRES chỉ nhận mediaItemName + start/end, không nhận ${sent}. Chọn KIS rồi nộp lại.`;
+}
+
 function readStoredEvaluation(): string | null {
   try {
     return window.localStorage.getItem(EVALUATION_STORAGE_KEY);
@@ -410,6 +418,11 @@ export function DresSubmitPanel({
               (submitMutation.data.accepted ? "Đã nộp" : "Nộp thất bại")}
           </strong>
           {submitMutation.data.description && <span>{submitMutation.data.description}</span>}
+          {!submitMutation.data.accepted && rejectionHint(submitMutation.data.description, mode) && (
+            <em className="dres-panel__hint-strong">
+              {rejectionHint(submitMutation.data.description, mode)}
+            </em>
+          )}
         </p>
       )}
       {submitMutation.isError && (
@@ -420,6 +433,12 @@ export function DresSubmitPanel({
               ? submitMutation.error.message
               : "Không thể kết nối tới backend."}
           </span>
+          {submitMutation.error instanceof ApiError &&
+            rejectionHint(submitMutation.error.message, mode) && (
+              <em className="dres-panel__hint-strong">
+                {rejectionHint(submitMutation.error.message, mode)}
+              </em>
+            )}
         </p>
       )}
 

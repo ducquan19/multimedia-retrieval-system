@@ -3599,3 +3599,11 @@ small.dres-panel__error {
   color: var(--dark-accent-text);
   background: var(--dark-surface-raised);
 }
+
+.dres-panel__hint-strong {
+  margin-top: 0.2rem;
+  padding-top: 0.3rem;
+  border-top: 1px dashed currentcolor;
+  font-style: normal;
+  font-weight: 700;
+}
