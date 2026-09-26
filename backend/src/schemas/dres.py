@@ -49,7 +49,6 @@ class DresSubmitRequest(BaseModel):
 
     evaluation_id: EvaluationId
     answer_sets: tuple[DresAnswerSet, ...] = Field(alias="answerSets", min_length=1)
-    allow_duplicate: bool = False
 
     def dres_body(self) -> dict[str, Any]:
         return self.model_dump(by_alias=True, exclude_none=True, include={"answer_sets"})

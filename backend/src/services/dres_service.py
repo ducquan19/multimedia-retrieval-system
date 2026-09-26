@@ -15,7 +15,7 @@ class DuplicateSubmission(ValueError):
 
 
 class DresSubmissionService:
-    """Submits answers to DRES and refuses to resend an identical answer set.
+    """Submits answers to DRES and never resends an identical answer set (no override).
 
     Every answer DRES received is appended to a JSONL log, which also restores the
     duplicate guard after a backend restart.
@@ -26,6 +26,7 @@ class DresSubmissionService:
         self._log_path = log_path
         self._lock = threading.Lock()
         self._submitted = self._load_submitted()
+        self._in_flight: set[str] = set()
 
     @property
     def configured(self) -> bool:
@@ -38,21 +39,27 @@ class DresSubmissionService:
         body = request.dres_body()
         key = self._key(request.evaluation_id, body)
         with self._lock:
-            if key in self._submitted and not request.allow_duplicate:
+            # In flight counts too, so two clicks (or two machines) cannot both send it.
+            if key in self._submitted or key in self._in_flight:
                 raise DuplicateSubmission(
-                    "This exact answer was already submitted to this evaluation."
+                    "Đáp án này đã được nộp cho evaluation này, không thể nộp lại."
                 )
+            self._in_flight.add(key)
 
-        status_code, payload = self._client.submit(request.evaluation_id, body)
+        try:
+            status_code, payload = self._client.submit(request.evaluation_id, body)
+            # A 4xx/5xx without a DRES verdict may not have been recorded by DRES, so only
+            # answers DRES actually judged count as submitted.
+            if 200 <= status_code < 300:
+                with self._lock:
+                    self._submitted.add(key)
+                self._append_log(request.evaluation_id, body, status_code, payload)
+        finally:
+            with self._lock:
+                self._in_flight.discard(key)
+
         payload_dict = payload if isinstance(payload, dict) else {}
         accepted = 200 <= status_code < 300 and payload_dict.get("status", True) is not False
-
-        # A 4xx/5xx without a DRES verdict may not have been recorded by DRES, so only
-        # answers DRES actually judged count as submitted.
-        if 200 <= status_code < 300:
-            with self._lock:
-                self._submitted.add(key)
-            self._append_log(request.evaluation_id, body, status_code, payload)
 
         return DresSubmitResponse(
             accepted=accepted,

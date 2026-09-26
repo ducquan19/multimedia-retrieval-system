@@ -17,7 +17,8 @@ from services.dres_service import DresSubmissionService
 class FakeDres:
     """Minimal DRES v2 double that expires the first session after one use."""
 
-    def __init__(self) -> None:
+    def __init__(self, status_code: int = 200) -> None:
+        self.status_code = status_code
         self.logins = 0
         self.submissions: list[tuple[str, str, dict]] = []
         self.expire_next = False
@@ -48,6 +49,11 @@ class FakeDres:
         if path.startswith("/api/v2/submit/"):
             body = json.loads(request.content)
             self.submissions.append((path.rsplit("/", 1)[1], session, body))
+            if self.status_code != 200:
+                # e.g. a task filter rejecting the answer type before judging it.
+                return httpx.Response(
+                    self.status_code, json={"status": False, "description": "rejected by filter"}
+                )
             return httpx.Response(
                 200, json={"status": True, "submission": "CORRECT", "description": "ok"}
             )
@@ -136,9 +142,38 @@ def test_duplicate_answers_are_blocked_even_after_restart(tmp_path: Path) -> Non
 
     restarted = _api(_service(tmp_path, fake))
     assert restarted.post("/api/dres/submit", json=qa).status_code == 409
+    # There is no override any more: the old escape hatch is rejected outright.
     assert (
-        restarted.post("/api/dres/submit", json={**qa, "allow_duplicate": True}).status_code == 200
+        restarted.post("/api/dres/submit", json={**qa, "allow_duplicate": True}).status_code == 422
     )
+    assert len(fake.submissions) == 1
+
+
+def test_a_wrong_answer_is_blocked_but_a_corrected_one_goes_through(tmp_path: Path) -> None:
+    fake = FakeDres()
+    api = _api(_service(tmp_path, fake))
+    kis = {
+        "evaluation_id": "ev1",
+        "answerSets": [{"answers": [{"mediaItemName": "L21_V001", "start": "1000", "end": "1000"}]}],
+    }
+    assert api.post("/api/dres/submit", json=kis).status_code == 200
+    assert api.post("/api/dres/submit", json=kis).status_code == 409
+
+    fixed = {
+        **kis,
+        "answerSets": [{"answers": [{"mediaItemName": "L21_V001", "start": "1000", "end": "1400"}]}],
+    }
+    assert api.post("/api/dres/submit", json=fixed).status_code == 200
+    assert len(fake.submissions) == 2
+
+
+def test_an_answer_rejected_without_a_verdict_can_be_sent_again(tmp_path: Path) -> None:
+    fake = FakeDres(status_code=412)
+    api = _api(_service(tmp_path, fake))
+    qa = {"evaluation_id": "ev1", "answerSets": [{"answers": [{"text": "QA-3-L21_V001-12000"}]}]}
+
+    assert api.post("/api/dres/submit", json=qa).status_code == 200
+    assert api.post("/api/dres/submit", json=qa).status_code == 200
     assert len(fake.submissions) == 2
 
 
