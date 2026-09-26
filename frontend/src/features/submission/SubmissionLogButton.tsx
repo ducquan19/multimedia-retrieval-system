@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { clearSubmissionLog, formatClock, useSubmissionLog } from "./submissionLog";
+import { clearSubmissionLog, entryTone, formatClock, useSubmissionLog } from "./submissionLog";
 
 export function SubmissionLogButton() {
   const entries = useSubmissionLog();
@@ -53,7 +53,7 @@ export function SubmissionLogButton() {
           ) : (
             <ol>
               {entries.map((entry) => (
-                <li key={`${entry.at}-${entry.videoId}`} data-ok={entry.ok}>
+                <li key={`${entry.at}-${entry.videoId}`} data-tone={entryTone(entry)}>
                   <span className="submission-log__time">{formatClock(entry.at)}</span>
                   <span className="submission-log__mode">{entry.mode}</span>
                   <span className="submission-log__answer" title={entry.answer}>

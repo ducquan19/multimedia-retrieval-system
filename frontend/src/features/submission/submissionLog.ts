@@ -15,7 +15,18 @@ export interface SubmissionLogEntry {
   answer: string;
   /** DRES verdict (e.g. CORRECT / WRONG), or a short error. */
   verdict: string;
+  /** True only for a CORRECT verdict. */
   ok: boolean;
+  /** Absent on entries logged before tones existed; derive it from `ok`. */
+  tone?: SubmissionTone;
+  /** DRES answered with 2xx, so the backend will refuse this exact answer again. */
+  judged?: boolean;
+}
+
+export type SubmissionTone = "ok" | "fail" | "pending";
+
+export function entryTone(entry: SubmissionLogEntry): SubmissionTone {
+  return entry.tone ?? (entry.ok ? "ok" : "fail");
 }
 
 let cachedRaw: string | null = null;

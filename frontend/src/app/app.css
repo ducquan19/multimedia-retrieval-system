@@ -3429,10 +3429,6 @@ small.dres-panel__error {
   font-variant-numeric: tabular-nums;
 }
 
-.submission-log__panel li[data-ok="true"] {
-  border-left-color: #2f7d4d;
-}
-
 .submission-log__mode {
   font-weight: 800;
 }
@@ -3493,10 +3489,6 @@ small.dres-panel__error {
 
 :root[data-theme="dark"] .submission-log__panel li {
   background: var(--dark-surface-raised);
-}
-
-:root[data-theme="dark"] .submission-log__panel li[data-ok="true"] {
-  border-left-color: var(--dark-accent);
 }
 
 :root[data-theme="dark"] .submission-log__panel header button {
@@ -3606,4 +3598,44 @@ small.dres-panel__error {
   border-top: 1px dashed currentcolor;
   font-style: normal;
   font-weight: 700;
+}
+
+/* Free video viewing with the DRES panel open */
+.video-player-modal--submitting {
+  width: min(100%, 80rem);
+}
+
+.video-player-modal.video-player-modal--submitting .detail-modal__body {
+  grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 0.65fr);
+}
+
+/* Submission verdict still waiting for a judge (INDETERMINATE / no verdict) */
+.dres-panel__result--pending {
+  color: #5a3d00;
+  background: #fff4d6;
+  border: 1px solid #f1b84b;
+}
+
+:root[data-theme="dark"] .dres-panel__result--pending {
+  color: #ffd989;
+  background: #2e2612;
+  border-color: #6b5420;
+}
+
+.submission-log__panel li[data-tone="ok"] {
+  border-left-color: #2f7d4d;
+}
+
+.submission-log__panel li[data-tone="pending"] {
+  border-left-color: #f1b84b;
+}
+
+:root[data-theme="dark"] .submission-log__panel li[data-tone="ok"] {
+  border-left-color: var(--dark-accent);
+}
+
+@media (max-width: 800px) {
+  .video-player-modal.video-player-modal--submitting .detail-modal__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

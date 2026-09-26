@@ -218,7 +218,6 @@ export interface DresSubmitBody {
 
 export interface DresSubmitRequest extends DresSubmitBody {
   evaluation_id: string;
-  allow_duplicate?: boolean;
 }
 
 export interface DresSubmitResponse {

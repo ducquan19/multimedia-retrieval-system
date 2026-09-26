@@ -112,7 +112,6 @@ describe("DRES submission", () => {
       {
         evaluation_id: "ev1",
         answerSets: [{ answers: [{ mediaItemName: "L01_V001", start: "20000", end: "21000" }] }],
-        allow_duplicate: false,
       },
     ]);
   });
@@ -135,11 +134,71 @@ describe("DRES submission", () => {
     expect(await screen.findByText("CORRECT")).toBeInTheDocument();
     unmount();
 
+    // Reopened on the same frame: that exact answer is blocked before any request.
     renderModal(target);
     await user.click(screen.getByRole("button", { name: "Submit DRES" }));
-    expect(await screen.findByRole("note")).toHaveTextContent(
+    await waitFor(() => expect(screen.getByLabelText("Start (ms)")).toHaveValue(20200));
+    expect(screen.getByRole("note")).toHaveTextContent(
+      /Đáp án này đã nộp lúc .*\(CORRECT\).*không thể nộp lại/,
+    );
+    expect(screen.getByRole("button", { name: "Xác nhận nộp" })).toBeDisabled();
+
+    // Another time in the same video is allowed, with a reminder of the earlier answer.
+    await user.clear(screen.getByLabelText("End (ms)"));
+    await user.type(screen.getByLabelText("End (ms)"), "21000");
+    expect(screen.getByRole("note")).toHaveTextContent(
       /Đã nộp L01_V001 1 lần .*CORRECT.*20200–20200 ms/,
     );
+    expect(screen.getByRole("button", { name: "Xác nhận nộp" })).toBeEnabled();
+  });
+
+  it("keeps the fields editable after a WRONG answer and resubmits without closing", async () => {
+    const wrong = {
+      accepted: true,
+      status_code: 200,
+      submission: "WRONG",
+      description: "Submission incorrect",
+      body: {},
+    };
+    const fetchMock = setupApi([jsonResponse(wrong)]);
+    const user = userEvent.setup();
+    renderModal({
+      kind: "single",
+      videoId: "L01_V001",
+      frameId: 505,
+      defaultMode: "KIS",
+      answer: "",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    const start = await screen.findByLabelText("Start (ms)");
+    await waitFor(() => expect(start).toHaveValue(20200));
+    await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
+
+    const result = await screen.findByRole("status");
+    expect(result).toHaveTextContent("WRONG");
+    expect(result).toHaveClass("dres-panel__result--fail");
+    expect(start).toBeEnabled();
+    // The WRONG answer itself cannot be sent again, only an edited one.
+    expect(screen.getByRole("button", { name: "Nộp lại" })).toBeDisabled();
+    expect(screen.getByRole("note")).toHaveTextContent("không thể nộp lại");
+
+    await user.clear(start);
+    await user.type(start, "19000");
+    await user.clear(screen.getByLabelText("End (ms)"));
+    await user.type(screen.getByLabelText("End (ms)"), "22000");
+    expect(screen.getByRole("status")).toHaveTextContent("Lần nộp trước: WRONG");
+    await user.click(screen.getByRole("button", { name: "Nộp lại" }));
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("CORRECT"));
+    expect(screen.getByRole("status")).toHaveClass("dres-panel__result--ok");
+    expect(submitPayloads(fetchMock).map((payload) => payload.answerSets)).toEqual([
+      [{ answers: [{ mediaItemName: "L01_V001", start: "20200", end: "20200" }] }],
+      [{ answers: [{ mediaItemName: "L01_V001", start: "19000", end: "22000" }] }],
+    ]);
+    // A CORRECT verdict ends the submission: nothing left to resend.
+    expect(screen.getByLabelText("Start (ms)")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Nộp lại" })).not.toBeInTheDocument();
   });
 
   it("offers a VQA submission from a KIS result with the typed answer", async () => {
@@ -195,10 +254,10 @@ describe("DRES submission", () => {
     );
   });
 
-  it("submits TRAKE frame IDs and asks before resending a duplicate", async () => {
+  it("never resends an answer the backend reports as already submitted", async () => {
     const fetchMock = setupApi([
       jsonResponse(
-        { detail: "This exact answer was already submitted to this evaluation." },
+        { detail: "Đáp án này đã được nộp cho evaluation này, không thể nộp lại." },
         409,
       ),
     ]);
@@ -214,20 +273,18 @@ describe("DRES submission", () => {
     await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
 
     expect(await screen.findByText("Đã nộp đáp án này")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Vẫn nộp lại" }));
+    expect(screen.queryByRole("button", { name: "Vẫn nộp lại" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Nộp lại" })).toBeDisabled();
+
+    // A different answer is a new submission and goes through.
+    await user.clear(screen.getByLabelText("Frame IDs"));
+    await user.type(screen.getByLabelText("Frame IDs"), "10,25,30");
+    await user.click(screen.getByRole("button", { name: "Nộp lại" }));
     await screen.findByText("CORRECT");
 
     expect(submitPayloads(fetchMock)).toEqual([
-      {
-        evaluation_id: "ev1",
-        answerSets: [{ answers: [{ text: "TR-L01_V001-10,20,30" }] }],
-        allow_duplicate: false,
-      },
-      {
-        evaluation_id: "ev1",
-        answerSets: [{ answers: [{ text: "TR-L01_V001-10,20,30" }] }],
-        allow_duplicate: true,
-      },
+      { evaluation_id: "ev1", answerSets: [{ answers: [{ text: "TR-L01_V001-10,20,30" }] }] },
+      { evaluation_id: "ev1", answerSets: [{ answers: [{ text: "TR-L01_V001-10,25,30" }] }] },
     ]);
   });
 });

@@ -8,7 +8,12 @@ import {
   submitToDres,
 } from "../../api/client";
 import type { DresSubmitBody, DresSubmitResponse } from "../../api/types";
-import { appendSubmissionLog, formatClock, useSubmissionLog } from "./submissionLog";
+import {
+  appendSubmissionLog,
+  formatClock,
+  type SubmissionTone,
+  useSubmissionLog,
+} from "./submissionLog";
 
 const EVALUATION_STORAGE_KEY = "aic-dres-evaluation";
 
@@ -23,6 +28,8 @@ export type SubmitTarget =
       timeMs?: number | null;
       defaultMode: "KIS" | "VQA";
       answer: string;
+      /** Also offer TRAKE, collecting frames from the player (free video viewing). */
+      allowTrake?: boolean;
     }
   | { kind: "trake"; videoId: string; frameIds: number[]; eventIndex: number };
 
@@ -33,6 +40,13 @@ interface DresSubmitPanelProps {
   /** Original time (ms) currently shown by the player, for VFR videos (overrides the frame). */
   currentTimeMs?: number | null;
   onCancel: () => void;
+}
+
+const MODES = ["KIS", "VQA"] as const;
+const MODES_WITH_TRAKE = ["KIS", "VQA", "TRAKE"] as const;
+
+function verdictLabel(response: DresSubmitResponse): string {
+  return response.submission ?? (response.accepted ? "Đã nộp, chờ chấm" : "Nộp thất bại");
 }
 
 export function frameToMs(frame: number, fps: number): number {
@@ -89,6 +103,18 @@ export function rejectionHint(message: string | null | undefined, mode: SubmitMo
   return `Task đang chạy là KIS: DRES chỉ nhận mediaItemName + start/end, không nhận ${sent}. Chọn KIS rồi nộp lại.`;
 }
 
+/**
+ * Colour of a DRES reply: green only for a CORRECT verdict, red for WRONG or a
+ * rejection, amber while DRES has not judged it (INDETERMINATE / no verdict).
+ */
+export function submissionTone(response: DresSubmitResponse): SubmissionTone {
+  if (!response.accepted) return "fail";
+  const text = `${response.submission ?? ""} ${response.description ?? ""}`;
+  if (/\b(WRONG|INCORRECT)\b/i.test(text)) return "fail";
+  if (/\bCORRECT\b/i.test(text)) return "ok";
+  return "pending";
+}
+
 function readStoredEvaluation(): string | null {
   try {
     return window.localStorage.getItem(EVALUATION_STORAGE_KEY);
@@ -122,9 +148,15 @@ export function DresSubmitPanel({
   const [evaluationId, setEvaluationId] = useState<string>(readStoredEvaluation() ?? "");
   const [start, setStart] = useState<string | null>(null);
   const [end, setEnd] = useState<string | null>(null);
+  /** Serialized body of the last answer sent, to tell it apart from later edits. */
+  const [submittedBody, setSubmittedBody] = useState<string | null>(null);
   const [answer, setAnswer] = useState(target.kind === "single" ? target.answer : "");
   const [frameIds, setFrameIds] = useState(
-    target.kind === "trake" ? target.frameIds.join(",") : "",
+    target.kind === "trake"
+      ? target.frameIds.join(",")
+      : target.allowTrake
+        ? String(target.frameId)
+        : "",
   );
 
   const evaluationsQuery = useQuery({
@@ -140,18 +172,19 @@ export function DresSubmitPanel({
     enabled: target.kind === "single",
     staleTime: Infinity,
   });
-  const submitMutation = useMutation<DresSubmitResponse, unknown, boolean>({
-    mutationFn: (allowDuplicate) =>
-      submitToDres({ evaluation_id: evaluationId, ...body, allow_duplicate: allowDuplicate }),
+  const submitMutation = useMutation<DresSubmitResponse, unknown, void>({
+    mutationFn: () => submitToDres({ evaluation_id: evaluationId, ...body }),
     onSuccess: (response) =>
       logSubmission(
-        response.submission ?? (response.accepted ? "Đã nộp" : "Nộp thất bại"),
-        response.accepted,
+        verdictLabel(response),
+        submissionTone(response),
+        // Mirrors the backend: only answers DRES answered with 2xx count as submitted.
+        response.status_code >= 200 && response.status_code < 300,
       ),
     onError: (error) => {
       // A 409 is the backend's duplicate guard: nothing reached DRES.
       if (error instanceof ApiError && error.status === 409) return;
-      logSubmission(error instanceof ApiError ? error.message : "Lỗi kết nối", false);
+      logSubmission(error instanceof ApiError ? error.message : "Lỗi kết nối", "fail", false);
     },
   });
 
@@ -165,6 +198,7 @@ export function DresSubmitPanel({
     setStart(null);
     setEnd(null);
     if (target.kind === "trake") setFrameIds(target.frameIds.join(","));
+    setSubmittedBody(null);
     resetSubmission();
   }, [targetKey, resetSubmission]);
 
@@ -215,6 +249,14 @@ export function DresSubmitPanel({
   }
 
   const applyCurrentFrame = () => {
+    if (mode === "TRAKE" && target.kind === "single") {
+      if (currentFrame === null) return;
+      // Free viewing builds the TRAKE list frame by frame, in viewing order.
+      const frames = normalizeFrameIds(frameIds).split(",").filter(Boolean);
+      if (frames.at(-1) !== String(currentFrame)) frames.push(String(currentFrame));
+      setFrameIds(frames.join(","));
+      return;
+    }
     if (target.kind === "single" && currentTimeMs !== null) {
       setStart(String(currentTimeMs));
       setEnd(String(currentTimeMs));
@@ -232,7 +274,7 @@ export function DresSubmitPanel({
     }
   };
 
-  function logSubmission(verdict: string, ok: boolean) {
+  function logSubmission(verdict: string, tone: SubmissionTone, judged: boolean) {
     appendSubmissionLog({
       at: Date.now(),
       evaluationId,
@@ -240,13 +282,39 @@ export function DresSubmitPanel({
       videoId: target.videoId,
       answer: describeAnswer(body),
       verdict,
-      ok,
+      ok: tone === "ok",
+      tone,
+      judged,
     });
   }
 
+  const bodyKey = JSON.stringify(body);
+  // The 409 only concerns the answer that was sent, not one edited afterwards.
   const duplicateError =
-    submitMutation.error instanceof ApiError && submitMutation.error.status === 409;
-  const locked = submitMutation.isPending || submitMutation.data !== undefined;
+    submitMutation.error instanceof ApiError &&
+    submitMutation.error.status === 409 &&
+    submittedBody === bodyKey;
+  // Same answer already judged from this browser: block it before the backend has to.
+  const answerText = describeAnswer(body);
+  const previouslySent = submissionLog.find(
+    (entry) =>
+      entry.judged === true &&
+      entry.evaluationId === evaluationId &&
+      entry.videoId === target.videoId &&
+      entry.mode === mode &&
+      entry.answer === answerText,
+  );
+  const alreadySubmitted = duplicateError || previouslySent !== undefined;
+  // After a WRONG / rejected answer the fields stay editable so a fix can go out at once;
+  // only a CORRECT verdict closes the panel for further submissions.
+  const isCorrect =
+    submitMutation.data !== undefined && submissionTone(submitMutation.data) === "ok";
+  const locked = submitMutation.isPending || isCorrect;
+  const editedSinceSubmit = submittedBody !== null && submittedBody !== bodyKey;
+  const submit = () => {
+    setSubmittedBody(bodyKey);
+    submitMutation.mutate();
+  };
 
   return (
     <section className="dres-panel" aria-label="Submit to DRES">
@@ -254,7 +322,7 @@ export function DresSubmitPanel({
         <h3>Submit to DRES</h3>
         {target.kind === "single" && (
           <div className="dres-panel__modes" role="radiogroup" aria-label="Submission type">
-            {(["KIS", "VQA"] as const).map((option) => (
+            {(target.allowTrake ? MODES_WITH_TRAKE : MODES).map((option) => (
               <label key={option}>
                 <input
                   type="radio"
@@ -301,7 +369,7 @@ export function DresSubmitPanel({
 
       {mode === "TRAKE" ? (
         <label className="dres-panel__field">
-          <span>Frame IDs</span>
+          <span>Frame IDs (theo thứ tự EVENT)</span>
           <input
             type="text"
             aria-label="Frame IDs"
@@ -371,7 +439,14 @@ export function DresSubmitPanel({
         </>
       )}
 
-      {target.kind === "single" && currentTimeMs !== null && !locked ? (
+      {mode === "TRAKE" && target.kind === "single" ? (
+        currentFrame !== null &&
+        !locked && (
+          <button type="button" className="dres-panel__secondary" onClick={applyCurrentFrame}>
+            {`Thêm frame đang xem (${currentFrame}) vào TRAKE`}
+          </button>
+        )
+      ) : target.kind === "single" && currentTimeMs !== null && !locked ? (
         <button type="button" className="dres-panel__secondary" onClick={applyCurrentFrame}>
           {`Dùng thời điểm đang xem (${currentTimeMs} ms)`}
         </button>
@@ -386,7 +461,11 @@ export function DresSubmitPanel({
         )
       )}
 
-      {lastForVideo && !locked && (
+      {lastForVideo &&
+        !previouslySent &&
+        !locked &&
+        !submitMutation.data &&
+        !submitMutation.isError && (
         <p className="dres-panel__history" role="note">
           Đã nộp {target.videoId} {previousForVideo.length} lần trong evaluation này — lần cuối{" "}
           {formatClock(lastForVideo.at)}: <strong>{lastForVideo.verdict}</strong> (
@@ -406,16 +485,23 @@ export function DresSubmitPanel({
         </ul>
       )}
 
+      {previouslySent && !locked && (
+        <p className="dres-panel__error" role="note">
+          Đáp án này đã nộp lúc {formatClock(previouslySent.at)} ({previouslySent.verdict}),
+          không thể nộp lại. Hãy sửa đáp án.
+        </p>
+      )}
+
       {submitMutation.data && (
         <p
-          className={`dres-panel__result dres-panel__result--${
-            submitMutation.data.accepted ? "ok" : "fail"
-          }`}
+          className={`dres-panel__result dres-panel__result--${submissionTone(
+            submitMutation.data,
+          )}`}
           role="status"
         >
           <strong>
-            {submitMutation.data.submission ??
-              (submitMutation.data.accepted ? "Đã nộp" : "Nộp thất bại")}
+            {editedSinceSubmit && "Lần nộp trước: "}
+            {verdictLabel(submitMutation.data)}
           </strong>
           {submitMutation.data.description && <span>{submitMutation.data.description}</span>}
           {!submitMutation.data.accepted && rejectionHint(submitMutation.data.description, mode) && (
@@ -446,25 +532,20 @@ export function DresSubmitPanel({
         <button type="button" className="dres-panel__secondary" onClick={onCancel}>
           {submitMutation.data ? "Đóng" : "Hủy"}
         </button>
-        {!submitMutation.data &&
-          (duplicateError ? (
-            <button
-              type="button"
-              className="dres-panel__confirm dres-panel__confirm--danger"
-              onClick={() => submitMutation.mutate(true)}
-            >
-              Vẫn nộp lại
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="dres-panel__confirm"
-              disabled={errors.length > 0 || submitMutation.isPending}
-              onClick={() => submitMutation.mutate(false)}
-            >
-              {submitMutation.isPending ? "Đang nộp…" : "Xác nhận nộp"}
-            </button>
-          ))}
+        {!isCorrect && (
+          <button
+            type="button"
+            className="dres-panel__confirm"
+            disabled={errors.length > 0 || alreadySubmitted || submitMutation.isPending}
+            onClick={submit}
+          >
+            {submitMutation.isPending
+              ? "Đang nộp…"
+              : submittedBody !== null
+                ? "Nộp lại"
+                : "Xác nhận nộp"}
+          </button>
+        )}
       </footer>
     </section>
   );

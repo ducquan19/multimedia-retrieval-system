@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 
 import { getVideoSource, resolveMediaUrl } from "../../api/client";
 import type { VideoSourceResponse } from "../../api/types";
+import { DresSubmitPanel } from "../submission/DresSubmitPanel";
 import { useModalAccessibility } from "./useModalAccessibility";
 
 export function VideoLookup() {
@@ -112,6 +113,13 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
   const [videoStatus, setVideoStatus] = useState<"loading" | "ready" | "error">("loading");
   const [frameInput, setFrameInput] = useState(String(initialFrameId));
   const [frameCopyStatus, setFrameCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  // Frame the submission starts from: the one on screen when "Submit DRES" was opened.
+  const [submitFrame, setSubmitFrame] = useState<number | null>(null);
+  const parsedFrameInput = Number(frameInput);
+  const currentFrame =
+    videoSource && frameInput.trim() !== "" && Number.isInteger(parsedFrameInput)
+      ? parsedFrameInput
+      : null;
 
   useModalAccessibility({ dialogRef, initialFocusRef: closeButtonRef, onClose });
 
@@ -188,7 +196,9 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
     <div className="modal-backdrop" onMouseDown={closeOnBackdrop}>
       <section
         ref={dialogRef}
-        className="detail-modal video-player-modal"
+        className={`detail-modal video-player-modal${
+          submitFrame !== null ? " video-player-modal--submitting" : ""
+        }`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="video-player-modal-title"
@@ -196,15 +206,28 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
       >
         <header className="detail-modal__header">
           <h2 id="video-player-modal-title">{videoId}</h2>
-          <button
-            ref={closeButtonRef}
-            className="modal-close"
-            type="button"
-            onClick={onClose}
-            aria-label="Close video player"
-          >
-            ×
-          </button>
+          <div className="detail-modal__header-actions">
+            <button
+              type="button"
+              className="detail-keyframe-action detail-submit-action"
+              aria-expanded={submitFrame !== null}
+              disabled={!videoSource}
+              onClick={() =>
+                setSubmitFrame((open) => (open === null ? (currentFrame ?? initialFrameId) : null))
+              }
+            >
+              Submit DRES
+            </button>
+            <button
+              ref={closeButtonRef}
+              className="modal-close"
+              type="button"
+              onClick={onClose}
+              aria-label="Close video player"
+            >
+              ×
+            </button>
+          </div>
         </header>
 
         <div className="detail-modal__body">
@@ -282,6 +305,23 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
               </button>
             </div>
           </div>
+
+          {submitFrame !== null && (
+            <div className="detail-modal__content">
+              <DresSubmitPanel
+                target={{
+                  kind: "single",
+                  videoId,
+                  frameId: submitFrame,
+                  defaultMode: "KIS",
+                  answer: "",
+                  allowTrake: true,
+                }}
+                currentFrame={currentFrame}
+                onCancel={() => setSubmitFrame(null)}
+              />
+            </div>
+          )}
         </div>
       </section>
     </div>,
