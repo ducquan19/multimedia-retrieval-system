@@ -68,6 +68,17 @@ class VideoSourceService:
                 fps=float(fps),
                 time_offset_ms=offset,
             )
+        # Organizers' original .mov files (N001-N010) keep their pts, so the browser's
+        # currentTime is already the original time; time_offset_ms only applies to the
+        # remuxed .mp4 copies that start at 0.
+        if (self._data_root / "videos" / f"{video_id}.mov").is_file():
+            return ResolvedVideoSource(
+                video_id=video_id,
+                url=f"/media/videos/{video_id}.mov",
+                source="local",
+                fps=float(fps),
+                time_offset_ms=0,
+            )
 
         remote_url = entry.get("remote_url")
         if isinstance(remote_url, str) and self._is_http_url(remote_url):
