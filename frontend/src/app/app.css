@@ -169,6 +169,17 @@ textarea {
   line-height: 1.5;
 }
 
+/* Grows with its text (AutoGrowTextarea); past max-height it scrolls instead. */
+textarea.auto-grow {
+  resize: none;
+  overflow-y: hidden;
+  max-height: 14rem;
+}
+
+textarea.auto-grow.field__query {
+  max-height: 22rem;
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--ink-muted);

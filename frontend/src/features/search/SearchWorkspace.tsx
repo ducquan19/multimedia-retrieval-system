@@ -34,6 +34,7 @@ import { buildSearchRequest, queryLengthError } from "./searchPayload";
 import { parseTrakeEvents } from "./trakeEventParser";
 import { useResizableSidebar } from "./useResizableSidebar";
 import { useThemePreference } from "./useThemePreference";
+import { AutoGrowTextarea } from "../../shared/AutoGrowTextarea";
 
 const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
   { key: "image", label: "Ảnh" },
@@ -378,7 +379,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
               <>
                 <label className="field" htmlFor="kis-query">
                   <span className="field__label">Truy vấn KIS</span>
-                  <textarea
+                  <AutoGrowTextarea
                     id="kis-query"
                     className="field__query"
                     value={kisQuery}
@@ -387,7 +388,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
                     onKeyDown={submitQueryOnEnter}
                     aria-keyshortcuts="Enter Shift+Enter"
                     placeholder="Mô tả khoảnh khắc cần tìm, ví dụ: người đàn ông áo đỏ phát biểu trước micro"
-                    rows={5}
+                    rows={3}
                   />
                 </label>
 
@@ -475,7 +476,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
                             <p className="plan-event__source">{planEvent.source_span_vi}</p>
                             <label className="field">
                               <span className="field__label">Hình ảnh (tiếng Anh)</span>
-                              <textarea
+                              <AutoGrowTextarea
                                 aria-label={`Truy vấn hình ảnh EVENT ${planEvent.event_index}`}
                                 value={planEvent.visual_query_en ?? ""}
                                 onChange={(event) =>
@@ -488,7 +489,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
                             </label>
                             <label className="field">
                               <span className="field__label">Lời thoại ASR (tiếng Việt)</span>
-                              <textarea
+                              <AutoGrowTextarea
                                 aria-label={`Truy vấn ASR EVENT ${planEvent.event_index}`}
                                 value={planEvent.asr_query_vi ?? ""}
                                 onChange={(event) =>
@@ -540,7 +541,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
               <>
                 <label className="field" htmlFor="traffic-query">
                   <span className="field__label">Truy vấn TRAFFIC</span>
-                  <textarea
+                  <AutoGrowTextarea
                     id="traffic-query"
                     className="field__query"
                     value={trafficQuery}
@@ -549,7 +550,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
                     onKeyDown={submitQueryOnEnter}
                     aria-keyshortcuts="Enter Shift+Enter"
                     placeholder="Mô tả xe, người, màu sắc, vị trí. Tên đường, giờ và thời tiết chọn ở bộ lọc bên dưới."
-                    rows={4}
+                    rows={3}
                   />
                 </label>
                 <TrafficFilterPanel filters={trafficFilters} onChange={setTrafficFilters} />
@@ -560,7 +561,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
               <>
                 <label className="field" htmlFor="trake-main-query">
                   <span className="field__label">Truy vấn chính</span>
-                  <textarea
+                  <AutoGrowTextarea
                     id="trake-main-query"
                     value={trakeMainQuery}
                     maxLength={config.max_query_length}
@@ -597,7 +598,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
                         <span className="sequence-mark" aria-hidden="true">
                           E{index + 1}
                         </span>
-                        <textarea
+                        <AutoGrowTextarea
                           id={`event-${index + 1}`}
                           aria-label={`EVENT ${index + 1}`}
                           value={query}
@@ -607,7 +608,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
                           onPaste={pasteTrakeEvents}
                           aria-keyshortcuts="Enter Shift+Enter"
                           placeholder={`Sự kiện ${index + 1}`}
-                          rows={2}
+                          rows={1}
                         />
                       </label>
                     </li>

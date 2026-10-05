@@ -8,6 +8,7 @@ import type {
   VQASearchResponse,
 } from "../../api/types";
 import { ResultDetailModal, formatMs, formatScore } from "./ResultDetailModal";
+import { AutoGrowTextarea } from "../../shared/AutoGrowTextarea";
 import { ResultImage } from "./ResultImage";
 
 interface SingleResultInspectorProps {
@@ -78,7 +79,7 @@ export function SingleResultInspector({
       {response.query_type === "VQA" && (
         <label className="field vqa-answer" htmlFor="global-vqa-answer">
           <span className="field__label">Câu trả lời VQA</span>
-          <textarea
+          <AutoGrowTextarea
             id="global-vqa-answer"
             value={globalVQAAnswer}
             maxLength={maxAnswerLength}
