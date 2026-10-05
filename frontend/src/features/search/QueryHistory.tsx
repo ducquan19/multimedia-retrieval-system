@@ -1,14 +1,15 @@
 import { useState } from "react";
 
-import type { QueryType } from "../../api/types";
+import type { QueryType, SearchRequest } from "../../api/types";
 
 const STORAGE_KEY = "aic-query-history";
 const MAX_PER_TYPE = 30;
 
+/** `payload` is the full request (all options); entries saved before it existed lack it. */
 export type QueryHistoryEntry =
-  | { type: "KIS"; at: number; query: string }
-  | { type: "TRAFFIC"; at: number; query: string }
-  | { type: "TRAKE"; at: number; mainQuery: string; events: string[] };
+  | { type: "KIS"; at: number; query: string; payload?: SearchRequest }
+  | { type: "TRAFFIC"; at: number; query: string; payload?: SearchRequest }
+  | { type: "TRAKE"; at: number; mainQuery: string; events: string[]; payload?: SearchRequest };
 
 function readHistory(): QueryHistoryEntry[] {
   try {
@@ -57,9 +58,16 @@ interface QueryHistorySelectProps {
   type: QueryType;
   entries: QueryHistoryEntry[];
   onRestore: (entry: QueryHistoryEntry) => void;
+  /** True when choosing the entry shows saved results at once instead of only filling the form. */
+  hasResults?: (entry: QueryHistoryEntry) => boolean;
 }
 
-export function QueryHistorySelect({ type, entries, onRestore }: QueryHistorySelectProps) {
+export function QueryHistorySelect({
+  type,
+  entries,
+  onRestore,
+  hasResults = () => false,
+}: QueryHistorySelectProps) {
   const forType = entries.filter((entry) => entry.type === type);
   if (forType.length === 0) return null;
 
@@ -77,6 +85,7 @@ export function QueryHistorySelect({ type, entries, onRestore }: QueryHistorySel
       {forType.map((entry, index) => (
         <option key={`${entry.at}-${index}`} value={index}>
           {entryLabel(entry)}
+          {hasResults(entry) ? " (có sẵn kết quả)" : ""}
         </option>
       ))}
     </select>

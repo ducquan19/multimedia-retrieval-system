@@ -290,10 +290,55 @@ describe("App query workspace", () => {
       within(history)
         .getAllByRole("option")
         .map((option) => option.textContent),
-    ).toEqual(["Lịch sử truy vấn (2)", "second query", "first query"]);
+    ).toEqual([
+      "Lịch sử truy vấn (2)",
+      "second query (có sẵn kết quả)",
+      "first query (có sẵn kết quả)",
+    ]);
 
     await user.selectOptions(history, "1");
     expect(query).toHaveValue("first query");
+  });
+
+  it("shows saved results for a query picked from the history without searching again", async () => {
+    const fetchMock = setupApi();
+    const searchCalls = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/api/search")).length;
+    const user = userEvent.setup();
+    renderApp();
+
+    const query = await screen.findByLabelText(/^Truy vấn KIS/);
+    const topK = screen.getByLabelText("Top-K");
+    await user.clear(topK);
+    await user.type(topK, "25");
+    await user.click(screen.getByLabelText("ASR"));
+    await user.type(query, "first query");
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
+    await screen.findByText(/kết quả$/);
+
+    // A second search with other options.
+    await user.clear(query);
+    await user.type(query, "second query");
+    await user.clear(topK);
+    await user.type(topK, "100");
+    await user.click(screen.getByLabelText("ASR"));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
+    await waitFor(() => expect(searchCalls()).toBe(2));
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Lịch sử truy vấn" }), "1");
+
+    // The saved answer is on screen at once, with every option of that search restored.
+    expect(await screen.findByText(/Kết quả đã lưu lúc/)).toBeInTheDocument();
+    expect(screen.getAllByTestId("result-card").length).toBeGreaterThan(0);
+    expect(searchCalls()).toBe(2);
+    expect(query).toHaveValue("first query");
+    expect(topK).toHaveValue(25);
+    expect(screen.getByLabelText("ASR")).toBeChecked();
+
+    // "Tìm lại" asks the backend again and the saved-result note disappears.
+    await user.click(screen.getByRole("button", { name: "Tìm lại" }));
+    await waitFor(() => expect(searchCalls()).toBe(3));
+    await waitFor(() => expect(screen.queryByText(/Kết quả đã lưu lúc/)).not.toBeInTheDocument());
   });
 
   it("filters displayed results by program without changing the search payload", async () => {

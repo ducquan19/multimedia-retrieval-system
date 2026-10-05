@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 
 import { friendlySearchError, planKisQuery, search } from "../../api/client";
 import {
@@ -30,7 +30,13 @@ import { type QueryHistoryEntry, QueryHistorySelect, useQueryHistory } from "./Q
 import { SearchInsight } from "./SearchInsight";
 import { EMPTY_TRAFFIC_FILTERS, TrafficFilterPanel } from "./TrafficFilterPanel";
 import { matchesProgram, type ProgramFilter, programOptions } from "./programFilter";
-import { buildSearchRequest, queryLengthError } from "./searchPayload";
+import { type CachedSearch, SearchResultCache } from "./searchCache";
+import {
+  buildSearchRequest,
+  formFromRequest,
+  queryLengthError,
+  type SearchFormState,
+} from "./searchPayload";
 import { parseTrakeEvents } from "./trakeEventParser";
 import { useResizableSidebar } from "./useResizableSidebar";
 import { useThemePreference } from "./useThemePreference";
@@ -86,6 +92,9 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const [programFilter, setProgramFilter] = useState<ProgramFilter>("ALL");
   const activeController = useRef<AbortController | null>(null);
   const queryHistory = useQueryHistory();
+  // Results of this page session's searches, so a query picked from the history shows at once.
+  const [resultCache] = useState(() => new SearchResultCache(30));
+  const [shown, setShown] = useState<(CachedSearch & { fromCache: boolean }) | null>(null);
 
   const sidebar = useResizableSidebar();
 
@@ -100,18 +109,18 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     mutationFn: ({ query, signal }) => planKisQuery(query, signal),
     onSuccess: (plan) => setKisPlan(plan),
   });
+  // A running or failed search replaces the results on screen.
+  const response =
+    searchMutation.isPending || searchMutation.isError ? undefined : shown?.response;
   const displayedResultCount =
-    searchMutation.data?.results.filter((result) =>
-      matchesProgram(result.video_id, programFilter),
-    ).length ?? 0;
+    response?.results.filter((result) => matchesProgram(result.video_id, programFilter))
+      .length ?? 0;
   const resultProgramOptions = programOptions(
-    searchMutation.data?.results.map((result) => result.video_id) ?? [],
+    response?.results.map((result) => result.video_id) ?? [],
     programFilter,
   );
   const showProgramFilter =
-    !searchMutation.isPending &&
-    Boolean(searchMutation.data?.results.length) &&
-    searchMutation.data?.query_type !== "TRAFFIC";
+    Boolean(response?.results.length) && response?.query_type !== "TRAFFIC";
 
   useEffect(
     () => () => {
@@ -132,6 +141,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const changeTab = (queryType: QueryType) => {
     activeController.current?.abort();
     searchMutation.reset();
+    setShown(null);
     planMutation.reset();
     setValidationErrors([]);
     setActiveType(queryType);
@@ -254,17 +264,31 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
     return errors.length === 0 ? payload : null;
   };
 
-  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const payload = buildPayload();
-    if (!payload) return;
-
+  /** Always asks the backend; the answer replaces any saved result for the same request. */
+  const runSearch = (payload: SearchRequest) => {
     activeController.current?.abort();
     const controller = new AbortController();
     activeController.current = controller;
     setGroupByVideo(false);
     setGroupSort("score");
-    searchMutation.mutate({ payload, signal: controller.signal });
+    searchMutation.mutate(
+      { payload, signal: controller.signal },
+      {
+        onSuccess: (result) => {
+          const entry = { payload, response: result, at: Date.now() };
+          resultCache.put(entry);
+          setShown({ ...entry, fromCache: false });
+        },
+      },
+    );
+  };
+
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const payload = buildPayload();
+    if (!payload) return;
+
+    runSearch(payload);
     queryHistory.record(
       payload.query_type === "TRAKE"
         ? {
@@ -272,17 +296,57 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
             at: Date.now(),
             mainQuery: payload.main_query ?? "",
             events: payload.events.map((event) => event.query),
+            payload,
           }
         : {
             type: payload.query_type === "TRAFFIC" ? "TRAFFIC" : "KIS",
             at: Date.now(),
             query: payload.query,
+            payload,
           },
     );
   };
 
+  /** Put every option of a past request back into the form. */
+  const applyForm = (form: Partial<SearchFormState>) => {
+    if (form.activeType) setActiveType(form.activeType);
+    if (form.topK !== undefined) setTopK(form.topK);
+    if (form.enhanceQuery !== undefined) setEnhanceQuery(form.enhanceQuery);
+    if (form.useReranking !== undefined) setUseReranking(form.useReranking);
+    if (form.sources) setSources(form.sources);
+    if (form.modelChoices) setModelChoices(form.modelChoices);
+    if (form.objectTerms) setObjectTerms(form.objectTerms);
+    if (form.kisQuery !== undefined) {
+      setKisQuery(form.kisQuery);
+      planMutation.reset();
+    }
+    if (form.queryUnderstanding !== undefined) setQueryUnderstanding(form.queryUnderstanding);
+    if (form.kisPlan !== undefined) setKisPlan(form.kisPlan);
+    if (form.includeTraffic !== undefined) setIncludeTraffic(form.includeTraffic);
+    if (form.trafficQuery !== undefined) setTrafficQuery(form.trafficQuery);
+    if (form.trafficFilters) setTrafficFilters(form.trafficFilters);
+    if (form.trakeMainQuery !== undefined) setTrakeMainQuery(form.trakeMainQuery);
+    if (form.eventQueries) setEventQueries(form.eventQueries);
+    if (form.eventCount !== undefined) setEventCount(form.eventCount);
+  };
+
   const restoreQuery = (entry: QueryHistoryEntry) => {
     setValidationErrors([]);
+    if (entry.payload) {
+      applyForm(formFromRequest(entry.payload));
+      const cached = resultCache.get(entry.payload);
+      if (cached) {
+        // Show the saved answer instead of searching again; "Tìm lại" re-runs it.
+        activeController.current?.abort();
+        searchMutation.reset();
+        setGroupByVideo(false);
+        setGroupSort("score");
+        setProgramFilter("ALL");
+        setShown({ ...cached, fromCache: true });
+      }
+      return;
+    }
+    // Entries saved before the full request was stored only restore their text.
     if (entry.type === "KIS") changeKisQuery(entry.query);
     else if (entry.type === "TRAFFIC") setTrafficQuery(entry.query);
     else {
@@ -310,7 +374,6 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
   };
 
   const planned = activeType === "KIS" && queryUnderstanding;
-  const response = searchMutation.data;
   const toggleModel = (model: "siglip" | "beit3", enabled: boolean) =>
     setModelChoices((current) =>
       enabled ? [...current, model] : current.filter((item) => item !== model),
@@ -370,6 +433,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
               type={activeType}
               entries={queryHistory.entries}
               onRestore={restoreQuery}
+              hasResults={(entry) => Boolean(entry.payload && resultCache.has(entry.payload))}
             />
 
             {activeType === "KIS" && (
@@ -770,6 +834,18 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
                 )}
               </p>
             ) : null}
+            {shown?.fromCache && response ? (
+              <p className="toolbar__saved" role="status">
+                Kết quả đã lưu lúc {new Date(shown.at).toLocaleTimeString("vi-VN")}
+                <button
+                  type="button"
+                  className="button button--text"
+                  onClick={() => runSearch(shown.payload)}
+                >
+                  Tìm lại
+                </button>
+              </p>
+            ) : null}
             {response?.results.length &&
             !searchMutation.isPending &&
             response.query_type !== "TRAKE" ? (
@@ -820,7 +896,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
         {!searchMutation.isPending && response && (
           <SearchInsight
             response={response}
-            payload={searchMutation.variables?.payload}
+            payload={shown?.payload}
             objectTerms={objectTerms}
             onPinObject={(term) => {
               setObjectTerms((current) => [...current, term]);
@@ -830,7 +906,9 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
         )}
         <div className="sheet__content">
           <SearchState
-            mutation={searchMutation}
+            isPending={searchMutation.isPending}
+            error={searchMutation.isError ? searchMutation.error : undefined}
+            shown={searchMutation.isPending || searchMutation.isError ? null : shown}
             maxAnswerLength={config.max_answer_length}
             groupByVideo={groupByVideo}
             groupSort={groupSort}
@@ -843,7 +921,9 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
 }
 
 interface SearchStateProps {
-  mutation: UseMutationResult<SearchResponse, unknown, SearchMutationVariables>;
+  isPending: boolean;
+  error: unknown;
+  shown: CachedSearch | null;
   maxAnswerLength: number;
   groupByVideo: boolean;
   groupSort: GroupSort;
@@ -851,13 +931,15 @@ interface SearchStateProps {
 }
 
 function SearchState({
-  mutation,
+  isPending,
+  error,
+  shown,
   maxAnswerLength,
   groupByVideo,
   groupSort,
   programFilter,
 }: SearchStateProps) {
-  if (mutation.isPending) {
+  if (isPending) {
     return (
       <section className="sheet-state" aria-live="polite" aria-busy="true">
         <span className="spinner" aria-hidden="true" />
@@ -866,16 +948,16 @@ function SearchState({
     );
   }
 
-  if (mutation.isError) {
+  if (error !== undefined) {
     return (
       <section className="sheet-state sheet-state--error" role="alert">
         <strong>Tìm kiếm không thành công</strong>
-        <p>{friendlySearchError(mutation.error)}</p>
+        <p>{friendlySearchError(error)}</p>
       </section>
     );
   }
 
-  if (!mutation.data) {
+  if (!shown) {
     return (
       <section className="sheet-state">
         <strong>Chưa có kết quả</strong>
@@ -884,7 +966,8 @@ function SearchState({
     );
   }
 
-  if (mutation.data.results.length === 0) {
+  const { response, payload } = shown;
+  if (response.results.length === 0) {
     return (
       <section className="sheet-state" role="status">
         <strong>Không tìm thấy kết quả</strong>
@@ -893,7 +976,7 @@ function SearchState({
     );
   }
 
-  const displayedResults = mutation.data.results.filter((result) =>
+  const displayedResults = response.results.filter((result) =>
     matchesProgram(result.video_id, programFilter),
   );
 
@@ -906,12 +989,10 @@ function SearchState({
     );
   }
 
-  const displayedResponse = { ...mutation.data, results: displayedResults } as SearchResponse;
+  const displayedResponse = { ...response, results: displayedResults } as SearchResponse;
 
   const submittedTrakeEventCount =
-    mutation.variables?.payload.query_type === "TRAKE"
-      ? mutation.variables.payload.events.length
-      : null;
+    payload.query_type === "TRAKE" ? payload.events.length : null;
 
   return (
     <section className="result-preview" aria-live="polite">

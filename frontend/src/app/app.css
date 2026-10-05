@@ -1073,6 +1073,23 @@ input[role="switch"]:disabled {
   color: var(--ink-muted);
 }
 
+/* Shown when the results come from this session's cache instead of a fresh search. */
+.toolbar__saved {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.15rem 0.2rem 0.15rem 0.6rem;
+  color: var(--pending);
+  background: var(--pending-tint);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+
+.toolbar__saved .button--text {
+  color: inherit;
+  font-weight: 600;
+}
+
 .video-lookup {
   display: flex;
   align-items: center;

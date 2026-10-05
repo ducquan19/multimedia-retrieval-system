@@ -7,6 +7,7 @@ import type {
   SearchSources,
   TrafficFilters,
 } from "../../api/types";
+import { EMPTY_TRAFFIC_FILTERS } from "./TrafficFilterPanel";
 
 /** Everything the search form holds; the request is derived from it without side effects. */
 export interface SearchFormState {
@@ -152,3 +153,44 @@ export function buildSearchRequest(
   };
 }
 
+/**
+ * The form fields a request was built from (the inverse of buildSearchRequest), so a query from
+ * the history comes back with all its options, not only its text. Fields of the other tabs are
+ * left out and keep their current values.
+ */
+export function formFromRequest(payload: SearchRequest): Partial<SearchFormState> {
+  const common: Partial<SearchFormState> = {
+    topK: String(payload.top_k),
+    enhanceQuery: payload.enhance_query ?? false,
+    useReranking: payload.use_reranking ?? false,
+    sources: payload.search_sources,
+    modelChoices: payload.model_choices ?? ["siglip"],
+    objectTerms: payload.object_query ?? [],
+  };
+  switch (payload.query_type) {
+    case "TRAKE":
+      return {
+        ...common,
+        activeType: "TRAKE",
+        trakeMainQuery: payload.main_query ?? "",
+        eventQueries: payload.events.map((event) => event.query),
+        eventCount: payload.events.length,
+      };
+    case "TRAFFIC":
+      return {
+        ...common,
+        activeType: "TRAFFIC",
+        trafficQuery: payload.query,
+        trafficFilters: { ...EMPTY_TRAFFIC_FILTERS, ...payload.filters },
+      };
+    default:
+      return {
+        ...common,
+        activeType: "KIS",
+        kisQuery: payload.query,
+        includeTraffic: payload.query_type === "KIS" ? (payload.include_traffic ?? false) : false,
+        queryUnderstanding: payload.query_type === "KIS" && Boolean(payload.query_understanding),
+        kisPlan: payload.query_type === "KIS" ? (payload.query_plan ?? null) : null,
+      };
+  }
+}

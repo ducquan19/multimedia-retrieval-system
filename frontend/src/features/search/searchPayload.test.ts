@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { PublicConfig } from "../../api/types";
 import { matchesProgram, programOf, programOptions } from "./programFilter";
-import { buildSearchRequest, effectiveSources, type SearchFormState } from "./searchPayload";
+import {
+  buildSearchRequest,
+  effectiveSources,
+  formFromRequest,
+  type SearchFormState,
+} from "./searchPayload";
 import { EMPTY_TRAFFIC_FILTERS } from "./TrafficFilterPanel";
 
 const config: PublicConfig = {
@@ -161,5 +166,62 @@ describe("program filter", () => {
       { key: "L26", label: "Món ngon mỗi ngày (1)" },
       { key: "NEWS", label: "Tin tức (2)" },
     ]);
+  });
+});
+
+describe("formFromRequest", () => {
+  it.each([
+    form({
+      kisQuery: "người đàn ông áo đỏ",
+      topK: "25",
+      enhanceQuery: true,
+      includeTraffic: true,
+      sources: { image: true, asr: true, object: true },
+      objectTerms: [{ label: "Car", min_count: 2 }],
+      modelChoices: ["siglip", "beit3"],
+    }),
+    form({
+      activeType: "TRAFFIC",
+      trafficQuery: "xe buýt",
+      trafficFilters: { ...EMPTY_TRAFFIC_FILTERS, dates: ["2026-06-07"], clock_from: "07:00" },
+    }),
+    form({
+      activeType: "TRAKE",
+      trakeMainQuery: "nhảy cao",
+      eventQueries: ["giậm nhảy", "bay qua xà", "tiếp đất"],
+      eventCount: 3,
+      useReranking: true,
+    }),
+  ])("rebuilds the form of a $activeType request so it yields the same request", (original) => {
+    const { payload } = buildSearchRequest(original, config);
+    // Start from a form with other values everywhere, as when restoring from the history.
+    const restored = { ...form({ topK: "7", kisQuery: "other" }), ...formFromRequest(payload) };
+
+    expect(buildSearchRequest(restored, config).payload).toEqual(payload);
+  });
+
+  it("restores a KIS query plan with query understanding on", () => {
+    const plan = {
+      search_mode: "single_anchor" as const,
+      events: [
+        {
+          event_index: 1,
+          source_span_vi: "a",
+          visual_query_en: "a",
+          asr_query_vi: null,
+          importance: "anchor" as const,
+          confidence: 1,
+          inferred: false,
+        },
+      ],
+      warnings: [],
+      planner_model: "gemini-3.5-flash-lite",
+    };
+    const { payload } = buildSearchRequest(
+      form({ queryUnderstanding: true, kisPlan: plan }),
+      config,
+    );
+
+    expect(formFromRequest(payload)).toMatchObject({ queryUnderstanding: true, kisPlan: plan });
   });
 });
