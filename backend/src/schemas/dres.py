@@ -4,9 +4,10 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 # The final-round guide writes KIS times as strings ("start": "<TIME(ms)>"); integers are
 # accepted too. The value is forwarded to DRES exactly as received.
-TimeMs = Annotated[int, Field(ge=0)] | Annotated[
-    str, StringConstraints(strip_whitespace=True, pattern=r"^\d{1,12}$")
-]
+TimeMs = (
+    Annotated[int, Field(ge=0)]
+    | Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\d{1,12}$")]
+)
 
 EvaluationId = Annotated[
     str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9_-]{1,128}$")

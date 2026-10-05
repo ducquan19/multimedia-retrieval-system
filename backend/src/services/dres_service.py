@@ -3,6 +3,7 @@ import logging
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from infrastructure.dres_client import DresClient
 from schemas.dres import DresEvaluation, DresSubmitRequest, DresSubmitResponse
@@ -31,6 +32,9 @@ class DresSubmissionService:
     @property
     def configured(self) -> bool:
         return self._client.configured
+
+    def close(self) -> None:
+        self._client.close()
 
     def list_evaluations(self) -> list[DresEvaluation]:
         return [DresEvaluation.model_validate(item) for item in self._client.list_evaluations()]
@@ -71,7 +75,8 @@ class DresSubmissionService:
 
     @staticmethod
     def _key(evaluation_id: str, body: dict) -> str:
-        return f"{evaluation_id}|{json.dumps(body, sort_keys=True, ensure_ascii=False)}"
+        """Identity of an answer set: "123" and 123 are the same time, so both are ints here."""
+        return f"{evaluation_id}|{json.dumps(_canonical(body), sort_keys=True, ensure_ascii=False)}"
 
     def _load_submitted(self) -> set[str]:
         submitted: set[str] = set()
@@ -86,7 +91,7 @@ class DresSubmissionService:
                     logger.warning("Skipping malformed line in %s", self._log_path)
         return submitted
 
-    def _append_log(self, evaluation_id: str, body: dict, status_code: int, payload) -> None:
+    def _append_log(self, evaluation_id: str, body: dict, status_code: int, payload: Any) -> None:
         entry = {
             "time": datetime.now(UTC).isoformat(),
             "evaluation_id": evaluation_id,
@@ -102,5 +107,20 @@ class DresSubmissionService:
             logger.error("Could not write DRES submission log: %s", exc)
 
 
-def _as_text(value) -> str | None:
+def _as_text(value: Any) -> str | None:
     return None if value is None else str(value)
+
+
+def _canonical(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: int(item) if key in {"start", "end"} and _is_digits(item) else _canonical(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list | tuple):
+        return [_canonical(item) for item in value]
+    return value
+
+
+def _is_digits(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().isdigit()

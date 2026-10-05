@@ -1,5 +1,6 @@
 import logging
 import threading
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -38,6 +39,9 @@ class DresClient:
     def configured(self) -> bool:
         return bool(self._username and self._password)
 
+    def close(self) -> None:
+        self._http.close()
+
     def list_evaluations(self) -> list[dict[str, Any]]:
         response = self._with_session(
             lambda session: self._http.get(
@@ -62,7 +66,7 @@ class DresClient:
         logger.info("DRES submit to %s -> %s %s", evaluation_id, response.status_code, payload)
         return response.status_code, payload
 
-    def _with_session(self, send) -> httpx.Response:
+    def _with_session(self, send: Callable[[str], httpx.Response]) -> httpx.Response:
         try:
             response = send(self._session())
             if response.status_code == 401:

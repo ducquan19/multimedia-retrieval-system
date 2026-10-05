@@ -118,6 +118,20 @@ def test_string_times_from_the_final_round_guide_are_forwarded_verbatim(tmp_path
     assert fake.submissions[0][2] == {"answerSets": [{"answers": [answer]}]}
 
 
+def test_string_and_integer_times_count_as_the_same_answer(tmp_path: Path) -> None:
+    fake = FakeDres()
+    api = _api(_service(tmp_path, fake))
+    as_string = {"mediaItemName": "L21_V001", "start": "12000", "end": "12000"}
+
+    assert api.post("/api/dres/submit", json=KIS_BODY).status_code == 200
+    response = api.post(
+        "/api/dres/submit", json={"evaluation_id": "ev1", "answerSets": [{"answers": [as_string]}]}
+    )
+
+    assert response.status_code == 409
+    assert len(fake.submissions) == 1
+
+
 def test_expired_session_is_renewed_transparently(tmp_path: Path) -> None:
     fake = FakeDres()
     api = _api(_service(tmp_path, fake))
@@ -154,14 +168,18 @@ def test_a_wrong_answer_is_blocked_but_a_corrected_one_goes_through(tmp_path: Pa
     api = _api(_service(tmp_path, fake))
     kis = {
         "evaluation_id": "ev1",
-        "answerSets": [{"answers": [{"mediaItemName": "L21_V001", "start": "1000", "end": "1000"}]}],
+        "answerSets": [
+            {"answers": [{"mediaItemName": "L21_V001", "start": "1000", "end": "1000"}]}
+        ],
     }
     assert api.post("/api/dres/submit", json=kis).status_code == 200
     assert api.post("/api/dres/submit", json=kis).status_code == 409
 
     fixed = {
         **kis,
-        "answerSets": [{"answers": [{"mediaItemName": "L21_V001", "start": "1000", "end": "1400"}]}],
+        "answerSets": [
+            {"answers": [{"mediaItemName": "L21_V001", "start": "1000", "end": "1400"}]}
+        ],
     }
     assert api.post("/api/dres/submit", json=fixed).status_code == 200
     assert len(fake.submissions) == 2
