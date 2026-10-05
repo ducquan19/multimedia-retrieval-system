@@ -1,5 +1,6 @@
-# Generated from backend/pylock.toml for CPython 3.13 on Windows.
-# Regenerate the PEP 751 lock before changing these exact versions.
+# Exact versions of the web stack and dev tools, applied as constraints (not installed alone):
+#   pip install -e "./backend[dev]" -c backend/requirements.lock
+# Packages not listed here (torch, faiss, transformers, ...) follow the ranges in pyproject.toml.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.14.2
@@ -29,4 +30,5 @@ typing-extensions==4.16.0
 typing-inspection==0.4.2
 uvicorn==0.52.1
 watchfiles==1.2.0
-websockets==17.0.1
+# google-genai requires websockets<17.
+websockets==16.1.1

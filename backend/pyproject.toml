@@ -7,23 +7,41 @@ name = "aic-retrieval-inspector-backend"
 version = "0.1.0"
 description = "FastAPI backend for the AIC 2026 Retrieval Inspector"
 requires-python = ">=3.12"
+# The only declaration of Python dependencies. Exact versions of the web stack and the dev
+# tools are pinned in requirements.lock, applied as constraints:
+#   pip install -e "./backend[dev]" -c backend/requirements.lock
 dependencies = [
   "fastapi>=0.139,<0.140",
   "pydantic-settings>=2.14,<3",
   "uvicorn[standard]>=0.35,<1",
-  "faiss-cpu>=1.9.0",
-  "elasticsearch>=8.15.0",
+  "httpx>=0.28,<1",
+  "numpy>=2.0,<3",
+  "faiss-cpu>=1.9.0,<2",
+  "elasticsearch>=8.15.0,<9",
   "torch>=2.4.0",
-  "transformers>=4.44.0",
+  "transformers>=4.56.0",
   "pillow>=10.4.0",
-  "httpx>=0.28,<1"
+  "sentencepiece>=0.2",
+  # BEiT-3 (vendored in src/infrastructure/beit3)
+  "timm>=0.6,<1",
+  "torchscale>=0.3,<1",
+  "torchmetrics>=1.0",
+  "tensorboardX>=2.6",
+  "google-genai>=1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "httpx2>=2,<3",
+  "httpx2>=2,<3",  # required by starlette.testclient
   "pytest>=9,<10",
   "ruff>=0.12,<1",
+]
+# Preprocessing scripts in scripts/ (the Kaggle notebooks install their own packages).
+scripts = [
+  "tqdm>=4.66",
+  "torchvision>=0.19",
+  "youtube-transcript-api>=1.0",
+  "yt-dlp>=2025.1",
 ]
 
 [tool.setuptools.packages.find]
@@ -38,6 +56,8 @@ testpaths = ["tests"]
 target-version = "py312"
 line-length = 100
 src = ["src", "tests"]
+# Third-party BEiT-3 code copied from microsoft/unilm; keep it identical to upstream.
+extend-exclude = ["src/infrastructure/beit3"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "BLE"]
