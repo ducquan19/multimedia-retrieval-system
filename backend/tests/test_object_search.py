@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from core.intro_exclusion import IntroExclusionPolicy
+from infrastructure.retrieval import RetrievalOutcome
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
 from repositories.object_repository import KeyframeObjectRepository
 from schemas.retrieval import ScoredCandidate
@@ -150,7 +151,7 @@ def test_objects_for_returns_labels_for_result_details(data_root: Path) -> None:
 
 class _EmptyRetrievalEngine:
     def retrieve(self, request, enhanced_queries=None):
-        return ()
+        return RetrievalOutcome(results=())
 
 
 def _service(repository: KeyframeObjectRepository) -> SearchService:
@@ -159,7 +160,6 @@ def _service(repository: KeyframeObjectRepository) -> SearchService:
         query_enhancer=None,
         max_trake_events=10,
         max_query_length=2_000,
-        data_root=Path("."),
         object_repository=repository,
     )
 
@@ -212,7 +212,6 @@ def test_enhanced_search_reports_auto_objects_and_gated_weights(data_root: Path)
         query_enhancer=enhancer,
         max_trake_events=10,
         max_query_length=2_000,
-        data_root=Path("."),
         object_repository=_repository(data_root),
     )
     request = KISSearchRequest(
@@ -272,7 +271,7 @@ class _FakeVectorRepository:
     def __init__(self, candidates):
         self.candidates = candidates
 
-    def search(self, vector, top_k):
+    def search(self, vector, top_k, allowed=None):
         return self.candidates[:top_k]
 
 
@@ -281,7 +280,7 @@ class _FakeTextRepository:
         self.candidates = candidates
         self.queries = []
 
-    def search_text(self, query, fields, objects, top_k):
+    def search_text(self, query, fields, top_k, allowed=None):
         self.queries.append(query)
         return self.candidates
 
@@ -291,17 +290,23 @@ class _FakeEmbeddings:
         return None
 
 
-class _Reranker:
-    enable = False
-
-
 def _candidate(repository: KeyframeMetadataRepository, keyframe_id: str, score: float):
-    keyframe = repository.get_keyframe(keyframe_id)
     return ScoredCandidate(
-        result_id=keyframe_id,
-        keyframe=keyframe,
+        faiss_id=repository.index_of(keyframe_id),
+        keyframe=repository.get_keyframe(keyframe_id),
         similarity_score=score,
-        image_path=keyframe.image_path,
+    )
+
+
+def _retrieval(data_root: Path, keyframes, visual, text) -> RetrievalService:
+    return RetrievalService(
+        keyframe_repository=keyframes,
+        siglip_vector_repo=_FakeVectorRepository(visual),
+        beit3_vector_repo=_FakeVectorRepository([]),
+        text_repository=text,
+        embedding_service=_FakeEmbeddings(),
+        intro_exclusion_policy=IntroExclusionPolicy({}),
+        object_repository=_repository(data_root),
     )
 
 
@@ -316,15 +321,7 @@ def test_fusion_merges_auto_objects_and_shares_asr_scores_within_a_shot(
     ]
     # ASR only hit the other keyframe of shot 0; its score must reach 000480 too.
     text = _FakeTextRepository([_candidate(keyframes, "L99_V001/S00000/000400", 12.0)])
-    service = RetrievalService(
-        siglip_vector_repo=_FakeVectorRepository(visual),
-        beit3_vector_repo=_FakeVectorRepository([]),
-        text_repository=text,
-        blip2_reranker=_Reranker(),
-        embedding_service=_FakeEmbeddings(),
-        intro_exclusion_policy=IntroExclusionPolicy({}),
-        object_repository=_repository(data_root),
-    )
+    service = _retrieval(data_root, keyframes, visual, text)
     enhanced = QueryVariants(
         variants=["a dog"],
         w_vis=0.5,
@@ -338,8 +335,9 @@ def test_fusion_merges_auto_objects_and_shares_asr_scores_within_a_shot(
         "chó",
         ["siglip"],
         fetch_k=10,
-        search_sources=SearchSources(image=True, asr=True, object=True),
+        sources=SearchSources(image=True, asr=True, object=True),
         enhanced=enhanced,
+        warnings=[],
         object_query=(ObjectQueryTerm(label="person", min_count=2),),
     )
 
@@ -360,22 +358,15 @@ def test_fusion_renormalizes_weights_when_a_modality_returns_nothing(data_root: 
         _candidate(keyframes, "L99_V001/S00002/000900", 0.9),
         _candidate(keyframes, "L99_V001/S00001/000600", 0.1),
     ]
-    service = RetrievalService(
-        siglip_vector_repo=_FakeVectorRepository(visual),
-        beit3_vector_repo=_FakeVectorRepository([]),
-        text_repository=_FakeTextRepository([]),
-        blip2_reranker=_Reranker(),
-        embedding_service=_FakeEmbeddings(),
-        intro_exclusion_policy=IntroExclusionPolicy({}),
-        object_repository=_repository(data_root),
-    )
+    service = _retrieval(data_root, keyframes, visual, _FakeTextRepository([]))
 
     candidates = service._search_candidates(
         "q",
         ["siglip"],
         fetch_k=10,
-        search_sources=SearchSources(image=True, asr=True),
+        sources=SearchSources(image=True, asr=True),
         enhanced=QueryVariants(variants=["q"], w_vis=0.4, w_asr=0.9),
+        warnings=[],
     )
 
     assert candidates[0].keyframe.keyframe_id == "L99_V001/S00002/000900"

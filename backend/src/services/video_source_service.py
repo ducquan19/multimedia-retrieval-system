@@ -1,5 +1,6 @@
 import json
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -46,6 +47,20 @@ class VideoSourceService:
         self._data_root = data_root.resolve()
         self._metadata_path = self._data_root / metadata_filename
         self._private_signer = private_signer
+        self._lock = threading.Lock()
+        # (mtime_ns, videos): the file is parsed once and re-read only when it changes.
+        self._cache: tuple[int, dict[str, Any]] | None = None
+
+    def fps(self, video_id: str) -> float | None:
+        """Frame rate of a video from the metadata, or None when unknown."""
+        try:
+            entry = self._videos().get(video_id)
+        except VideoSourceError:
+            return None
+        fps = entry.get("fps") if isinstance(entry, dict) else None
+        if isinstance(fps, int | float) and not isinstance(fps, bool) and fps > 0:
+            return float(fps)
+        return None
 
     def resolve(self, video_id: str, *, refresh: bool = False) -> ResolvedVideoSource:
         if not self._VIDEO_ID_PATTERN.fullmatch(video_id):
@@ -112,20 +127,37 @@ class VideoSourceService:
         raise VideoSourceNotFound(f"Video source not found for {video_id}")
 
     def _load_entry(self, video_id: str) -> dict[str, Any]:
-        try:
-            payload = json.loads(self._metadata_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise VideoSourceError(
-                f"Unable to load video metadata from {self._metadata_path.name}"
-            ) from exc
-
-        if payload.get("version") != 1 or not isinstance(payload.get("videos"), dict):
-            raise VideoSourceError("Unsupported video metadata format")
-
-        entry = payload["videos"].get(video_id)
+        entry = self._videos().get(video_id)
         if not isinstance(entry, dict):
             raise VideoSourceNotFound(f"Video metadata not found for {video_id}")
         return entry
+
+    def _videos(self) -> dict[str, Any]:
+        try:
+            mtime_ns = self._metadata_path.stat().st_mtime_ns
+        except OSError as exc:
+            raise VideoSourceError(
+                f"Unable to load video metadata from {self._metadata_path.name}"
+            ) from exc
+        cache = self._cache
+        if cache is not None and cache[0] == mtime_ns:
+            return cache[1]
+        with self._lock:
+            if self._cache is None or self._cache[0] != mtime_ns:
+                try:
+                    payload = json.loads(self._metadata_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise VideoSourceError(
+                        f"Unable to load video metadata from {self._metadata_path.name}"
+                    ) from exc
+                if (
+                    not isinstance(payload, dict)
+                    or payload.get("version") != 1
+                    or not isinstance(payload.get("videos"), dict)
+                ):
+                    raise VideoSourceError("Unsupported video metadata format")
+                self._cache = (mtime_ns, payload["videos"])
+            return self._cache[1]
 
     @staticmethod
     def _is_http_url(value: str) -> bool:

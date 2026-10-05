@@ -1,56 +1,36 @@
+import logging
 import logging.handlers
 from pathlib import Path
 
+_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(funcName)s:%(lineno)d | %(message)s"
+_HANDLER_MARKER = "_aic_handler"
 
-class SimpleLogger:
-    """Simple logger with console and file output."""
 
-    def __init__(
-        self,
-        name: str,
-        log_dir: str = "logs",
-        console_level: str = "DEBUG",
-        file_level: str = "DEBUG",
-    ):
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        self.logger.handlers.clear()
+def configure_logging(level: str = "INFO", log_dir: Path | None = None) -> None:
+    """Configure the root logger once: console plus an optional rotating file.
 
-        Path(log_dir).mkdir(exist_ok=True)
+    Modules only call ``logging.getLogger(__name__)``; calling this again replaces the
+    handlers it installed earlier instead of adding duplicates.
+    """
+    root = logging.getLogger()
+    root.setLevel(level)
+    for handler in [h for h in root.handlers if getattr(h, _HANDLER_MARKER, False)]:
+        root.removeHandler(handler)
+        handler.close()
 
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(getattr(logging, console_level))
-        console_format = logging.Formatter(
-            "\033[36m%(asctime)s\033[0m | \033[32m%(levelname)-8s\033[0m | %(name)s | %(funcName)s:%(lineno)d | %(message)s",
-            datefmt="%H:%M:%S",
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log_dir is not None:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        handlers.append(
+            logging.handlers.RotatingFileHandler(
+                log_dir / "backend.log",
+                maxBytes=10 * 1024 * 1024,
+                backupCount=3,
+                encoding="utf-8",
+            )
         )
-        console_handler.setFormatter(console_format)
-        self.logger.addHandler(console_handler)
-
-        file_handler = logging.handlers.RotatingFileHandler(
-            f"{log_dir}/{name}.log", maxBytes=10 * 1024 * 1024, backupCount=3
-        )
-        file_handler.setLevel(getattr(logging, file_level))
-        file_format = logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | %(name)s | %(funcName)s:%(lineno)d | %(message)s"
-        )
-        file_handler.setFormatter(file_format)
-        self.logger.addHandler(file_handler)
-
-    def debug(self, msg: str):
-        self.logger.debug(msg)
-
-    def info(self, msg: str):
-        self.logger.info(msg)
-
-    def warning(self, msg: str):
-        self.logger.warning(msg)
-
-    def error(self, msg: str):
-        self.logger.error(msg)
-
-    def critical(self, msg: str):
-        self.logger.critical(msg)
-
-    def exception(self, msg: str):
-        self.logger.exception(msg)
+    formatter = logging.Formatter(_FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
+    for handler in handlers:
+        handler.setFormatter(formatter)
+        setattr(handler, _HANDLER_MARKER, True)
+        root.addHandler(handler)

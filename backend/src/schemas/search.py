@@ -43,7 +43,7 @@ class KISQueryPlan(BaseModel):
     search_mode: Literal["single_anchor", "multi_anchor", "temporal_sequence"]
     events: tuple[KISQueryPlanEvent, ...] = Field(min_length=1, max_length=10)
     warnings: tuple[str, ...] = ()
-    planner_model: Literal["gemini-3.5-flash-lite"] = "gemini-3.5-flash-lite"
+    planner_model: str = Field(default="gemini-3.5-flash-lite", max_length=128)
 
     @model_validator(mode="after")
     def validate_events(self) -> "KISQueryPlan":
@@ -101,17 +101,6 @@ class QueryVariants(BaseModel):
     objects: tuple[ObjectQueryTerm, ...] = Field(
         default=(),
         description="Detector classes that should be visible in the target frame.",
-    )
-
-
-class BatchVariantResult(BaseModel):
-    event_index: int
-    result: QueryVariants
-
-
-class QueryVariantsBatch(BaseModel):
-    results: list[BatchVariantResult] = Field(
-        description="List of enhanced query variants for each event."
     )
 
 

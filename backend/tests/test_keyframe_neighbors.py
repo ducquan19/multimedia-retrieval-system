@@ -26,7 +26,9 @@ def repository_with(frame_ids: list[int], tmp_path: Path) -> KeyframeMetadataRep
             }
         ],
     }
-    return KeyframeMetadataRepository(tmp_path, read_text=lambda _: json.dumps(payload))
+    return KeyframeMetadataRepository(
+        tmp_path, read_bytes=lambda _: json.dumps(payload).encode("utf-8")
+    )
 
 
 def test_neighbors_are_ordered_and_centered_on_the_requested_frame(tmp_path: Path) -> None:

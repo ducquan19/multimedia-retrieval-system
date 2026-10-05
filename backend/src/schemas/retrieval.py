@@ -1,12 +1,19 @@
-from pydantic import BaseModel, ConfigDict
+from dataclasses import dataclass, replace
 
 from models.keyframe import Keyframe
 
 
-class ScoredCandidate(BaseModel):
-    model_config = ConfigDict(frozen=True)
+@dataclass(frozen=True, slots=True)
+class ScoredCandidate:
+    """One keyframe hit of a retrieval modality; faiss_id is its position in keyframes.json."""
 
-    result_id: str
+    faiss_id: int
     keyframe: Keyframe
     similarity_score: float
-    image_path: str
+
+    @property
+    def image_path(self) -> str:
+        return self.keyframe.image_path
+
+    def with_score(self, score: float) -> "ScoredCandidate":
+        return replace(self, similarity_score=score)

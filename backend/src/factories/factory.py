@@ -1,20 +1,29 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from core.config import Settings, get_settings
+from core.container import ServicesFactory, build_services
 from core.lifespan import lifespan
+from core.logger import configure_logging
 from infrastructure.dres_client import DresClient
 from infrastructure.hf_signed_url import HuggingFaceUrlSigner
+from infrastructure.media_files import MediaFiles
 from router.config_router import router as config_router
 from router.dres_router import router as dres_router
 from router.health_router import router as health_router
 from router.search_router import router as search_router
 from services.dres_service import DresSubmissionService
+from services.video_source_service import VideoSourceService
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    services_factory: ServicesFactory = build_services,
+) -> FastAPI:
+    """Build the API. ``services_factory`` builds models/indexes at startup (see lifespan)."""
     resolved_settings = settings or get_settings()
+    configure_logging(resolved_settings.log_level, resolved_settings.log_dir)
+
     app = FastAPI(
         title=resolved_settings.app_name,
         version="0.1.0",
@@ -22,7 +31,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
-    app.state.private_url_signer = (
+    app.state.services_factory = services_factory
+    private_url_signer = (
         HuggingFaceUrlSigner(
             resolved_settings.hf_token.get_secret_value(),
             resolved_settings.hf_private_repo,
@@ -31,13 +41,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if resolved_settings.hf_token
         else None
     )
+    app.state.private_url_signer = private_url_signer
+    app.state.video_sources = VideoSourceService(
+        resolved_settings.data_root, resolved_settings.video_sources_filename, private_url_signer
+    )
     app.state.dres_service = DresSubmissionService(
         DresClient(
             resolved_settings.dres_base_url,
             resolved_settings.dres_username,
-            resolved_settings.dres_password,
+            (
+                resolved_settings.dres_password.get_secret_value()
+                if resolved_settings.dres_password
+                else None
+            ),
         ),
-        resolved_settings.data_root / resolved_settings.dres_log_filename,
+        resolved_settings.dres_log_path,
     )
 
     app.add_middleware(
@@ -47,13 +65,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
-    
+
     app.include_router(health_router, prefix="/api")
     app.include_router(config_router, prefix="/api")
     app.include_router(search_router, prefix="/api")
     app.include_router(dres_router, prefix="/api")
-    
-    # Serve media files directly from DATA_ROOT via StaticFiles
-    app.mount("/media", StaticFiles(directory=str(resolved_settings.data_root)), name="media")
-    
+
+    app.mount(
+        "/media",
+        MediaFiles(
+            directory=str(resolved_settings.data_root),
+            allowed_dirs=resolved_settings.media_dirs,
+        ),
+        name="media",
+    )
     return app

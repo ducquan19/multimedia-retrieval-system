@@ -1,6 +1,7 @@
 import csv
 import json
 import logging
+import threading
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -15,6 +16,8 @@ from schemas.search import TrafficCamera, TrafficFilters, TrafficOptionsResponse
 logger = logging.getLogger(__name__)
 
 TRAFFIC_PREFIX = "N"
+_DAYPARTS = ("morning", "midday", "night")
+_ALLOWED_CACHE_SIZE = 64
 
 
 def is_traffic_video(video_id: str) -> bool:
@@ -39,6 +42,17 @@ class TrafficVideo:
     time_offset_ms: int
 
 
+@dataclass(frozen=True)
+class _KeyframeTable:
+    """Per-keyframe arrays used to evaluate metadata filters with numpy."""
+
+    traffic_mask: np.ndarray  # bool, one entry per keyframe
+    non_traffic_mask: np.ndarray
+    traffic_ids: np.ndarray  # FAISS ids of the traffic keyframes
+    traffic_videos: np.ndarray  # video id of each traffic keyframe
+    traffic_minutes: np.ndarray  # OSD minute of day of each traffic keyframe, -1 when unknown
+
+
 class TrafficMetadataRepository:
     """Camera/time/weather metadata of the traffic videos (N) and metadata filtering.
 
@@ -47,17 +61,16 @@ class TrafficMetadataRepository:
       - traffic_camera/video_weather.csv: wet/dry label per video (optional)
       - video_sources.json: time_offset_ms (pts of the first frame) per video
     A keyframe's wall-clock time is the OSD clock of the first frame plus its offset in the video.
+    Restrictions are returned as boolean masks over FAISS ids (positions in keyframes.json).
     """
 
     def __init__(self, data_root: Path, keyframe_repository: KeyframeMetadataRepository) -> None:
         self._data_root = data_root
         self._keyframe_repository = keyframe_repository
+        self._lock = threading.Lock()
         self._cameras: tuple[TrafficCamera, ...] = ()
         self._videos: dict[str, TrafficVideo] = {}
-        self._traffic_ids: np.ndarray | None = None
-        self._non_traffic_ids: np.ndarray | None = None
-        self._traffic_videos: np.ndarray | None = None
-        self._traffic_minutes: np.ndarray | None = None
+        self._table: _KeyframeTable | None = None
         self._allowed_cache: dict[TrafficFilters, np.ndarray] = {}
         self._loaded = False
 
@@ -69,30 +82,36 @@ class TrafficMetadataRepository:
     def load(self) -> None:
         if self._loaded:
             return
-        self._loaded = True
+        with self._lock:
+            if not self._loaded:
+                self._read_metadata()
+                self._loaded = True
+
+    def _read_metadata(self) -> None:
         cameras_path = self._data_root / "traffic_camera" / "cameras.json"
         if not cameras_path.exists():
             logger.warning("Traffic camera metadata not found at %s", cameras_path)
             return
 
-        weather = {}
+        weather: dict[str, str] = {}
         weather_path = self._data_root / "traffic_camera" / "video_weather.csv"
         if weather_path.exists():
             with open(weather_path, encoding="utf-8") as f:
                 weather = {row["video_id"]: row["weather"] for row in csv.DictReader(f)}
-        offsets = {}
+        offsets: dict[str, int] = {}
         sources_path = self._data_root / "video_sources.json"
         if sources_path.exists():
             videos = json.loads(sources_path.read_text(encoding="utf-8")).get("videos", {})
             offsets = {vid: int(entry.get("time_offset_ms", 0)) for vid, entry in videos.items()}
 
         cameras = []
+        traffic_videos: dict[str, TrafficVideo] = {}
         for camera in json.loads(cameras_path.read_text(encoding="utf-8"))["cameras"]:
             video_ids = []
             for video in camera["videos"]:
                 video_id = video["video_id"]
                 video_ids.append(video_id)
-                self._videos[video_id] = TrafficVideo(
+                traffic_videos[video_id] = TrafficVideo(
                     video_id=video_id,
                     camera_id=camera["camera_id"],
                     camera_name=camera["display_name"],
@@ -111,7 +130,10 @@ class TrafficMetadataRepository:
                 )
             )
         self._cameras = tuple(sorted(cameras, key=lambda c: fold(c.name)))
-        logger.info("Loaded traffic metadata: %d cameras, %d videos", len(cameras), len(self._videos))
+        self._videos = traffic_videos
+        logger.info(
+            "Loaded traffic metadata: %d cameras, %d videos", len(cameras), len(traffic_videos)
+        )
 
     @staticmethod
     def _parse_clock(date: str | None, clock: str | None) -> datetime | None:
@@ -129,7 +151,7 @@ class TrafficMetadataRepository:
             available=bool(self._videos),
             cameras=self._cameras,
             dates=tuple(sorted({v.date for v in videos if v.date})),
-            dayparts=tuple(p for p in ("morning", "midday", "night") if any(v.daypart == p for v in videos)),
+            dayparts=tuple(p for p in _DAYPARTS if any(v.daypart == p for v in videos)),
             weathers=tuple(sorted({v.weather for v in videos if v.weather})),
         )
 
@@ -144,40 +166,20 @@ class TrafficMetadataRepository:
             return None
         return video.clock_start + timedelta(milliseconds=keyframe.time_ms - video.time_offset_ms)
 
-    def traffic_ids(self) -> np.ndarray:
-        """FAISS ids of every traffic keyframe."""
-        self._split_ids()
-        assert self._traffic_ids is not None
-        return self._traffic_ids
+    def warm_up(self) -> None:
+        """Build the per-keyframe filter arrays now instead of on the first TRAFFIC query."""
+        self._keyframe_table()
 
-    def non_traffic_ids(self) -> np.ndarray:
-        """FAISS ids of every keyframe outside the traffic videos (e.g. for TRAKE)."""
-        self._split_ids()
-        assert self._non_traffic_ids is not None
-        return self._non_traffic_ids
+    def non_traffic_mask(self) -> np.ndarray:
+        """Mask of every keyframe outside the traffic videos (KIS, TRAKE, VQA)."""
+        return self._keyframe_table().non_traffic_mask
 
-    def _split_ids(self) -> None:
-        if self._traffic_ids is not None:
-            return
-        self.load()
-        keyframes = self._keyframe_repository.load().keyframes
-        mask = np.array([is_traffic_video(k.video_id) for k in keyframes], dtype=bool)
-        self._traffic_ids = np.flatnonzero(mask).astype(np.int64)
-        self._non_traffic_ids = np.flatnonzero(~mask).astype(np.int64)
-        # Per traffic keyframe: its video and OSD minute of day (-1 when unknown).
-        self._traffic_videos = np.array([keyframes[i].video_id for i in self._traffic_ids.tolist()])
-        minutes = []
-        for i in self._traffic_ids.tolist():
-            clock = self.clock_time(keyframes[i])
-            minutes.append(clock.hour * 60 + clock.minute if clock else -1)
-        self._traffic_minutes = np.asarray(minutes, dtype=np.int32)
-
-    def allowed_ids(self, filters: TrafficFilters) -> np.ndarray:
-        """FAISS ids of traffic keyframes that pass every metadata filter (cached)."""
+    def allowed_mask(self, filters: TrafficFilters) -> np.ndarray:
+        """Mask of the traffic keyframes that pass every metadata filter (cached)."""
         cached = self._allowed_cache.get(filters)
         if cached is not None:
             return cached
-        self._split_ids()
+        table = self._keyframe_table()
         cameras = set(filters.camera_ids)
         dates = set(filters.dates)
         dayparts = set(filters.dayparts)
@@ -190,18 +192,47 @@ class TrafficMetadataRepository:
             and (not dayparts or video.daypart in dayparts)
             and (not weathers or video.weather in weathers)
         ]
-        mask = np.isin(self._traffic_videos, videos)
+        keep = np.isin(table.traffic_videos, videos)
         if filters.clock_from:
-            mask &= self._traffic_minutes >= self._minute_of_day(filters.clock_from)
+            keep &= table.traffic_minutes >= self._minute_of_day(filters.clock_from)
         if filters.clock_to:
-            mask &= (self._traffic_minutes >= 0) & (
-                self._traffic_minutes <= self._minute_of_day(filters.clock_to)
+            keep &= (table.traffic_minutes >= 0) & (
+                table.traffic_minutes <= self._minute_of_day(filters.clock_to)
             )
-        allowed = self._traffic_ids[mask]
-        if len(self._allowed_cache) >= 64:
-            self._allowed_cache.pop(next(iter(self._allowed_cache)))
-        self._allowed_cache[filters] = allowed
-        return allowed
+        mask = np.zeros_like(table.traffic_mask)
+        mask[table.traffic_ids[keep]] = True
+        with self._lock:
+            if len(self._allowed_cache) >= _ALLOWED_CACHE_SIZE:
+                self._allowed_cache.pop(next(iter(self._allowed_cache)))
+            self._allowed_cache[filters] = mask
+        return mask
+
+    def _keyframe_table(self) -> _KeyframeTable:
+        table = self._table
+        if table is not None:
+            return table
+        self.load()
+        keyframes = self._keyframe_repository.load().keyframes
+        with self._lock:
+            if self._table is None:
+                traffic_mask = np.fromiter(
+                    (is_traffic_video(k.video_id) for k in keyframes),
+                    dtype=bool,
+                    count=len(keyframes),
+                )
+                traffic_ids = np.flatnonzero(traffic_mask).astype(np.int64)
+                minutes = []
+                for i in traffic_ids.tolist():
+                    clock = self.clock_time(keyframes[i])
+                    minutes.append(clock.hour * 60 + clock.minute if clock else -1)
+                self._table = _KeyframeTable(
+                    traffic_mask=traffic_mask,
+                    non_traffic_mask=~traffic_mask,
+                    traffic_ids=traffic_ids,
+                    traffic_videos=np.array([keyframes[i].video_id for i in traffic_ids.tolist()]),
+                    traffic_minutes=np.asarray(minutes, dtype=np.int32),
+                )
+            return self._table
 
     @staticmethod
     def _minute_of_day(clock: str) -> int:

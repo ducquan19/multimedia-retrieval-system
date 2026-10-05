@@ -1,11 +1,14 @@
+import json
 import logging
-import uuid
+import threading
 from pathlib import Path
 
 import faiss
 import numpy as np
 
 from core.intro_exclusion import IntroExclusionPolicy
+from infrastructure.retrieval import RetrievalDataError
+from repositories import id_filter
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
 from schemas.retrieval import ScoredCandidate
 
@@ -13,109 +16,124 @@ logger = logging.getLogger(__name__)
 
 
 class KeyframeVectorRepository:
+    """Exhaustive inner-product search over one FAISS index aligned with keyframes.json.
+
+    Row i of the index must be the embedding of keyframes[i]. The alignment is checked when
+    the index is loaded: dimension, row count and, when the builder wrote
+    ``<index>.meta.json``, the hash of the keyframe order the index was built from.
+    """
+
     def __init__(
         self,
+        name: str,
         index_path: Path,
         index_dim: int,
         keyframe_repository: KeyframeMetadataRepository,
         intro_exclusion_policy: IntroExclusionPolicy | None = None,
-    ):
+        index: faiss.Index | None = None,
+    ) -> None:
+        self.name = name
         self.index_path = index_path
+        self.index_dim = index_dim
         self._keyframe_repository = keyframe_repository
         self._intro_exclusion_policy = intro_exclusion_policy or IntroExclusionPolicy()
-        self.index_dim = index_dim
-        self._index = None
-        self._search_parameters = None
-        self._excluded_id_array = None
-        self._excluded_selector = None
-        self._allowed_selector = None
-        self._load_index()
+        self._lock = threading.Lock()
+        self._intro_mask: np.ndarray | None = None
+        self._index = index if index is not None else self._read_index()
+        if self._index is not None:
+            self._validate_alignment()
 
-    def _load_index(self):
-        # Fallback to empty indexes if file doesn't exist to prevent crash during development
-        if self.index_path.exists():
-            self._index = faiss.read_index(str(self.index_path))
-            logger.info("Loaded index from %s", self.index_path)
-        else:
-            logger.warning("Index not found at %s. Creating empty index.", self.index_path)
-            self._index = faiss.IndexFlatIP(self.index_dim)
+    @property
+    def available(self) -> bool:
+        return self._index is not None
 
     @property
     def keyframe_repository(self) -> KeyframeMetadataRepository:
         return self._keyframe_repository
 
-    def search(
-        self, query_vector: np.ndarray, top_k: int, allowed_ids: np.ndarray | None = None
-    ) -> list[ScoredCandidate]:
-        """Top-k keyframes; ``allowed_ids`` restricts the search to those FAISS ids."""
-        if self._index.ntotal == 0:
-            return []
-
-        if allowed_ids is None:
-            search_parameters = self._get_search_parameters()
-        else:
-            self._get_search_parameters()
-            if self._excluded_id_array is not None:
-                allowed_ids = np.setdiff1d(allowed_ids, self._excluded_id_array)
-            if allowed_ids.size == 0:
-                return []
-            allowed_ids = np.ascontiguousarray(allowed_ids, dtype=np.int64)
-            # The selector must outlive the search call, so keep it in a local.
-            selector = faiss.IDSelectorBatch(allowed_ids)
-            search_parameters = faiss.SearchParameters(sel=selector)
-            top_k = min(top_k, int(allowed_ids.size))
-        distances, indices = self._index.search(query_vector, top_k, params=search_parameters)
-        faiss_scores = self._format_single_search_result(distances, indices)
-        return self._hydrate_candidates(faiss_scores)
-
-    def _get_search_parameters(self):
-        if self._search_parameters is not None:
-            return self._search_parameters
-
-        collection = self._keyframe_repository.load()
-        excluded_ids = self._intro_exclusion_policy.excluded_faiss_ids(collection)
-        if not excluded_ids:
+    def _read_index(self) -> faiss.Index | None:
+        if not self.index_path.exists():
+            logger.warning("%s index not found at %s; it is disabled.", self.name, self.index_path)
             return None
+        index = faiss.read_index(str(self.index_path))
+        logger.info(
+            "Loaded %s index (%d vectors) from %s", self.name, index.ntotal, self.index_path
+        )
+        return index
 
-        # Keep every SWIG-backed object alive for as long as the search parameters.
-        self._excluded_id_array = np.asarray(excluded_ids, dtype=np.int64)
-        self._excluded_selector = faiss.IDSelectorBatch(self._excluded_id_array)
-        self._allowed_selector = faiss.IDSelectorNot(self._excluded_selector)
-        self._search_parameters = faiss.SearchParameters(sel=self._allowed_selector)
-        logger.info("Excluding %d intro keyframes from %s", len(excluded_ids), self.index_path)
-        return self._search_parameters
+    def _validate_alignment(self) -> None:
+        index = self._index
+        keyframe_count = len(self._keyframe_repository)
+        if index.d != self.index_dim:
+            raise RetrievalDataError(
+                f"{self.name} index has dimension {index.d}, expected {self.index_dim}"
+            )
+        if index.ntotal != keyframe_count:
+            raise RetrievalDataError(
+                f"{self.name} index has {index.ntotal} vectors but keyframes.json has "
+                f"{keyframe_count} keyframes; rebuild the index "
+                "(scripts/build_faiss_index.py)"
+            )
+        meta_path = self.index_path.with_name(self.index_path.name + ".meta.json")
+        if not meta_path.exists():
+            return
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        expected_hash = meta.get("keyframe_order")
+        if expected_hash and expected_hash != self._keyframe_repository.order_hash():
+            raise RetrievalDataError(
+                f"{self.name} index was built from a different keyframes.json order; "
+                "rebuild the index (scripts/build_faiss_index.py)"
+            )
 
-    def _format_single_search_result(
-        self, distances: np.ndarray, indices: np.ndarray
-    ) -> list[tuple[int, float]]:
-        if indices.size == 0 or distances.size == 0:
+    def search(
+        self, query_vector: np.ndarray, top_k: int, allowed: np.ndarray | None = None
+    ) -> list[ScoredCandidate]:
+        """Top-k keyframes; ``allowed`` is a boolean mask over FAISS ids restricting the search."""
+        if self._index is None:
+            raise RetrievalDataError(f"The {self.name} index is not available")
+        if self._index.ntotal == 0 or top_k <= 0:
             return []
-        dist_list = distances[0].tolist()
-        idx_list = indices[0].tolist()
-        return [
-            (idx, dist)
-            for idx, dist in zip(idx_list, dist_list, strict=True)
-            if idx != -1
-        ]
 
-    def _hydrate_candidates(self, faiss_scores: list[tuple[int, float]]) -> list[ScoredCandidate]:
-        collection = self._keyframe_repository.load()
-        candidates = []
-        for faiss_id, score in faiss_scores:
-            try:
-                # Assuming faiss_id corresponds to the index in the keyframes list
-                keyframe = collection.keyframes[faiss_id]
-                if self._intro_exclusion_policy.is_intro(keyframe):
-                    continue
-                candidate = ScoredCandidate(
-                    result_id=str(uuid.uuid4()),
-                    keyframe=keyframe,
-                    similarity_score=score,
-                    image_path=keyframe.image_path,
-                )
-                candidates.append(candidate)
-            except IndexError:
-                logger.warning(
-                    "FAISS returned id %d which is out of bounds for keyframes", faiss_id
-                )
-        return candidates
+        mask = self._restriction(allowed)
+        if mask is None:
+            params = None
+        else:
+            allowed_count = int(mask.sum())
+            if allowed_count == 0:
+                return []
+            top_k = min(top_k, allowed_count)
+            bitmap = np.packbits(mask, bitorder="little")
+            # The bitmap must outlive the search call, so keep it in a local.
+            params = faiss.SearchParameters(sel=faiss.IDSelectorBitmap(bitmap))
+        distances, indices = self._index.search(
+            np.ascontiguousarray(query_vector, dtype=np.float32), top_k, params=params
+        )
+        return self._hydrate_candidates(indices[0].tolist(), distances[0].tolist())
+
+    def _restriction(self, allowed: np.ndarray | None) -> np.ndarray | None:
+        intro_mask = self._get_intro_mask()
+        if allowed is None:
+            return intro_mask
+        return allowed if intro_mask is None else allowed & intro_mask
+
+    def _get_intro_mask(self) -> np.ndarray | None:
+        """Mask of every non-intro keyframe, or None when no keyframe is an intro."""
+        if self._intro_mask is None:
+            with self._lock:
+                if self._intro_mask is None:
+                    collection = self._keyframe_repository.load()
+                    excluded = self._intro_exclusion_policy.excluded_faiss_ids(collection)
+                    mask = id_filter.combine(len(collection.keyframes), None, excluded)
+                    self._intro_mask = mask if mask is not None else np.ones(0, dtype=bool)
+                    logger.info("Excluding %d intro keyframes from %s", excluded.size, self.name)
+        return self._intro_mask if self._intro_mask.size else None
+
+    def _hydrate_candidates(
+        self, faiss_ids: list[int], scores: list[float]
+    ) -> list[ScoredCandidate]:
+        keyframes = self._keyframe_repository.load().keyframes
+        return [
+            ScoredCandidate(faiss_id=faiss_id, keyframe=keyframes[faiss_id], similarity_score=score)
+            for faiss_id, score in zip(faiss_ids, scores, strict=True)
+            if faiss_id != -1 and not self._intro_exclusion_policy.is_intro(keyframes[faiss_id])
+        ]

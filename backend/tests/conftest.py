@@ -7,7 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.config import Settings
-from main import create_app
+from factories.factory import create_app
+from fakes import build_test_services, write_test_data_root
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _SESSION_TEMP_ROOT: Path | None = None
@@ -30,17 +31,21 @@ def pytest_unconfigure(config: pytest.Config) -> None:
         shutil.rmtree(_SESSION_TEMP_ROOT, ignore_errors=True)
 
 
-@pytest.fixture(scope="session")
-def repository_root() -> Path:
-    return _REPOSITORY_ROOT
+@pytest.fixture
+def test_data_root(tmp_path: Path) -> Path:
+    root = tmp_path / "data"
+    root.mkdir()
+    write_test_data_root(root)
+    return root
 
 
 @pytest.fixture
-def app_settings(repository_root: Path) -> Settings:
-    return Settings(data_root=repository_root / "data")
+def app_settings(test_data_root: Path) -> Settings:
+    # _env_file=None: a developer's .env must not change test behaviour.
+    return Settings(_env_file=None, data_root=test_data_root, log_dir=None)
 
 
 @pytest.fixture
 def client(app_settings: Settings) -> Generator[TestClient, None, None]:
-    with TestClient(create_app(app_settings)) as test_client:
+    with TestClient(create_app(app_settings, build_test_services)) as test_client:
         yield test_client

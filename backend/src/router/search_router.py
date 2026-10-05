@@ -3,11 +3,11 @@ from fastapi import APIRouter, HTTPException, Query
 from core.dependencies import (
     KeyframeRepositoryDependency,
     ObjectRepositoryDependency,
-    PrivateUrlSignerDependency,
     SearchServiceDependency,
-    SettingsDependency,
     TrafficRepositoryDependency,
+    VideoSourcesDependency,
 )
+from infrastructure.retrieval import RetrievalDataError
 from repositories.keyframe_metadata_repository import KeyframeMetadataError
 from schemas.search import (
     KISQueryPlan,
@@ -18,16 +18,18 @@ from schemas.search import (
     TrafficOptionsResponse,
 )
 from schemas.video import VideoKeyframe, VideoKeyframesResponse, VideoSourceResponse
-from services.retrieval_service import RetrievalDataError
 from services.search_service import SearchValidationError
 from services.video_source_service import (
     VideoSourceError,
     VideoSourceNotFound,
-    VideoSourceService,
     VideoSourceUnavailable,
 )
 
 router = APIRouter(tags=["search"])
+
+# Endpoints are plain `def`: they run torch, FAISS, Elasticsearch and Gemini synchronously,
+# so FastAPI executes them in its threadpool instead of blocking the event loop (which would
+# stall media, video and DRES requests while a search runs).
 
 
 @router.post(
@@ -35,9 +37,7 @@ router = APIRouter(tags=["search"])
     response_model=KISQueryPlan,
     summary="Understand and plan a KIS query",
 )
-async def plan_kis_query(
-    payload: KISQueryPlanRequest, service: SearchServiceDependency
-) -> KISQueryPlan:
+def plan_kis_query(payload: KISQueryPlanRequest, service: SearchServiceDependency) -> KISQueryPlan:
     try:
         return service.plan_kis(payload.query)
     except SearchValidationError as exc:
@@ -47,34 +47,22 @@ async def plan_kis_query(
 @router.post(
     "/search",
     response_model=SearchResponse,
-    summary="Semantic Video Keyframe Search",
-    description="""
-    Perform a semantic search for keyframes using natural language.
-    
-    This endpoint supports multiple search strategies including SigLIP, BEiT3,
-    or a Hybrid fusion of both.
-    It returns a list of candidate keyframes along with their similarity scores.
-    
-    **Parameters:**
-    - **query**: The search text query (e.g. "a person walking").
-    - **model_choices**: List of retrieval models to use (e.g. ["siglip", "beit3"]).
-      If multiple, RRF is used.
-    - **top_k**: Maximum number of results to return.
-    
-    **Returns:**
-    A list of top keyframes ordered by their fused similarity score.
-    """,
-    response_description="A response containing a list of top scored keyframes matching the query.",
+    summary="Hybrid video keyframe search",
+    description=(
+        "Search keyframes for a KIS, VQA, TRAKE or TRAFFIC query. Visual search uses SigLIP "
+        "and/or BEiT-3 FAISS indexes, ASR uses Elasticsearch BM25 and the Object source uses "
+        "the detector index; enabled sources are fused into one ranked list (TRAKE returns "
+        "ranked event sequences of one video)."
+    ),
+    response_description="Ranked results with the query metadata and warnings.",
 )
-async def search(payload: SearchRequest, service: SearchServiceDependency) -> SearchResponse:
+def search(payload: SearchRequest, service: SearchServiceDependency) -> SearchResponse:
     try:
         return service.search(payload)
     except SearchValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except (KeyframeMetadataError, RetrievalDataError) as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/objects/labels", response_model=ObjectLabelsResponse)
@@ -122,13 +110,11 @@ def get_video_keyframes(
 @router.get("/videos/{video_id}/source", response_model=VideoSourceResponse)
 def get_video_source(
     video_id: str,
-    settings: SettingsDependency,
-    signer: PrivateUrlSignerDependency,
+    video_sources: VideoSourcesDependency,
     refresh: bool = False,
 ) -> VideoSourceResponse:
-    service = VideoSourceService(settings.data_root, settings.video_sources_filename, signer)
     try:
-        source = service.resolve(video_id, refresh=refresh)
+        source = video_sources.resolve(video_id, refresh=refresh)
     except VideoSourceNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except VideoSourceUnavailable as exc:

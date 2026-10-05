@@ -1,9 +1,14 @@
+import threading
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 from typing import Protocol, TypeVar
 
+import numpy as np
+
 from models.keyframe import Keyframe, KeyframeCollection
 
+# Number of opening frames per programme group (video id prefix) that only show the intro.
+# Override with AIC_INTRO_FRAME_COUNTS='{"L21": 50, ...}'.
 DEFAULT_INTRO_FRAME_COUNTS: Mapping[str, int] = MappingProxyType(
     {
         "L21": 50,
@@ -19,7 +24,8 @@ DEFAULT_INTRO_FRAME_COUNTS: Mapping[str, int] = MappingProxyType(
 
 
 class CandidateWithKeyframe(Protocol):
-    keyframe: Keyframe
+    @property
+    def keyframe(self) -> Keyframe: ...
 
 
 CandidateT = TypeVar("CandidateT", bound=CandidateWithKeyframe)
@@ -30,15 +36,14 @@ class IntroExclusionPolicy:
 
     def __init__(self, intro_frame_counts: Mapping[str, int] | None = None) -> None:
         counts = dict(
-            DEFAULT_INTRO_FRAME_COUNTS
-            if intro_frame_counts is None
-            else intro_frame_counts
+            DEFAULT_INTRO_FRAME_COUNTS if intro_frame_counts is None else intro_frame_counts
         )
         if any(not group_id or frame_count < 0 for group_id, frame_count in counts.items()):
             raise ValueError("Intro group IDs must be non-empty and frame counts non-negative")
         self._intro_frame_counts = MappingProxyType(counts)
+        self._lock = threading.Lock()
         self._cached_collection: KeyframeCollection | None = None
-        self._cached_excluded_ids: tuple[int, ...] = ()
+        self._cached_excluded_ids: np.ndarray = np.empty(0, dtype=np.int64)
 
     @property
     def intro_frame_counts(self) -> Mapping[str, int]:
@@ -49,17 +54,20 @@ class IntroExclusionPolicy:
         intro_frame_count = self._intro_frame_counts.get(group_id)
         return intro_frame_count is not None and keyframe.frame_id < intro_frame_count
 
-    def excluded_faiss_ids(self, collection: KeyframeCollection) -> tuple[int, ...]:
-        if collection is not self._cached_collection:
-            self._cached_excluded_ids = tuple(
-                faiss_id
-                for faiss_id, keyframe in enumerate(collection.keyframes)
-                if self.is_intro(keyframe)
-            )
-            self._cached_collection = collection
-        return self._cached_excluded_ids
+    def excluded_faiss_ids(self, collection: KeyframeCollection) -> np.ndarray:
+        """Sorted FAISS ids of every intro keyframe (cached per collection)."""
+        with self._lock:
+            if collection is not self._cached_collection:
+                self._cached_excluded_ids = np.fromiter(
+                    (
+                        faiss_id
+                        for faiss_id, keyframe in enumerate(collection.keyframes)
+                        if self.is_intro(keyframe)
+                    ),
+                    dtype=np.int64,
+                )
+                self._cached_collection = collection
+            return self._cached_excluded_ids
 
     def filter_candidates(self, candidates: Sequence[CandidateT]) -> list[CandidateT]:
-        return [
-            candidate for candidate in candidates if not self.is_intro(candidate.keyframe)
-        ]
+        return [candidate for candidate in candidates if not self.is_intro(candidate.keyframe)]

@@ -1,4 +1,6 @@
 import logging
+import threading
+from collections import OrderedDict
 from collections.abc import Sequence
 from typing import Literal, Protocol
 
@@ -13,7 +15,7 @@ from schemas.search import KISQueryPlan, ObjectQueryTerm, QueryVariants, SearchS
 
 logger = logging.getLogger(__name__)
 
-_GEMINI_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 _KIS_PLAN_CACHE_SIZE = 128
 _ENHANCE_CACHE_SIZE = 256
 _MAX_AUTO_OBJECTS = 4
@@ -95,6 +97,29 @@ Allowed detector classes:
 """
 
 
+class _LruCache[T]:
+    """Small thread-safe LRU cache (requests run concurrently in the threadpool)."""
+
+    def __init__(self, max_size: int) -> None:
+        self._max_size = max_size
+        self._items: OrderedDict[str, T] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> T | None:
+        with self._lock:
+            value = self._items.get(key)
+            if value is not None:
+                self._items.move_to_end(key)
+            return value
+
+    def put(self, key: str, value: T) -> None:
+        with self._lock:
+            self._items[key] = value
+            self._items.move_to_end(key)
+            while len(self._items) > self._max_size:
+                self._items.popitem(last=False)
+
+
 class QueryEnhancer(Protocol):
     def enhance(
         self, query: str, query_type: str, sources: SearchSources | None = None
@@ -108,24 +133,36 @@ class QueryEnhancer(Protocol):
 class GeminiQueryEnhancer:
     """Uses Gemini to rewrite a query, pick detector objects and weight each modality."""
 
-    def __init__(self, api_key: str | None = None, object_labels: Sequence[str] = ()):
-        self.api_key = api_key
-        self._kis_plan_cache: dict[str, KISQueryPlan] = {}
-        self._enhance_cache: dict[str, QueryVariants] = {}
+    def __init__(
+        self,
+        api_key: str | None = None,
+        object_labels: Sequence[str] = (),
+        model: str = DEFAULT_GEMINI_MODEL,
+    ) -> None:
+        self.model = model
+        self._kis_plan_cache: _LruCache[KISQueryPlan] = _LruCache(_KIS_PLAN_CACHE_SIZE)
+        self._enhance_cache: _LruCache[QueryVariants] = _LruCache(_ENHANCE_CACHE_SIZE)
         self._object_labels = tuple(object_labels)
         self._label_lookup = {label.casefold(): label for label in self._object_labels}
-        if genai:
-            self.client = genai.Client(api_key=api_key) if api_key else genai.Client()
+        self.client = None
+        if genai is None:
+            logger.warning("google-genai is not installed; Enhance query is disabled.")
+        elif not api_key:
+            logger.warning("AIC_GEMINI_API_KEY is not set; Enhance query is disabled.")
         else:
-            self.client = None
+            try:
+                self.client = genai.Client(api_key=api_key)
+            except Exception:  # noqa: BLE001 - enhancement is optional
+                logger.exception("Could not create the Gemini client; Enhance query is disabled.")
+
+    @property
+    def available(self) -> bool:
+        return self.client is not None
 
     def enhance(
         self, query: str, query_type: str, sources: SearchSources | None = None
     ) -> QueryVariants | None:
         if not self.client:
-            logger.warning(
-                "google-genai is not installed or client failed to initialize. Falling back."
-            )
             return None
 
         cache_key = f"{query_type}|{self._sources_key(sources)}|{' '.join(query.split())}"
@@ -162,7 +199,7 @@ class GeminiQueryEnhancer:
 
         try:
             response = self.client.models.generate_content(
-                model=_GEMINI_MODEL,
+                model=self.model,
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -187,16 +224,14 @@ class GeminiQueryEnhancer:
                         enhanced.w_asr,
                         enhanced.w_obj,
                     )
-                    if len(self._enhance_cache) >= _ENHANCE_CACHE_SIZE:
-                        del self._enhance_cache[next(iter(self._enhance_cache))]
-                    self._enhance_cache[cache_key] = enhanced
+                    self._enhance_cache.put(cache_key, enhanced)
                     return enhanced
 
             logger.warning("Gemini did not return exactly 1 variant. Falling back.")
             return None
 
-        except Exception as e:
-            logger.warning(f"Failed to enhance query with Gemini: {e}")
+        except Exception as exc:  # noqa: BLE001 - any Gemini failure falls back to the raw query
+            logger.warning("Failed to enhance query with Gemini: %s", exc)
             return None
 
     def enhance_batch(
@@ -223,7 +258,7 @@ class GeminiQueryEnhancer:
 
         try:
             response = self.client.models.generate_content(
-                model=_GEMINI_MODEL,
+                model=self.model,
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -251,8 +286,8 @@ class GeminiQueryEnhancer:
             logger.warning("Gemini did not return valid batch variants. Falling back.")
             return None
 
-        except Exception as e:
-            logger.warning(f"Failed to enhance batch query with Gemini: {e}")
+        except Exception as exc:  # noqa: BLE001 - any Gemini failure falls back to the raw queries
+            logger.warning("Failed to enhance batch query with Gemini: %s", exc)
             return None
 
     def plan_kis(self, query: str) -> KISQueryPlan | None:
@@ -293,7 +328,7 @@ class GeminiQueryEnhancer:
 
         try:
             response = self.client.models.generate_content(
-                model=_GEMINI_MODEL,
+                model=self.model,
                 contents=prompt,
                 config=genai.types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -306,14 +341,14 @@ class GeminiQueryEnhancer:
                 ),
             )
             if response.parsed:
-                plan = KISQueryPlan.model_validate(response.parsed.model_dump())
-                if len(self._kis_plan_cache) >= _KIS_PLAN_CACHE_SIZE:
-                    del self._kis_plan_cache[next(iter(self._kis_plan_cache))]
-                self._kis_plan_cache[cache_key] = plan
+                plan = KISQueryPlan.model_validate(
+                    {**response.parsed.model_dump(), "planner_model": self.model}
+                )
+                self._kis_plan_cache.put(cache_key, plan)
                 logger.info("Gemini planned KIS query with %d event(s).", len(plan.events))
                 return plan
             logger.warning("Gemini did not return a valid KIS query plan.")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - reported to the user as a planning failure
             logger.warning("Failed to plan KIS query with Gemini: %s", exc)
         return None
 
