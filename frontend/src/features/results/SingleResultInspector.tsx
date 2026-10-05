@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type {
   KISSearchResponse,
@@ -74,37 +74,30 @@ export function SingleResultInspector({
   }, [selected]);
 
   return (
-    <section className="result-inspector" aria-label="Search results">
+    <section className="result-inspector" aria-label="Danh sách kết quả">
       {response.query_type === "VQA" && (
-        <div style={{ marginBottom: "1rem" }}>
-          <label className="field" htmlFor="global-vqa-answer">
-            <span>VQA Answer</span>
-            <textarea
-              id="global-vqa-answer"
-              value={globalVQAAnswer}
-              maxLength={maxAnswerLength}
-              onChange={(e) => setGlobalVQAAnswer(e.target.value)}
-              placeholder="Nhập câu trả lời VQA vào đây..."
-              rows={3}
-            />
-          </label>
-        </div>
+        <label className="field vqa-answer" htmlFor="global-vqa-answer">
+          <span className="field__label">Câu trả lời VQA</span>
+          <textarea
+            id="global-vqa-answer"
+            value={globalVQAAnswer}
+            maxLength={maxAnswerLength}
+            onChange={(e) => setGlobalVQAAnswer(e.target.value)}
+            placeholder="Câu trả lời sẽ điền sẵn khi nộp DRES"
+            rows={2}
+          />
+        </label>
       )}
 
       {groupByVideo ? (
-        <div className="result-video-groups">
+        <div className="video-groups">
           {videoGroups.map(([videoId, results]) => (
-            <section
-              className="result-video-group"
-              data-testid="video-group"
-              key={videoId}
-              style={{ "--group-columns": Math.min(results.length, 5) } as CSSProperties}
-            >
-              <header className="result-video-group__heading">
-                <h4>{videoId}</h4>
-                <span>{results.length} result{results.length === 1 ? "" : "s"}</span>
+            <section className="video-group" data-testid="video-group" key={videoId}>
+              <header className="video-group__head">
+                <h2>{videoId}</h2>
+                <span>{results.length} kết quả</span>
               </header>
-              <ol className="result-card-grid" aria-label={`Results from ${videoId}`}>
+              <ol className="contact-sheet" aria-label={`Kết quả của ${videoId}`}>
                 {results.map((result) => (
                   <ResultCard
                     key={result.result_id}
@@ -118,7 +111,7 @@ export function SingleResultInspector({
           ))}
         </div>
       ) : (
-        <ol className="result-card-grid" aria-label="Retrieved candidates">
+        <ol className="contact-sheet" aria-label="Kết quả theo thứ hạng">
           {orderedResults.map((result, index) => (
             <ResultCard
               key={result.result_id}
@@ -155,48 +148,39 @@ interface ResultCardProps {
   onOpenDetail: (trigger: HTMLButtonElement) => void;
 }
 
-function ResultCard({
-  result,
-  rank,
-  onOpenDetail,
-}: ResultCardProps) {
+function ResultCard({ result, rank, onOpenDetail }: ResultCardProps) {
+  const time =
+    result.time_ms !== null && result.time_ms !== undefined
+      ? formatMs(result.time_ms)
+      : `F${result.frame_id}`;
   return (
-    <li className="result-card" data-testid="result-card">
-      <article aria-label={`Rank ${rank}, ${result.video_id}`}>
-        <div className="result-card__media">
-          <button
-            type="button"
-            className="thumbnail-button"
-            onClick={(event) => onOpenDetail(event.currentTarget)}
-            aria-label={`Open details for ${result.video_id}, frame ${result.frame_id}`}
-          >
-            <ResultImage
-              src={result.keyframe_url}
-              alt={`Keyframe ${result.frame_id} from ${result.video_id}`}
-              className="result-card__image"
-            />
-          </button>
-          <span className="score-badge result-card__score">
+    <li className="frame" data-testid="result-card">
+      <article aria-label={`Hạng ${rank}, ${result.video_id}`}>
+        <button
+          type="button"
+          className="frame__image"
+          onClick={(event) => onOpenDetail(event.currentTarget)}
+          aria-label={`Mở chi tiết ${result.video_id}, frame ${result.frame_id}`}
+        >
+          <ResultImage
+            src={result.keyframe_url}
+            alt={`Keyframe ${result.frame_id} của ${result.video_id}`}
+          />
+        </button>
+        <footer className="frame__edge">
+          <span className="frame__rank">{rank}</span>
+          <strong className="frame__video">{result.video_id}</strong>
+          <span className="frame__time">{time}</span>
+          <span className="frame__score" title="Điểm tương đồng">
             {formatScore(result.similarity_score)}
           </span>
-        </div>
-
-        <div className="result-card__body">
-          <div className="result-card__title-row">
-            <strong>{result.video_id}</strong>
-            <span>
-              {result.time_ms !== null && result.time_ms !== undefined
-                ? formatMs(result.time_ms)
-                : result.frame_id}
-            </span>
-          </div>
-          {result.camera_name && (
-            <div className="result-card__meta" title={result.camera_name}>
-              <span>{result.camera_name}</span>
-              {result.clock_time && <span>{result.clock_time.slice(6)}</span>}
-            </div>
-          )}
-        </div>
+        </footer>
+        {result.camera_name && (
+          <p className="frame__meta" title={result.camera_name}>
+            <span>{result.camera_name}</span>
+            {result.clock_time && <span>{result.clock_time.slice(6)}</span>}
+          </p>
+        )}
       </article>
     </li>
   );

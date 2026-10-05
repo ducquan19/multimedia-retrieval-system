@@ -66,7 +66,7 @@ export function QueryHistorySelect({ type, entries, onRestore }: QueryHistorySel
   return (
     <select
       className="query-history"
-      aria-label="Query history"
+      aria-label="Lịch sử truy vấn"
       value=""
       onChange={(event) => {
         const entry = forType[Number(event.target.value)];

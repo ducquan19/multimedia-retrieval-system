@@ -94,7 +94,7 @@ describe("DRES submission", () => {
       answer: "",
     });
 
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
 
     const start = await screen.findByLabelText("Start (ms)");
     await waitFor(() => expect(start).toHaveValue(20200));
@@ -128,7 +128,7 @@ describe("DRES submission", () => {
     };
     const { unmount } = renderModal(target);
 
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
     await waitFor(() => expect(screen.getByLabelText("Start (ms)")).toHaveValue(20200));
     await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
     expect(await screen.findByText("CORRECT")).toBeInTheDocument();
@@ -136,7 +136,7 @@ describe("DRES submission", () => {
 
     // Reopened on the same frame: that exact answer is blocked before any request.
     renderModal(target);
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
     await waitFor(() => expect(screen.getByLabelText("Start (ms)")).toHaveValue(20200));
     expect(screen.getByRole("note")).toHaveTextContent(
       /Đáp án này đã nộp lúc .*\(CORRECT\).*không thể nộp lại/,
@@ -170,7 +170,7 @@ describe("DRES submission", () => {
       answer: "",
     });
 
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
     const start = await screen.findByLabelText("Start (ms)");
     await waitFor(() => expect(start).toHaveValue(20200));
     await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
@@ -212,10 +212,10 @@ describe("DRES submission", () => {
       answer: "3",
     });
 
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
     await user.click(screen.getByRole("radio", { name: "VQA" }));
     await waitFor(() => expect(screen.getByLabelText("Time (ms)")).toHaveValue(20200));
-    expect(screen.getByLabelText("VQA answer")).toHaveValue("3");
+    expect(screen.getByLabelText("Đáp án VQA")).toHaveValue("3");
     await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
 
     await screen.findByText("CORRECT");
@@ -244,7 +244,7 @@ describe("DRES submission", () => {
       answer: "13",
     });
 
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
     await user.click(screen.getByRole("radio", { name: "VQA" }));
     await waitFor(() => expect(screen.getByLabelText("Time (ms)")).toHaveValue(20200));
     await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
@@ -267,7 +267,7 @@ describe("DRES submission", () => {
       20,
     );
 
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
     await waitFor(() => expect(screen.getByLabelText("Evaluation")).toHaveValue("ev1"));
     expect(screen.getByLabelText("Frame IDs")).toHaveValue("10,20,30");
     await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));

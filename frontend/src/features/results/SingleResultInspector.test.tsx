@@ -131,7 +131,7 @@ describe("SingleResultInspector", () => {
     render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
 
     const trigger = screen.getByRole("button", {
-      name: "Open details for L01_V001, frame 505",
+      name: "Mở chi tiết L01_V001, frame 505",
     });
     await user.click(trigger);
 
@@ -141,13 +141,13 @@ describe("SingleResultInspector", () => {
     expect(dialog).not.toHaveTextContent("Similarity");
     expect(dialog).toHaveTextContent("Một người đang mở laptop trên bàn.");
     expect(dialog).toHaveTextContent("laptop");
-    expect(screen.getByRole("button", { name: "Close keyframe detail" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Đóng" })).toHaveFocus();
     await user.tab();
-    const copyButton = screen.getByRole("button", { name: "Copy video ID and frame" });
+    const copyButton = screen.getByRole("button", { name: "Sao chép mã video và frame" });
     expect(copyButton).toHaveFocus();
     await user.click(copyButton);
     expect(await navigator.clipboard.readText()).toBe("L01_V001\t505");
-    expect(copyButton).toHaveTextContent("Copied");
+    expect(copyButton).toHaveTextContent("Đã chép");
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -158,10 +158,10 @@ describe("SingleResultInspector", () => {
     const user = userEvent.setup();
     render(<SingleResultInspector response={response("VQA")} maxAnswerLength={4_000} />);
 
-    const answer = screen.getByLabelText("VQA Answer");
+    const answer = screen.getByLabelText("Câu trả lời VQA");
     await user.type(answer, "edited answer A");
 
-    expect(screen.getByLabelText("VQA Answer")).toHaveValue("edited answer A");
+    expect(screen.getByLabelText("Câu trả lời VQA")).toHaveValue("edited answer A");
   });
 
   it("moves to a neighbouring keyframe from the strip and with the arrow keys", async () => {
@@ -170,7 +170,7 @@ describe("SingleResultInspector", () => {
     render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
 
     await user.click(
-      screen.getByRole("button", { name: "Open details for L01_V001, frame 505" }),
+      screen.getByRole("button", { name: "Mở chi tiết L01_V001, frame 505" }),
     );
     const strip = await screen.findByRole("region", { name: "Temporal context" });
     expect(
@@ -195,11 +195,11 @@ describe("SingleResultInspector", () => {
     render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
 
     await user.click(
-      screen.getByRole("button", { name: "Open details for L01_V001, frame 505" }),
+      screen.getByRole("button", { name: "Mở chi tiết L01_V001, frame 505" }),
     );
-    await user.click(screen.getByRole("button", { name: "Play from keyframe" }));
+    await user.click(screen.getByRole("button", { name: "Phát video" }));
 
-    const video = await screen.findByText("Your browser does not support video playback.");
+    const video = await screen.findByText("Trình duyệt không phát được video này.");
     const videoElement = video.closest("video");
     if (!(videoElement instanceof HTMLVideoElement)) throw new Error("Expected video player");
     Object.defineProperty(videoElement, "duration", { configurable: true, value: 100 });
@@ -211,35 +211,35 @@ describe("SingleResultInspector", () => {
     );
     expect(videoElement.currentTime).toBeCloseTo(505 / 25);
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Show keyframe" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Xem keyframe" })).toBeInTheDocument();
 
-    const frameInput = screen.getByRole("spinbutton", { name: "Current frame ID" });
+    const frameInput = screen.getByRole("spinbutton", { name: "Frame hiện tại" });
     expect(frameInput).toHaveValue(505);
     videoElement.currentTime = 22;
     fireEvent.timeUpdate(videoElement);
     expect(frameInput).toHaveValue(550);
-    await user.click(screen.getByRole("button", { name: "Copy current frame ID" }));
+    await user.click(screen.getByRole("button", { name: "Sao chép frame hiện tại" }));
     expect(await navigator.clipboard.readText()).toBe("550");
-    expect(screen.getByRole("button", { name: "Copy current frame ID" })).toHaveTextContent(
-      "Copied",
+    expect(screen.getByRole("button", { name: "Sao chép frame hiện tại" })).toHaveTextContent(
+      "Đã chép",
     );
 
-    await user.click(screen.getByRole("button", { name: "Next frame" }));
+    await user.click(screen.getByRole("button", { name: "Frame sau" }));
     expect(frameInput).toHaveValue(551);
     expect(videoElement.currentTime).toBeCloseTo(551 / 25);
-    await user.click(screen.getByRole("button", { name: "Previous frame" }));
+    await user.click(screen.getByRole("button", { name: "Frame trước" }));
     expect(frameInput).toHaveValue(550);
     expect(videoElement.currentTime).toBeCloseTo(550 / 25);
 
     videoElement.currentTime = 40;
-    await user.click(screen.getByRole("button", { name: "Back to keyframe" }));
+    await user.click(screen.getByRole("button", { name: "Về keyframe" }));
     expect(videoElement.currentTime).toBeCloseTo(505 / 25);
     expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: "Show keyframe" }));
-    expect(screen.queryByRole("spinbutton", { name: "Current frame ID" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Xem keyframe" }));
+    expect(screen.queryByRole("spinbutton", { name: "Frame hiện tại" })).not.toBeInTheDocument();
     expect(
-      within(screen.getByRole("dialog")).getByAltText("Keyframe 505 from L01_V001"),
+      within(screen.getByRole("dialog")).getByAltText("Keyframe 505 của L01_V001"),
     ).toBeInTheDocument();
   });
 
@@ -254,10 +254,10 @@ describe("SingleResultInspector", () => {
   it("shows a stable placeholder when a keyframe image fails", () => {
     render(<SingleResultInspector response={response("KIS")} maxAnswerLength={4_000} />);
 
-    fireEvent.error(screen.getByAltText("Keyframe 505 from L01_V001"));
+    fireEvent.error(screen.getByAltText("Keyframe 505 của L01_V001"));
 
-    expect(screen.getByText("Image unavailable")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Keyframe 505 from L01_V001" })).toBeInTheDocument();
+    expect(screen.getByText("Không có ảnh")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Keyframe 505 của L01_V001" })).toBeInTheDocument();
   });
 
   it("groups candidates by video when requested", async () => {
@@ -277,12 +277,12 @@ describe("SingleResultInspector", () => {
 
     expect(screen.queryByRole("heading", { name: "Results" })).not.toBeInTheDocument();
     expect(screen.queryByText("Editable result order")).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Sort grouped results" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Sắp xếp trong nhóm" })).not.toBeInTheDocument();
 
     const groups = screen.getAllByTestId("video-group");
     expect(groups).toHaveLength(2);
     expect(groups[0]).toHaveTextContent("L01_V001");
-    expect(groups[0]).toHaveTextContent("2 results");
+    expect(groups[0]).toHaveTextContent("2 kết quả");
     expect(groups[1]).toHaveTextContent("L02_V002");
     expect(within(groups[0]!).getAllByTestId("result-card")[0]).toHaveTextContent("1240");
 
@@ -306,7 +306,7 @@ describe("SingleResultInspector", () => {
       <SingleResultInspector response={response("VQA")} maxAnswerLength={4_000} />,
     );
 
-    await user.type(screen.getByLabelText("VQA Answer"), "temporary answer");
+    await user.type(screen.getByLabelText("Câu trả lời VQA"), "temporary answer");
 
     const sourceResult = results[2];
     if (!sourceResult) throw new Error("Expected source result");
@@ -321,6 +321,6 @@ describe("SingleResultInspector", () => {
     );
 
     expect(cardVideoOrder()).toEqual(["L03_V003"]);
-    expect(screen.getByLabelText("VQA Answer")).toHaveValue("");
+    expect(screen.getByLabelText("Câu trả lời VQA")).toHaveValue("");
   });
 });

@@ -70,7 +70,7 @@ export function ObjectQueryInput({
       <div className="object-query__add">
         <input
           type="text"
-          aria-label="Object label"
+          aria-label="Tên object"
           list="object-label-options"
           placeholder="Person, Car, Dog…"
           value={draft}
@@ -81,8 +81,8 @@ export function ObjectQueryInput({
           }}
           onKeyDown={addOnEnter}
         />
-        <button type="button" onClick={addTerm} disabled={disabled || !draft.trim()}>
-          Add
+        <button type="button" className="button button--quiet" onClick={addTerm} disabled={disabled || !draft.trim()}>
+          Thêm
         </button>
         <datalist id="object-label-options">
           {labels.map((label) => (
@@ -92,14 +92,14 @@ export function ObjectQueryInput({
       </div>
 
       {terms.length > 0 && (
-        <ul className="object-query__terms" aria-label="Object query">
+        <ul className="object-query__terms" aria-label="Object cần có">
           {terms.map((term, index) => (
             <li key={term.label}>
               <span>{term.label}</span>
               <label>
                 <span aria-hidden="true">≥</span>
                 <select
-                  aria-label={`Min count ${term.label}`}
+                  aria-label={`Số lượng tối thiểu ${term.label}`}
                   value={term.min_count}
                   disabled={disabled}
                   onChange={(event) => updateMinCount(index, Number(event.target.value))}
@@ -113,7 +113,7 @@ export function ObjectQueryInput({
               </label>
               <button
                 type="button"
-                aria-label={`Remove ${term.label}`}
+                aria-label={`Bỏ ${term.label}`}
                 disabled={disabled}
                 onClick={() => onChange(terms.filter((_, i) => i !== index))}
               >

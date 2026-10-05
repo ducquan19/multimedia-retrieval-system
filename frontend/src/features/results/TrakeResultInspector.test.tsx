@@ -78,7 +78,7 @@ describe("TrakeResultInspector", () => {
     const user = userEvent.setup();
     render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
     const trigger = screen.getByRole("button", {
-      name: "Open EVENT 2 details for L01_V001, frame 151",
+      name: "Mở EVENT 2 của L01_V001, frame 151",
     });
 
     await user.click(trigger);
@@ -121,9 +121,9 @@ describe("TrakeResultInspector", () => {
     render(<TrakeResultInspector response={response()} expectedEventCount={3} />);
 
     await user.click(
-      screen.getByRole("button", { name: "Open EVENT 2 details for L01_V001, frame 151" }),
+      screen.getByRole("button", { name: "Mở EVENT 2 của L01_V001, frame 151" }),
     );
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
     expect(screen.getByLabelText("Frame IDs")).toHaveValue("101,151,203");
 
     await user.click(await screen.findByRole("button", { name: "Keyframe 162" }));
@@ -164,7 +164,7 @@ describe("TrakeResultInspector", () => {
     render(<TrakeResultInspector response={response(malformed)} expectedEventCount={3} />);
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Cannot display malformed TRAKE results",
+      "Kết quả TRAKE không hợp lệ",
     );
     expect(screen.getByRole("alert")).toHaveTextContent(message);
     expect(screen.queryByTestId("trake-row")).not.toBeInTheDocument();

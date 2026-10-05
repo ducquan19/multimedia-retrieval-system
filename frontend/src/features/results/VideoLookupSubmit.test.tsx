@@ -45,10 +45,10 @@ function submitPayloads(fetchMock: ReturnType<typeof setupApi>) {
 
 async function openVideoAtFrame(user: ReturnType<typeof userEvent.setup>, frame: number) {
   render(<VideoLookup />);
-  await user.type(screen.getByRole("textbox", { name: "Video ID" }), "L21_V003");
-  await user.type(screen.getByRole("spinbutton", { name: "Frame ID" }), String(frame));
-  await user.click(screen.getByRole("button", { name: "Open" }));
-  const fallback = await screen.findByText("Your browser does not support video playback.");
+  await user.type(screen.getByRole("textbox", { name: "Mã video" }), "L21_V003");
+  await user.type(screen.getByRole("spinbutton", { name: "Frame" }), String(frame));
+  await user.click(screen.getByRole("button", { name: "Mở video" }));
+  const fallback = await screen.findByText("Trình duyệt không phát được video này.");
   const video = fallback.closest("video");
   if (!(video instanceof HTMLVideoElement)) throw new Error("Expected video player");
   Object.defineProperty(video, "duration", { configurable: true, value: 100 });
@@ -78,7 +78,7 @@ describe("Submitting from free video viewing", () => {
     const user = userEvent.setup();
     await openVideoAtFrame(user, 125);
 
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
     await waitFor(() => expect(screen.getByLabelText("Start (ms)")).toHaveValue(5000));
     await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
 
@@ -95,8 +95,8 @@ describe("Submitting from free video viewing", () => {
     const user = userEvent.setup();
     const video = await openVideoAtFrame(user, 125);
 
-    await user.click(screen.getByRole("button", { name: "Submit DRES" }));
-    const panel = screen.getByRole("region", { name: "Submit to DRES" });
+    await user.click(screen.getByRole("button", { name: "Nộp DRES" }));
+    const panel = screen.getByRole("region", { name: "Nộp DRES" });
     await user.click(within(panel).getByRole("radio", { name: "TRAKE" }));
     expect(within(panel).getByLabelText("Frame IDs")).toHaveValue("125");
 

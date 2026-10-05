@@ -29,8 +29,8 @@ describe("VideoLookup", () => {
     const user = userEvent.setup();
     render(<VideoLookup />);
 
-    const videoIdInput = screen.getByRole("textbox", { name: "Video ID" });
-    const frameIdInput = screen.getByRole("spinbutton", { name: "Frame ID" });
+    const videoIdInput = screen.getByRole("textbox", { name: "Mã video" });
+    const frameIdInput = screen.getByRole("spinbutton", { name: "Frame" });
     fireEvent.paste(videoIdInput, {
       clipboardData: { getData: () => "L21_V003\t125\r\n" },
     });
@@ -41,14 +41,14 @@ describe("VideoLookup", () => {
     videoIdInput.focus();
     await user.keyboard("{Enter}");
 
-    const fallbackText = await screen.findByText("Your browser does not support video playback.");
+    const fallbackText = await screen.findByText("Trình duyệt không phát được video này.");
     const video = fallbackText.closest("video");
     if (!(video instanceof HTMLVideoElement)) throw new Error("Expected video player");
     Object.defineProperty(video, "duration", { configurable: true, value: 100 });
     fireEvent.loadedMetadata(video);
 
     expect(screen.getByRole("dialog", { name: "L21_V003" })).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: "Current frame ID" })).toHaveValue(125);
+    expect(screen.getByRole("spinbutton", { name: "Frame hiện tại" })).toHaveValue(125);
     expect(video.currentTime).toBeCloseTo(125 / 25);
     expect(video).not.toHaveAttribute("autoplay");
     expect(pauseMock).toHaveBeenCalled();
@@ -71,18 +71,18 @@ describe("VideoLookup", () => {
     const user = userEvent.setup();
     render(<VideoLookup />);
 
-    const input = screen.getByRole("textbox", { name: "Video ID" });
+    const input = screen.getByRole("textbox", { name: "Mã video" });
     await user.type(input, "  L09_V009  ");
-    const openButton = screen.getByRole("button", { name: "Open" });
+    const openButton = screen.getByRole("button", { name: "Mở video" });
     await user.click(openButton);
 
     const dialog = screen.getByRole("dialog", { name: "L09_V009" });
     expect(within(dialog).getByRole("heading", { name: "L09_V009" })).toBeInTheDocument();
-    expect(dialog).not.toHaveTextContent("ASR transcript");
+    expect(dialog).not.toHaveTextContent("Lời thoại (ASR)");
     expect(dialog).not.toHaveTextContent("frame 0");
-    expect(screen.getByRole("button", { name: "Close video player" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Đóng" })).toHaveFocus();
 
-    const fallbackText = await screen.findByText("Your browser does not support video playback.");
+    const fallbackText = await screen.findByText("Trình duyệt không phát được video này.");
     const video = fallbackText.closest("video");
     if (!(video instanceof HTMLVideoElement)) throw new Error("Expected video player");
     Object.defineProperty(video, "duration", { configurable: true, value: 100 });
@@ -91,17 +91,17 @@ describe("VideoLookup", () => {
       "/api/videos/L09_V009/source",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    const frameInput = screen.getByRole("spinbutton", { name: "Current frame ID" });
+    const frameInput = screen.getByRole("spinbutton", { name: "Frame hiện tại" });
     expect(frameInput).toHaveValue(0);
 
     video.currentTime = 2;
     fireEvent.timeUpdate(video);
     expect(frameInput).toHaveValue(50);
-    await user.click(screen.getByRole("button", { name: "Next frame" }));
+    await user.click(screen.getByRole("button", { name: "Frame sau" }));
     expect(frameInput).toHaveValue(51);
     expect(video.currentTime).toBeCloseTo(51 / 25);
 
-    await user.click(screen.getByRole("button", { name: "Close video player" }));
+    await user.click(screen.getByRole("button", { name: "Đóng" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => expect(openButton).toHaveFocus());
   });

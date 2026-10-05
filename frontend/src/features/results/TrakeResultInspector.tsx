@@ -84,9 +84,9 @@ export function TrakeResultInspector({
 
   if (validationErrors.length > 0) {
     return (
-      <section className="trake-validation-error" role="alert">
-        <strong>Cannot display malformed TRAKE results</strong>
-        <p>The response does not match the submitted EVENT sequence.</p>
+      <section className="sheet-state sheet-state--error" role="alert">
+        <strong>Kết quả TRAKE không hợp lệ</strong>
+        <p>Phản hồi không khớp với chuỗi EVENT đã gửi.</p>
         <ul>
           {validationErrors.map((error) => (
             <li key={error}>{error}</li>
@@ -97,13 +97,9 @@ export function TrakeResultInspector({
   }
 
   return (
-    <section className="result-inspector" aria-label="TRAKE search results">
-      <div
-        className="trake-table-scroll"
-        data-testid="trake-scroll-container"
-        style={{ overflowX: "auto" }}
-      >
-        <ol className="trake-row-list" aria-label="TRAKE candidate rows">
+    <section className="result-inspector" aria-label="Kết quả TRAKE">
+      <div className="strips" data-testid="trake-scroll-container" style={{ overflowX: "auto" }}>
+        <ol className="strips__list" aria-label="Chuỗi ứng viên TRAKE">
           {orderedResults.map((result, index) => (
             <TrakeRow
               key={result.result_id}
@@ -140,58 +136,45 @@ interface TrakeRowProps {
   onOpenDetail: (event: TRAKEEventResult, trigger: HTMLButtonElement) => void;
 }
 
-function TrakeRow({
-  result,
-  rank,
-  eventCount,
-  onOpenDetail,
-}: TrakeRowProps) {
-  const style = {
-    "--event-count": eventCount,
-  } as CSSProperties;
+function TrakeRow({ result, rank, eventCount, onOpenDetail }: TrakeRowProps) {
+  const style = { "--event-count": eventCount } as CSSProperties;
 
   return (
-    <li className="trake-row" style={style} data-testid="trake-row">
-      <article className="trake-row__identity" aria-label={`Rank ${rank}, ${result.video_id}`}>
-        <div className="trake-row__video">
-          <strong>{result.video_id}</strong>
-          <span>Score {formatScore(result.similarity_score)}</span>
-        </div>
-      </article>
+    <li className="strip" style={style} data-testid="trake-row">
+      <header className="strip__label" aria-label={`Hạng ${rank}, ${result.video_id}`}>
+        <span className="strip__rank">{rank}</span>
+        <strong className="strip__video">{result.video_id}</strong>
+        <span className="strip__score" title="Tổng điểm chuỗi">
+          {formatScore(result.similarity_score)}
+        </span>
+      </header>
 
       {result.events.map((event) => (
         <article
-          className="trake-event-cell"
+          className="strip__event"
           data-testid="trake-event-cell"
           key={event.event_index}
           aria-label={`EVENT ${event.event_index}`}
         >
-          <div className="trake-event-cell__heading">
-            <strong>EVENT {event.event_index}</strong>
-            <span>{formatScore(event.similarity_score)}</span>
-          </div>
           <button
             type="button"
-            className="thumbnail-button trake-event-cell__thumbnail"
+            className="frame__image"
             onClick={(clickEvent) => onOpenDetail(event, clickEvent.currentTarget)}
-            aria-label={`Open EVENT ${event.event_index} details for ${result.video_id}, frame ${event.frame_id}`}
+            aria-label={`Mở EVENT ${event.event_index} của ${result.video_id}, frame ${event.frame_id}`}
           >
             <ResultImage
               src={event.keyframe_url}
-              alt={`EVENT ${event.event_index}, frame ${event.frame_id} from ${result.video_id}`}
-              className="result-card__image"
+              alt={`EVENT ${event.event_index}, frame ${event.frame_id} của ${result.video_id}`}
             />
           </button>
-          <dl className="trake-event-cell__metadata">
-            <div>
-              <dt>Frame</dt>
-              <dd>{event.frame_id}</dd>
-            </div>
-            <div>
-              <dt>Segment</dt>
-              <dd>{event.segment_id || "—"}</dd>
-            </div>
-          </dl>
+          <footer
+            className="frame__edge"
+            title={event.segment_id ? `Shot ${event.segment_id}` : undefined}
+          >
+            <span className="frame__rank">E{event.event_index}</span>
+            <span className="frame__time">F{event.frame_id}</span>
+            <span className="frame__score">{formatScore(event.similarity_score)}</span>
+          </footer>
         </article>
       ))}
     </li>

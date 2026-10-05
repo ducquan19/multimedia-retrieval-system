@@ -144,12 +144,12 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    expect(await screen.findByLabelText(/^Query KIS/)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/^Truy vấn KIS/)).toBeInTheDocument();
     expect(screen.getByLabelText("Top-K")).toHaveAttribute("type", "number");
     expect(screen.getByLabelText("SigLIP-2")).toBeChecked();
     expect(screen.getByLabelText("BEiT-3")).not.toBeChecked();
-    expect(screen.getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Mã video" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mở video" })).toBeDisabled();
 
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       "TRAKE",
@@ -158,25 +158,26 @@ describe("App query workspace", () => {
     ]);
 
     await user.click(screen.getByRole("tab", { name: /TRAFFIC/ }));
-    expect(screen.getByLabelText(/^Query TRAFFIC/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Truy vấn TRAFFIC/)).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "Traffic filters" })).toBeInTheDocument();
     expect(screen.queryByLabelText("ASR")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/^Query KIS/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Truy vấn KIS/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /TRAKE/ }));
-    expect(screen.getByLabelText(/^Main query TRAKE/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Truy vấn chính/)).toBeInTheDocument();
     expect(screen.getByLabelText("EVENT 1")).toBeInTheDocument();
     expect(screen.getByLabelText("EVENT 2")).toBeInTheDocument();
   });
 
-  it("renders Top-K in the footer without a visible label", async () => {
+  it("renders a labelled Top-K next to the search button", async () => {
     setupApi();
     renderApp();
 
     const topKInput = await screen.findByLabelText("Top-K");
     expect(topKInput).toHaveValue(100);
-    expect(topKInput.closest(".workspace__footer")).not.toBeNull();
-    expect(screen.queryByText("Top-K")).not.toBeInTheDocument();
+    expect(topKInput.closest(".rail__footer")).toContainElement(
+      screen.getByRole("button", { name: "Tìm kiếm" }),
+    );
   });
 
   it("toggles and remembers dark mode from the brand switch", async () => {
@@ -184,7 +185,7 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    const themeSwitch = await screen.findByRole("switch", { name: "Dark mode" });
+    const themeSwitch = await screen.findByRole("switch", { name: "Chế độ tối" });
     expect(themeSwitch).not.toBeChecked();
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
 
@@ -199,18 +200,19 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    const header = await screen.findByRole("banner", { name: "Result tools" });
-    expect(within(header).getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
-    expect(within(header).queryByRole("combobox", { name: "Program" })).not.toBeInTheDocument();
-    expect(within(header).queryByRole("checkbox", { name: "Group by video" })).not.toBeInTheDocument();
+    const header = await screen.findByRole("banner", { name: "Công cụ kết quả" });
+    expect(within(header).getByRole("textbox", { name: "Mã video" })).toBeInTheDocument();
+    expect(within(header).queryByRole("combobox", { name: "Chương trình" })).not.toBeInTheDocument();
+    expect(within(header).queryByRole("checkbox", { name: "Gộp theo video" })).not.toBeInTheDocument();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "query");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "query");
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
-    expect(await within(header).findByRole("checkbox", { name: "Group by video" })).toBeInTheDocument();
-    expect(within(header).getByText("KIS")).toBeInTheDocument();
-    expect(within(header).getByRole("textbox", { name: "Video ID" })).toBeInTheDocument();
-    expect(within(header).getByRole("combobox", { name: "Program" })).toHaveValue("ALL");
+    expect(await within(header).findByRole("checkbox", { name: "Gộp theo video" })).toBeInTheDocument();
+    // The result count replaces the old query-type badge (the active tab already says KIS).
+    expect(within(header).getByText(/kết quả/)).toBeInTheDocument();
+    expect(within(header).getByRole("textbox", { name: "Mã video" })).toBeInTheDocument();
+    expect(within(header).getByRole("combobox", { name: "Chương trình" })).toHaveValue("ALL");
   });
 
   it("fills every TRAKE EVENT from one pasted E1/E2/... block", async () => {
@@ -219,21 +221,21 @@ describe("App query workspace", () => {
     renderApp();
 
     await user.click(await screen.findByRole("tab", { name: /TRAKE/ }));
-    await user.click(screen.getByLabelText(/^Main query TRAKE/));
+    await user.click(screen.getByLabelText(/^Truy vấn chính/));
     await user.paste("E1: xe buýt dừng lại\nE2: hành khách xuống xe\nE3: xe chạy đi\nE4: đèn đỏ");
 
-    expect(screen.getByLabelText(/^Main query TRAKE/)).toHaveValue("");
-    expect(screen.getByLabelText("EVENT count")).toHaveValue("4");
+    expect(screen.getByLabelText(/^Truy vấn chính/)).toHaveValue("");
+    expect(screen.getByLabelText("Số EVENT")).toHaveValue("4");
     expect(screen.getByLabelText("EVENT 1")).toHaveValue("xe buýt dừng lại");
     expect(screen.getByLabelText("EVENT 4")).toHaveValue("đèn đỏ");
 
     // A shorter paste into an EVENT box shrinks the count.
     await user.click(screen.getByLabelText("EVENT 2"));
     await user.paste("E1: a\nE2: b");
-    expect(screen.getByLabelText("EVENT count")).toHaveValue("2");
+    expect(screen.getByLabelText("Số EVENT")).toHaveValue("2");
     expect(screen.queryByLabelText("EVENT 3")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
     await waitFor(() =>
       expect(searchPayload(fetchMock)).toMatchObject({
         query_type: "TRAKE",
@@ -251,10 +253,10 @@ describe("App query workspace", () => {
     renderApp();
 
     await user.click(await screen.findByRole("tab", { name: /TRAKE/ }));
-    await user.click(screen.getByLabelText(/^Main query TRAKE/));
+    await user.click(screen.getByLabelText(/^Truy vấn chính/));
     await user.paste("E1: a\nE2: b\nE3: c\nE4: d\nE5: e");
 
-    expect(screen.getByLabelText("EVENT count")).toHaveValue("4");
+    expect(screen.getByLabelText("Số EVENT")).toHaveValue("4");
     expect(screen.getByRole("alert")).toHaveTextContent("Đã dán 5 EVENT, tối đa 4");
   });
 
@@ -264,10 +266,10 @@ describe("App query workspace", () => {
     renderApp();
 
     await user.click(await screen.findByRole("tab", { name: /TRAKE/ }));
-    await user.click(screen.getByLabelText(/^Main query TRAKE/));
+    await user.click(screen.getByLabelText(/^Truy vấn chính/));
     await user.paste("một đoạn mô tả");
-    expect(screen.getByLabelText(/^Main query TRAKE/)).toHaveValue("một đoạn mô tả");
-    expect(screen.getByLabelText("EVENT count")).toHaveValue("3");
+    expect(screen.getByLabelText(/^Truy vấn chính/)).toHaveValue("một đoạn mô tả");
+    expect(screen.getByLabelText("Số EVENT")).toHaveValue("3");
   });
 
   it("restores a previous query from the history", async () => {
@@ -275,15 +277,15 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    const query = await screen.findByLabelText(/^Query KIS/);
-    expect(screen.queryByRole("combobox", { name: "Query history" })).not.toBeInTheDocument();
+    const query = await screen.findByLabelText(/^Truy vấn KIS/);
+    expect(screen.queryByRole("combobox", { name: "Lịch sử truy vấn" })).not.toBeInTheDocument();
     await user.type(query, "first query");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
     await user.clear(query);
     await user.type(query, "second query");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
-    const history = screen.getByRole("combobox", { name: "Query history" });
+    const history = screen.getByRole("combobox", { name: "Lịch sử truy vấn" });
     expect(
       within(history)
         .getAllByRole("option")
@@ -311,21 +313,21 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "query");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "query");
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
     expect(await screen.findByText("L25_V001")).toBeInTheDocument();
     expect(screen.getByText("L26_V001")).toBeInTheDocument();
     expect(screen.getByText("L27_V001")).toBeInTheDocument();
 
     // Options come from the programs present in the results, with their counts.
-    const program = screen.getByRole("combobox", { name: "Program" });
+    const program = screen.getByRole("combobox", { name: "Chương trình" });
     expect(
       within(program)
         .getAllByRole("option")
         .map((option) => option.textContent),
     ).toEqual([
-      "ALL",
+      "Mọi chương trình",
       "Camera giao thông (1)",
       "Đua xe đạp (2)",
       "L27 (1)",
@@ -359,8 +361,8 @@ describe("App query workspace", () => {
     expect(screen.queryByText("L25_V001")).not.toBeInTheDocument();
     expect(searchPayload(fetchMock)).not.toHaveProperty("program");
 
-    await user.click(screen.getByRole("button", { name: "Search" }));
-    const keptProgram = await screen.findByRole("combobox", { name: "Program" });
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
+    const keptProgram = await screen.findByRole("combobox", { name: "Chương trình" });
     expect(keptProgram).toHaveValue("NEWS");
     expect(screen.getByText("L21_V001")).toBeInTheDocument();
     expect(screen.getByText("L22_V001")).toBeInTheDocument();
@@ -372,13 +374,13 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "người mở laptop");
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "người mở laptop");
     await user.clear(screen.getByLabelText("Top-K"));
     await user.type(screen.getByLabelText("Top-K"), "5");
     await user.click(screen.getByLabelText("ASR"));
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
-    await screen.findByText("Không tìm thấy candidate");
+    await screen.findByText("Không tìm thấy kết quả");
     expect(searchPayload(fetchMock)).toEqual({
       query_type: "KIS",
       query: "người mở laptop",
@@ -396,13 +398,13 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "xe buýt đỏ");
-    const includeTraffic = screen.getByLabelText(/^Include traffic videos/);
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "xe buýt đỏ");
+    const includeTraffic = screen.getByLabelText(/^Gồm video giao thông/);
     expect(includeTraffic).not.toBeChecked();
     await user.click(includeTraffic);
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
-    await screen.findByText("Không tìm thấy candidate");
+    await screen.findByText("Không tìm thấy kết quả");
     expect(searchPayload(fetchMock)).toMatchObject({ query_type: "KIS", include_traffic: true });
   });
 
@@ -411,7 +413,7 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    const query = await screen.findByLabelText(/^Query KIS/);
+    const query = await screen.findByLabelText(/^Truy vấn KIS/);
     await user.type(query, "dòng một");
     await user.keyboard("{Shift>}{Enter}{/Shift}dòng hai");
 
@@ -422,7 +424,7 @@ describe("App query workspace", () => {
 
     await user.keyboard("{Enter}");
 
-    await screen.findByText("Không tìm thấy candidate");
+    await screen.findByText("Không tìm thấy kết quả");
     expect(searchPayload(fetchMock)).toMatchObject({ query: "dòng một\ndòng hai" });
   });
 
@@ -432,16 +434,16 @@ describe("App query workspace", () => {
     renderApp();
 
     await user.click(await screen.findByRole("tab", { name: /TRAFFIC/ }));
-    await user.type(screen.getByLabelText(/^Query TRAFFIC/), "xe buýt xanh rẽ trái");
+    await user.type(screen.getByLabelText(/^Truy vấn TRAFFIC/), "xe buýt xanh rẽ trái");
     await user.type(await screen.findByLabelText(/^Tên đường/), "le hong phong");
     const cameras = screen.getByRole("list", { name: "Cameras" });
     expect(within(cameras).queryByText("Cộng Quỳnh - Bùi Viện")).not.toBeInTheDocument();
     await user.click(within(cameras).getByLabelText(/An Dương Vương - Lê Hồng Phong/));
     await user.click(screen.getByLabelText("Tối"));
     await user.click(screen.getByLabelText("Mưa / đường ướt"));
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
-    await screen.findByText("Không tìm thấy candidate");
+    await screen.findByText("Không tìm thấy kết quả");
     expect(searchPayload(fetchMock)).toEqual({
       query_type: "TRAFFIC",
       query: "xe buýt xanh rẽ trái",
@@ -460,20 +462,20 @@ describe("App query workspace", () => {
     renderApp();
 
     await user.click(await screen.findByRole("tab", { name: /TRAKE/ }));
-    await user.type(screen.getByLabelText(/^Main query TRAKE/), "chuỗi nhảy cao");
+    await user.type(screen.getByLabelText(/^Truy vấn chính/), "chuỗi nhảy cao");
     await user.type(screen.getByLabelText("EVENT 1"), "giậm nhảy");
     await user.type(screen.getByLabelText("EVENT 2"), "bay qua xà");
 
-    await user.selectOptions(screen.getByLabelText("EVENT count"), "1");
+    await user.selectOptions(screen.getByLabelText("Số EVENT"), "1");
     expect(screen.queryByLabelText("EVENT 2")).not.toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("EVENT count"), "2");
+    await user.selectOptions(screen.getByLabelText("Số EVENT"), "2");
     expect(screen.getByLabelText("EVENT 2")).toHaveValue("bay qua xà");
 
-    await user.selectOptions(screen.getByLabelText("EVENT count"), "3");
+    await user.selectOptions(screen.getByLabelText("Số EVENT"), "3");
     await user.type(screen.getByLabelText("EVENT 3"), "tiếp đất");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
-    await screen.findByText("Không tìm thấy candidate");
+    await screen.findByText("Không tìm thấy kết quả");
     expect(searchPayload(fetchMock)).toMatchObject({
       query_type: "TRAKE",
       main_query: "chuỗi nhảy cao",
@@ -490,9 +492,9 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "query hợp lệ");
-    await user.click(screen.getByLabelText("Image"));
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "query hợp lệ");
+    await user.click(screen.getByLabelText("Ảnh"));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent("Chọn ít nhất một nguồn tìm kiếm");
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/search"))).toBe(
@@ -505,21 +507,21 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "original query");
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "original query");
     await user.click(screen.getByLabelText(/^Enhance query/));
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
     // Collapsed to one summary line by default, with the full text still readable.
-    const expand = await screen.findByRole("button", { name: "Mở rộng search insight" });
-    expect(expand).toHaveTextContent("Enhanced: [Mock enhanced KIS] original query");
+    const expand = await screen.findByRole("button", { name: "Mở chi tiết truy vấn" });
+    expect(expand).toHaveTextContent("Đã viết lại: [Mock enhanced KIS] original query");
 
     await user.click(expand);
-    expect(screen.getByText("Enhanced:")).toBeInTheDocument();
+    expect(screen.getByText("Đã viết lại:")).toBeInTheDocument();
     expect(screen.getByText("[Mock enhanced KIS] original query")).toBeInTheDocument();
     expect(window.localStorage.getItem("aic-search-insight-open")).toBe("true");
 
-    await user.click(screen.getByRole("button", { name: "Thu gọn search insight" }));
-    expect(screen.getByRole("button", { name: "Mở rộng search insight" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Thu gọn chi tiết truy vấn" }));
+    expect(screen.getByRole("button", { name: "Mở chi tiết truy vấn" })).toBeInTheDocument();
   });
 
   it(
@@ -531,20 +533,20 @@ describe("App query workspace", () => {
       const user = userEvent.setup();
       renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "tháo máy ảnh rồi lau lens");
-    await user.click(screen.getByLabelText("Query Decomposition"));
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "tháo máy ảnh rồi lau lens");
+    await user.click(screen.getByLabelText(/^Lập kế hoạch nhiều sự kiện/));
     expect(screen.getByLabelText(/^Enhance query/)).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Search" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Tìm kiếm" })).toBeDisabled();
 
-    await user.click(screen.getByRole("button", { name: "Execute" }));
-    const visualQuery = await screen.findByLabelText("Visual query EVENT 1");
+    await user.click(screen.getByRole("button", { name: "Phân tích truy vấn" }));
+    const visualQuery = await screen.findByLabelText("Truy vấn hình ảnh EVENT 1");
     expect(visualQuery).toHaveValue("a person disassembling a camera");
     await user.clear(visualQuery);
     await user.type(visualQuery, "a detached camera lens on a purple towel");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
-    await screen.findByText("Không tìm thấy candidate");
-    expect(screen.queryByText("Enhanced:")).not.toBeInTheDocument();
+    await screen.findByText("Không tìm thấy kết quả");
+    expect(screen.queryByText("Đã viết lại:")).not.toBeInTheDocument();
     expect(searchPayload(fetchMock)).toMatchObject({
       query_type: "KIS",
       query_understanding: true,
@@ -562,7 +564,7 @@ describe("App query workspace", () => {
     });
 
       await user.click(screen.getByRole("tab", { name: /TRAFFIC/ }));
-      expect(screen.queryByLabelText("Query Decomposition")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/^Lập kế hoạch nhiều sự kiện/)).not.toBeInTheDocument();
     },
     15_000,
   );
@@ -572,15 +574,15 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "visual query");
-    await user.click(screen.getByRole("button", { name: "Search" }));
-    await screen.findByRole("checkbox", { name: "Group by video" });
-    expect(screen.queryByText("VIS: 1.00")).not.toBeInTheDocument();
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "visual query");
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
+    await screen.findByRole("checkbox", { name: "Gộp theo video" });
+    expect(screen.queryByText("Ảnh 1.00")).not.toBeInTheDocument();
 
     await user.click(screen.getByLabelText(/^Enhance query/));
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
     // Weight chips stay visible in the collapsed summary line.
-    expect(await screen.findByText("VIS: 1.00")).toBeInTheDocument();
+    expect(await screen.findByText("Ảnh 1.00")).toBeInTheDocument();
   });
 
   it("renders loading and friendly API error states", async () => {
@@ -594,8 +596,8 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "query");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "query");
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
     expect(await screen.findByText("Đang tìm kiếm…")).toBeInTheDocument();
 
     rejectSearch?.(new TypeError("Network error"));
@@ -609,11 +611,11 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "không có kết quả");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "không có kết quả");
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
-    expect(await screen.findByText("Không tìm thấy candidate")).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Program" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Không tìm thấy kết quả")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Chương trình" })).not.toBeInTheDocument();
   });
 
   it("aborts the previous request when a new search starts", async () => {
@@ -632,17 +634,17 @@ describe("App query workspace", () => {
     const user = userEvent.setup();
     renderApp();
 
-    const query = await screen.findByLabelText(/^Query KIS/);
+    const query = await screen.findByLabelText(/^Truy vấn KIS/);
     await user.type(query, "first query");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
     await screen.findByText("Đang tìm kiếm…");
 
     await user.clear(query);
     await user.type(query, "second query");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
     await waitFor(() => expect(signals[0]?.aborted).toBe(true));
     // Wait until the new loading state appears (could be instantaneous or replacing)
-    expect(await screen.findByText("Không tìm thấy candidate")).toBeInTheDocument();
+    expect(await screen.findByText("Không tìm thấy kết quả")).toBeInTheDocument();
   });
 });

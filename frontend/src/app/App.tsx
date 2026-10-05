@@ -17,12 +17,12 @@ export function App() {
       <main className="app-main">
         {configQuery.isPending && (
           <section className="bootstrap-state" aria-live="polite">
-            Đang tải cấu hình workspace…
+            Đang kết nối backend…
           </section>
         )}
         {configQuery.isError && (
           <section className="bootstrap-state bootstrap-state--error" role="alert">
-            Không tải được cấu hình tìm kiếm. Hãy kiểm tra backend và thử tải lại trang.
+            Không kết nối được backend. Kiểm tra backend đang chạy ở cổng 8000 rồi tải lại trang.
           </section>
         )}
         {configQuery.data && <SearchWorkspace config={configQuery.data} />}

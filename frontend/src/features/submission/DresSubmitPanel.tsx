@@ -317,11 +317,11 @@ export function DresSubmitPanel({
   };
 
   return (
-    <section className="dres-panel" aria-label="Submit to DRES">
+    <section className="dres-panel" aria-label="Nộp DRES">
       <header className="dres-panel__header">
-        <h3>Submit to DRES</h3>
+        <h3>Nộp DRES</h3>
         {target.kind === "single" && (
-          <div className="dres-panel__modes" role="radiogroup" aria-label="Submission type">
+          <div className="segmented" role="radiogroup" aria-label="Loại đáp án">
             {(target.allowTrake ? MODES_WITH_TRAKE : MODES).map((option) => (
               <label key={option}>
                 <input
@@ -382,10 +382,10 @@ export function DresSubmitPanel({
         <>
           {mode === "VQA" && (
             <label className="dres-panel__field">
-              <span>Answer</span>
+              <span>Câu trả lời</span>
               <input
                 type="text"
-                aria-label="VQA answer"
+                aria-label="Đáp án VQA"
                 value={answer}
                 disabled={locked}
                 onChange={(event) => setAnswer(event.target.value)}
@@ -442,18 +442,18 @@ export function DresSubmitPanel({
       {mode === "TRAKE" && target.kind === "single" ? (
         currentFrame !== null &&
         !locked && (
-          <button type="button" className="dres-panel__secondary" onClick={applyCurrentFrame}>
+          <button type="button" className="button button--quiet dres-panel__use-frame" onClick={applyCurrentFrame}>
             {`Thêm frame đang xem (${currentFrame}) vào TRAKE`}
           </button>
         )
       ) : target.kind === "single" && currentTimeMs !== null && !locked ? (
-        <button type="button" className="dres-panel__secondary" onClick={applyCurrentFrame}>
+        <button type="button" className="button button--quiet dres-panel__use-frame" onClick={applyCurrentFrame}>
           {`Dùng thời điểm đang xem (${currentTimeMs} ms)`}
         </button>
       ) : (
         currentFrame !== null &&
         !locked && (
-          <button type="button" className="dres-panel__secondary" onClick={applyCurrentFrame}>
+          <button type="button" className="button button--quiet dres-panel__use-frame" onClick={applyCurrentFrame}>
             {target.kind === "trake"
               ? `Dùng frame đang xem (${currentFrame}) cho EVENT ${target.eventIndex}`
               : `Dùng frame đang xem (${currentFrame})`}
@@ -473,9 +473,16 @@ export function DresSubmitPanel({
         </p>
       )}
 
-      <pre className="dres-panel__preview" aria-label="Request body">
-        {JSON.stringify(body, null, 2)}
-      </pre>
+      <p className="dres-panel__summary">
+        <span>Sẽ gửi</span>
+        <strong>
+          {mode === "KIS" ? `${target.videoId}, ${describeAnswer(body)}` : describeAnswer(body)}
+        </strong>
+      </p>
+      <details className="dres-panel__json">
+        <summary>Xem request JSON</summary>
+        <pre aria-label="Request body">{JSON.stringify(body, null, 2)}</pre>
+      </details>
 
       {errors.length > 0 && !locked && (
         <ul className="dres-panel__error">
@@ -529,13 +536,13 @@ export function DresSubmitPanel({
       )}
 
       <footer className="dres-panel__actions">
-        <button type="button" className="dres-panel__secondary" onClick={onCancel}>
+        <button type="button" className="button button--quiet" onClick={onCancel}>
           {submitMutation.data ? "Đóng" : "Hủy"}
         </button>
         {!isCorrect && (
           <button
             type="button"
-            className="dres-panel__confirm"
+            className="button button--primary"
             disabled={errors.length > 0 || alreadySubmitted || submitMutation.isPending}
             onClick={submit}
           >

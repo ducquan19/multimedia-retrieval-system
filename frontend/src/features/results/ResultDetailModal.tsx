@@ -248,92 +248,89 @@ export function ResultDetailModal({
     <div className="modal-backdrop" onMouseDown={closeOnBackdrop}>
       <section
         ref={dialogRef}
-        className="detail-modal"
+        className="detail"
         role="dialog"
         aria-modal="true"
         aria-labelledby="detail-modal-title"
         tabIndex={-1}
       >
-        <header className="detail-modal__header">
-          <div className="detail-modal__identity">
+        <header className="detail__head">
+          <div className="detail__identity">
             <h2 id="detail-modal-title">
-              <span>{result.video_id}</span>
-              <span className="detail-modal__separator" aria-hidden="true">•</span>
-              <span className="detail-modal__frame">
-                {keyframeTimeMs !== null ? `${formatMs(keyframeTimeMs)} (${keyframeTimeMs} ms)` : result.frame_id}
+              <span className="detail__video">{result.video_id}</span>
+              <span className="detail__frame">
+                {keyframeTimeMs !== null
+                  ? `${formatMs(keyframeTimeMs)} (${keyframeTimeMs} ms)`
+                  : `frame ${result.frame_id}`}
               </span>
             </h2>
             {result.camera_name && (
-              <span className="detail-modal__traffic">
-                {result.camera_name}
-                {result.clock_time && ` · ${result.clock_time}`}
-                {result.weather === "wet" && " · mưa/ướt"}
-              </span>
+              <p className="detail__traffic">
+                {[result.camera_name, result.clock_time, result.weather === "wet" ? "mưa/ướt" : null]
+                  .filter(Boolean)
+                  .join(", ")}
+              </p>
             )}
             <button
               type="button"
-              className="detail-copy-button"
+              className="button button--text"
               onClick={copyVideoAndFrame}
-              aria-label="Copy video ID and frame"
+              aria-label="Sao chép mã video và frame"
             >
               {copyStatus === "copied"
-                ? "Copied"
+                ? "Đã chép"
                 : copyStatus === "failed"
-                  ? "Copy failed"
-                  : "Copy"}
+                  ? "Không chép được"
+                  : "Sao chép"}
             </button>
           </div>
-          <div className="detail-modal__header-actions">
-            {submitTarget && (
-              <button
-                type="button"
-                onClick={() => setShowSubmit((open) => !open)}
-                aria-expanded={showSubmit}
-                className="detail-keyframe-action detail-submit-action"
-              >
-                Submit DRES
+          <div className="detail__actions">
+            {videoSource && (
+              <button type="button" className="button button--quiet" onClick={pauseAtKeyframe}>
+                Về keyframe
               </button>
             )}
             <button
               type="button"
+              className="button button--quiet"
               onClick={toggleVideo}
               disabled={videoStatus === "loading"}
-              className="detail-keyframe-action detail-keyframe-action--toggle"
             >
               {videoStatus === "loading"
-                ? "Loading video…"
+                ? "Đang tải video…"
                 : videoSource
-                  ? "Show keyframe"
-                  : "Play from keyframe"}
+                  ? "Xem keyframe"
+                  : "Phát video"}
             </button>
-            {videoSource && (
+            {submitTarget && (
               <button
                 type="button"
-                onClick={pauseAtKeyframe}
-                className="detail-keyframe-action detail-keyframe-action--return"
+                className="button button--primary"
+                onClick={() => setShowSubmit((open) => !open)}
+                aria-expanded={showSubmit}
               >
-                Back to keyframe
+                Nộp DRES
               </button>
             )}
             <button
               ref={closeButtonRef}
-              className="modal-close"
+              className="button button--icon"
               type="button"
               onClick={onClose}
-              aria-label="Close keyframe detail"
+              aria-label="Đóng"
             >
               ×
             </button>
           </div>
         </header>
 
-        <div className="detail-modal__body">
-          <div className="detail-modal__viewer">
-            <div className="detail-modal__media">
+        <div className="detail__body">
+          <div className="detail__viewer">
+            <div className="detail__media">
               {videoSource ? (
                 <video
                   ref={videoRef}
-                  className="detail-modal__video"
+                  className="detail__video-player"
                   src={resolveMediaUrl(videoSource.url)}
                   controls
                   autoPlay
@@ -341,32 +338,32 @@ export function ResultDetailModal({
                   onLoadedMetadata={playFromKeyframe}
                   onTimeUpdate={updatePlayingFrame}
                 >
-                  Your browser does not support video playback.
+                  Trình duyệt không phát được video này.
                 </video>
               ) : (
                 <ResultImage
                   src={result.keyframe_url}
-                  alt={`Keyframe ${result.frame_id} from ${result.video_id}`}
-                  className="detail-modal__image"
+                  alt={`Keyframe ${result.frame_id} của ${result.video_id}`}
+                  className="detail__image"
                   eager
                 />
               )}
               {videoStatus === "error" && (
-                <p className="detail-modal__video-error" role="alert">
-                  Video is unavailable from both local and remote sources.
+                <p className="detail__media-error" role="alert">
+                  Không tìm thấy video này ở máy local lẫn nguồn từ xa.
                 </p>
               )}
             </div>
 
             {videoSource && (
-              <div className="detail-frame-navigation">
+              <div className="frame-nav">
                 <input
                   ref={frameInputRef}
                   type="number"
                   min="0"
                   step="1"
                   value={timeMode ? timeInput : frameInput}
-                  aria-label={timeMode ? "Current time (ms)" : "Current frame ID"}
+                  aria-label={timeMode ? "Thời điểm hiện tại (ms)" : "Frame hiện tại"}
                   title={timeMode ? "Thời gian gốc (ms)" : undefined}
                   onChange={(event) => {
                     if (timeMode) setTimeInput(event.target.value);
@@ -381,28 +378,28 @@ export function ResultDetailModal({
                 <button
                   type="button"
                   onClick={() => stepFrame(-1)}
-                  aria-label="Previous frame"
+                  aria-label="Frame trước"
                 >
                   −
                 </button>
                 <button
                   type="button"
                   onClick={() => stepFrame(1)}
-                  aria-label="Next frame"
+                  aria-label="Frame sau"
                 >
                   +
                 </button>
                 <button
                   type="button"
-                  className="detail-frame-copy"
+                  className="frame-nav__copy"
                   onClick={copyCurrentFrame}
-                  aria-label="Copy current frame ID"
+                  aria-label="Sao chép frame hiện tại"
                 >
                   {frameCopyStatus === "copied"
-                    ? "Copied"
+                    ? "Đã chép"
                     : frameCopyStatus === "failed"
-                      ? "Copy failed"
-                      : "Copy"}
+                      ? "Không chép được"
+                      : "Sao chép"}
                 </button>
               </div>
             )}
@@ -418,7 +415,7 @@ export function ResultDetailModal({
             )}
           </div>
 
-          <div className="detail-modal__content">
+          <div className="detail__side">
             {submitTarget && showSubmit && (
               <DresSubmitPanel
                 target={submitTarget}
@@ -428,14 +425,16 @@ export function ResultDetailModal({
               />
             )}
 
-            <section className="detail-section" aria-labelledby="asr-heading">
-              <h3 id="asr-heading">ASR transcript</h3>
-              <p>{result.asr_text || "No ASR transcript available."}</p>
+            <section className="detail__section" aria-labelledby="asr-heading">
+              <h3 id="asr-heading">Lời thoại (ASR)</h3>
+              <p className={result.asr_text ? undefined : "detail__empty"}>
+                {result.asr_text || "Shot này không có lời thoại."}
+              </p>
             </section>
 
             {result.objects.length > 0 && (
-              <section className="detail-section" aria-labelledby="objects-heading">
-                <h3 id="objects-heading">Detected objects</h3>
+              <section className="detail__section" aria-labelledby="objects-heading">
+                <h3 id="objects-heading">Object nhận diện được</h3>
                 <ul className="object-list">
                   {result.objects.map((object, index) => (
                     <li key={`${String(object.label ?? "object")}-${index}`}>

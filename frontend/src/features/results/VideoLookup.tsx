@@ -49,7 +49,7 @@ export function VideoLookup() {
     <>
       <form
         className="video-lookup"
-        aria-label="Open video by ID and frame"
+        aria-label="Mở video theo mã và frame"
         onSubmit={openVideo}
         onPaste={pasteVideoAndFrame}
       >
@@ -58,8 +58,8 @@ export function VideoLookup() {
           type="text"
           value={videoId}
           onChange={(event) => setVideoId(event.target.value)}
-          aria-label="Video ID"
-          placeholder="video_id"
+          aria-label="Mã video"
+          placeholder="Mã video"
           autoCapitalize="none"
           autoComplete="off"
           spellCheck={false}
@@ -71,12 +71,16 @@ export function VideoLookup() {
           step="1"
           value={frameId}
           onChange={(event) => setFrameId(event.target.value)}
-          aria-label="Frame ID"
-          placeholder="frame_id"
+          aria-label="Frame"
+          placeholder="Frame"
           autoComplete="off"
         />
-        <button type="submit" disabled={!videoId.trim() || parsedFrameId === null}>
-          Open
+        <button
+          type="submit"
+          className="button button--quiet"
+          disabled={!videoId.trim() || parsedFrameId === null}
+        >
+          Mở video
         </button>
       </form>
 
@@ -196,67 +200,71 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
     <div className="modal-backdrop" onMouseDown={closeOnBackdrop}>
       <section
         ref={dialogRef}
-        className={`detail-modal video-player-modal${
-          submitFrame !== null ? " video-player-modal--submitting" : ""
-        }`}
+        className={`detail detail--player${submitFrame !== null ? " detail--submitting" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="video-player-modal-title"
         tabIndex={-1}
       >
-        <header className="detail-modal__header">
-          <h2 id="video-player-modal-title">{videoId}</h2>
-          <div className="detail-modal__header-actions">
+        <header className="detail__head">
+          <div className="detail__identity">
+            <h2 id="video-player-modal-title">
+              <span className="detail__video">{videoId}</span>
+            </h2>
+          </div>
+          <div className="detail__actions">
             <button
               type="button"
-              className="detail-keyframe-action detail-submit-action"
+              className="button button--primary"
               aria-expanded={submitFrame !== null}
               disabled={!videoSource}
               onClick={() =>
                 setSubmitFrame((open) => (open === null ? (currentFrame ?? initialFrameId) : null))
               }
             >
-              Submit DRES
+              Nộp DRES
             </button>
             <button
               ref={closeButtonRef}
-              className="modal-close"
+              className="button button--icon"
               type="button"
               onClick={onClose}
-              aria-label="Close video player"
+              aria-label="Đóng"
             >
               ×
             </button>
           </div>
         </header>
 
-        <div className="detail-modal__body">
-          <div className="detail-modal__viewer">
-            <div className="detail-modal__media">
+        <div className="detail__body">
+          <div className="detail__viewer">
+            <div className="detail__media">
               {videoStatus === "loading" && (
-                <p className="video-player-modal__status" role="status">Loading video…</p>
+                <p className="detail__media-status" role="status">
+                  Đang tải video…
+                </p>
               )}
               {videoSource && (
                 <video
                   ref={videoRef}
-                  className="detail-modal__video"
+                  className="detail__video-player"
                   src={resolveMediaUrl(videoSource.url)}
                   controls
                   preload="metadata"
                   onLoadedMetadata={() => setVideoFrame(initialFrameId)}
                   onTimeUpdate={updatePlayingFrame}
                 >
-                  Your browser does not support video playback.
+                  Trình duyệt không phát được video này.
                 </video>
               )}
               {videoStatus === "error" && (
-                <p className="detail-modal__video-error" role="alert">
-                  Video is unavailable from both local and remote sources.
+                <p className="detail__media-error" role="alert">
+                  Không tìm thấy video này ở máy local lẫn nguồn từ xa.
                 </p>
               )}
             </div>
 
-            <div className="detail-frame-navigation">
+            <div className="frame-nav">
               <input
                 ref={frameInputRef}
                 type="number"
@@ -264,7 +272,7 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
                 step="1"
                 value={frameInput}
                 disabled={!videoSource}
-                aria-label="Current frame ID"
+                aria-label="Frame hiện tại"
                 onChange={(event) => {
                   setFrameInput(event.target.value);
                   setFrameCopyStatus("idle");
@@ -278,7 +286,7 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
                 type="button"
                 disabled={!videoSource}
                 onClick={() => stepFrame(-1)}
-                aria-label="Previous frame"
+                aria-label="Frame trước"
               >
                 −
               </button>
@@ -286,28 +294,28 @@ function VideoPlayerModal({ videoId, initialFrameId, onClose }: VideoPlayerModal
                 type="button"
                 disabled={!videoSource}
                 onClick={() => stepFrame(1)}
-                aria-label="Next frame"
+                aria-label="Frame sau"
               >
                 +
               </button>
               <button
                 type="button"
-                className="detail-frame-copy"
+                className="frame-nav__copy"
                 disabled={!videoSource}
                 onClick={copyCurrentFrame}
-                aria-label="Copy current frame ID"
+                aria-label="Sao chép frame hiện tại"
               >
                 {frameCopyStatus === "copied"
-                  ? "Copied"
+                  ? "Đã chép"
                   : frameCopyStatus === "failed"
-                    ? "Copy failed"
-                    : "Copy"}
+                    ? "Không chép được"
+                    : "Sao chép"}
               </button>
             </div>
           </div>
 
           {submitFrame !== null && (
-            <div className="detail-modal__content">
+            <div className="detail__side">
               <DresSubmitPanel
                 target={{
                   kind: "single",

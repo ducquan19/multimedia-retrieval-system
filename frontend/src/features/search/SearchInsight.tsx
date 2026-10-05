@@ -41,9 +41,9 @@ export function SearchInsight({ response, payload, objectTerms, onPinObject }: S
 
   const weightChips = weights && (
     <>
-      <span>VIS: {weights.w_vis.toFixed(2)}</span>
-      <span>ASR: {weights.w_asr.toFixed(2)}</span>
-      {weights.w_obj !== undefined && <span>OBJ: {weights.w_obj.toFixed(2)}</span>}
+      <span>Ảnh {weights.w_vis.toFixed(2)}</span>
+      <span>ASR {weights.w_asr.toFixed(2)}</span>
+      {weights.w_obj !== undefined && <span>Object {weights.w_obj.toFixed(2)}</span>}
     </>
   );
 
@@ -54,7 +54,7 @@ export function SearchInsight({ response, payload, objectTerms, onPinObject }: S
   return (
     <section
       className={`search-insight${open ? "" : " search-insight--collapsed"}`}
-      aria-label="Search insight"
+      aria-label="Cách hệ thống hiểu truy vấn"
     >
       {response.warnings.length > 0 && (
         <ul className="search-insight__warnings" role="status">
@@ -69,18 +69,18 @@ export function SearchInsight({ response, payload, objectTerms, onPinObject }: S
           type="button"
           className="search-insight__bar"
           aria-expanded={false}
-          aria-label="Mở rộng search insight"
+          aria-label="Mở chi tiết truy vấn"
           onClick={toggle}
         >
           <span className="search-insight__caret" aria-hidden="true">▸</span>
           {enhanced && (
             <span className="search-insight__summary" title={enhanced.replace(/^- /, "")}>
-              <small>Enhanced:</small> {enhanced.replace(/^- /, "")}
+              <small>Đã viết lại:</small> {enhanced.replace(/^- /, "")}
             </span>
           )}
           {weights && <span className="search-insight__chips">{weightChips}</span>}
           {autoObjects.length > 0 && (
-            <span className="search-insight__count">{autoObjects.length} auto objects</span>
+            <span className="search-insight__count">{autoObjects.length} object tự chọn</span>
           )}
         </button>
       )}
@@ -91,7 +91,7 @@ export function SearchInsight({ response, payload, objectTerms, onPinObject }: S
             type="button"
             className="search-insight__collapse"
             aria-expanded={true}
-            aria-label="Thu gọn search insight"
+            aria-label="Thu gọn chi tiết truy vấn"
             title="Thu gọn"
             onClick={toggle}
           >
@@ -99,22 +99,22 @@ export function SearchInsight({ response, payload, objectTerms, onPinObject }: S
           </button>
           {enhanced && (
             <div className="search-insight__item search-insight__item--grow">
-              <small>Enhanced:</small>
+              <small>Đã viết lại:</small>
               <p>{enhanced.replace(/^- /, "")}</p>
             </div>
           )}
 
           {weights && (
             <div className="search-insight__item">
-              <small>Weights Applied:</small>
+              <small>Trọng số:</small>
               <p className="search-insight__chips">{weightChips}</p>
             </div>
           )}
 
           {autoObjects.length > 0 && (
             <div className="search-insight__item">
-              <small>Auto objects:</small>
-              <ul className="search-insight__chips" aria-label="Auto objects">
+              <small>Object tự chọn:</small>
+              <ul className="search-insight__chips" aria-label="Object tự chọn">
                 {autoObjects.map((term) => {
                   const pinned = objectTerms.some(
                     (manual) => manual.label.toLowerCase() === term.label.toLowerCase(),
@@ -126,7 +126,7 @@ export function SearchInsight({ response, payload, objectTerms, onPinObject }: S
                       </span>
                       <button
                         type="button"
-                        aria-label={`Pin ${term.label}`}
+                        aria-label={`Giữ ${term.label}`}
                         title="Giữ object này trong query object"
                         disabled={pinned || objectTerms.length >= 10}
                         onClick={() => onPinObject(term)}

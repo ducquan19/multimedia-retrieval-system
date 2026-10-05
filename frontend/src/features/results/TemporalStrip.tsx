@@ -52,9 +52,9 @@ export function TemporalStrip({
   return (
     <section className="temporal-strip" aria-label="Temporal context">
       <header className="temporal-strip__header">
-        <strong>Keyframe lân cận</strong>
+        <h3>Keyframe lân cận</h3>
         <span>
-          <kbd>←</kbd> <kbd>→</kbd> để duyệt · thêm <kbd>Shift</kbd> khi đang mở video
+          <kbd>←</kbd> <kbd>→</kbd> chuyển keyframe; khi đang phát video, giữ thêm <kbd>Shift</kbd>
         </span>
       </header>
       {isError ? (
@@ -75,15 +75,11 @@ export function TemporalStrip({
                   aria-label={`Keyframe ${keyframe.frame_id}`}
                   onClick={() => onSelect(keyframe)}
                 >
-                  <ResultImage
-                    src={keyframe.keyframe_url}
-                    alt=""
-                    className="temporal-strip__image"
-                  />
+                  <ResultImage src={keyframe.keyframe_url} alt="" />
                   <span>
                     {keyframe.time_ms !== null && keyframe.time_ms !== undefined
                       ? formatMs(keyframe.time_ms)
-                      : keyframe.frame_id}
+                      : `F${keyframe.frame_id}`}
                   </span>
                 </button>
               </li>

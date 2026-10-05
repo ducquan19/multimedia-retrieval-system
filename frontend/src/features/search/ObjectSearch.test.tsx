@@ -79,20 +79,20 @@ describe("Object search source", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "cyclists racing");
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "cyclists racing");
     await user.click(screen.getByLabelText("Object"));
 
-    const objectInput = screen.getByRole("combobox", { name: "Object label" });
+    const objectInput = screen.getByRole("combobox", { name: "Tên object" });
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/objects/labels")))
         .toBe(true),
     );
     await user.type(objectInput, "bicycle{Enter}");
     await user.type(objectInput, "Helmet");
-    await user.click(screen.getByRole("button", { name: "Add" }));
-    await user.selectOptions(screen.getByLabelText("Min count Bicycle"), "3");
+    await user.click(screen.getByRole("button", { name: "Thêm" }));
+    await user.selectOptions(screen.getByLabelText("Số lượng tối thiểu Bicycle"), "3");
 
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
     await waitFor(() =>
       expect(searchPayload(fetchMock)).toMatchObject({
@@ -110,17 +110,17 @@ describe("Object search source", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "a unicorn");
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "a unicorn");
     await user.click(screen.getByLabelText("Object"));
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/objects/labels")))
         .toBe(true),
     );
-    await user.type(screen.getByRole("combobox", { name: "Object label" }), "Unicorn{Enter}");
+    await user.type(screen.getByRole("combobox", { name: "Tên object" }), "Unicorn{Enter}");
 
     expect(await screen.findByText('Không có object "Unicorn" trong index.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
     expect(
       await screen.findByText(
@@ -137,8 +137,8 @@ describe("Object search source", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "a street");
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "a street");
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
     await waitFor(() => expect(searchPayload(fetchMock)).not.toHaveProperty("object_query"));
   });
@@ -152,11 +152,11 @@ describe("Object search source", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.type(await screen.findByLabelText(/^Query KIS/), "hai người đạp xe");
+    await user.type(await screen.findByLabelText(/^Truy vấn KIS/), "hai người đạp xe");
     await user.click(screen.getByLabelText("Enhance query"));
     await user.click(screen.getByLabelText("Object"));
     expect(screen.getByText("Enhance query sẽ tự thêm object từ câu truy vấn.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(screen.getByRole("button", { name: "Tìm kiếm" }));
 
     await waitFor(() =>
       expect(searchPayload(fetchMock)).toMatchObject({
@@ -165,14 +165,14 @@ describe("Object search source", () => {
       }),
     );
     expect(searchPayload(fetchMock)).not.toHaveProperty("object_query");
-    expect(await screen.findByText("OBJ: 0.90")).toBeInTheDocument();
-    expect(screen.getByText("1 auto objects")).toBeInTheDocument();
+    expect(await screen.findByText("Object 0.90")).toBeInTheDocument();
+    expect(screen.getByText("1 object tự chọn")).toBeInTheDocument();
 
     // The insight starts collapsed; expanding it reveals the pinnable object chips.
-    await user.click(screen.getByRole("button", { name: "Mở rộng search insight" }));
-    await user.click(screen.getByRole("button", { name: "Pin Bicycle" }));
+    await user.click(screen.getByRole("button", { name: "Mở chi tiết truy vấn" }));
+    await user.click(screen.getByRole("button", { name: "Giữ Bicycle" }));
 
-    expect(screen.getByLabelText("Min count Bicycle")).toHaveValue("2");
-    expect(screen.getByRole("button", { name: "Pin Bicycle" })).toBeDisabled();
+    expect(screen.getByLabelText("Số lượng tối thiểu Bicycle")).toHaveValue("2");
+    expect(screen.getByRole("button", { name: "Giữ Bicycle" })).toBeDisabled();
   });
 });

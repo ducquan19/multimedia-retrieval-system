@@ -29,72 +29,19 @@ import { ObjectQueryInput } from "./ObjectQueryInput";
 import { type QueryHistoryEntry, QueryHistorySelect, useQueryHistory } from "./QueryHistory";
 import { SearchInsight } from "./SearchInsight";
 import { EMPTY_TRAFFIC_FILTERS, TrafficFilterPanel } from "./TrafficFilterPanel";
+import { matchesProgram, type ProgramFilter, programOptions } from "./programFilter";
+import { buildSearchRequest, queryLengthError } from "./searchPayload";
 import { parseTrakeEvents } from "./trakeEventParser";
+import { useResizableSidebar } from "./useResizableSidebar";
+import { useThemePreference } from "./useThemePreference";
 
 const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
-  { key: "image", label: "Image" },
+  { key: "image", label: "Ảnh" },
   { key: "asr", label: "ASR" },
   { key: "object", label: "Object" },
 ];
 
 type GroupSort = "score" | "time";
-/** "ALL" or a key returned by programOf. */
-type ProgramFilter = string;
-const DARK_MODE_STORAGE_KEY = "aic-retrieval-theme";
-const PROGRAM_LABELS: Record<string, string> = {
-  NEWS: "Tin tức",
-  CYCLING: "Đua xe đạp",
-  TRAFFIC: "Camera giao thông",
-  L24: "Múa lân",
-  L25: "Ôn thi THPT",
-  L26: "Món ngon mỗi ngày",
-};
-
-/** Program keys by video prefix; the same content from batch 1 and batch 2 shares one key. */
-const PROGRAM_BY_PREFIX: Record<string, string> = {
-  L21: "NEWS",
-  L22: "NEWS",
-  M: "NEWS",
-  L23: "CYCLING",
-  S: "CYCLING",
-  N: "TRAFFIC",
-};
-
-/** L videos group by program code; batch 2 by collection letter (M01_V001 -> M). */
-function programOf(videoId: string): string {
-  const prefix = videoId.split(/[_-]/, 1)[0] ?? videoId;
-  const code = prefix.startsWith("L") ? prefix : prefix.charAt(0);
-  return PROGRAM_BY_PREFIX[code] ?? code;
-}
-
-function matchesProgram(videoId: string, program: ProgramFilter): boolean {
-  return program === "ALL" || programOf(videoId) === program;
-}
-
-function programOptions(videoIds: string[], selected: ProgramFilter) {
-  const counts = new Map<string, number>();
-  for (const videoId of videoIds) {
-    const program = programOf(videoId);
-    counts.set(program, (counts.get(program) ?? 0) + 1);
-  }
-  // Keep the current choice listed so a new search does not silently drop it.
-  if (selected !== "ALL" && !counts.has(selected)) counts.set(selected, 0);
-  return Array.from(counts, ([key, count]) => ({
-    key,
-    label: `${PROGRAM_LABELS[key] ?? key} (${count})`,
-  })).sort((left, right) => left.label.localeCompare(right.label, "vi"));
-}
-
-function prefersDarkMode(): boolean {
-  try {
-    const storedTheme = window.localStorage.getItem(DARK_MODE_STORAGE_KEY);
-    if (storedTheme === "dark") return true;
-    if (storedTheme === "light") return false;
-  } catch {
-    // Fall through to the operating-system preference when storage is unavailable.
-  }
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
-}
 
 interface SearchMutationVariables {
   payload: SearchRequest;
@@ -105,18 +52,9 @@ interface SearchWorkspaceProps {
   config: PublicConfig;
 }
 
-function queryLengthError(label: string, query: string, maxLength: number): string | null {
-  if (!query.trim()) {
-    return `${label} không được để trống.`;
-  }
-  if (query.trim().length > maxLength) {
-    return `${label} không được vượt quá ${maxLength} ký tự.`;
-  }
-  return null;
-}
 
 export function SearchWorkspace({ config }: SearchWorkspaceProps) {
-  const [isDarkMode, setIsDarkMode] = useState(prefersDarkMode);
+  const [isDarkMode, setIsDarkMode] = useThemePreference();
   const [activeType, setActiveType] = useState<QueryType>("KIS");
   const [topK, setTopK] = useState(String(config.default_top_k));
   const [enhanceQuery, setEnhanceQuery] = useState(false);
@@ -147,36 +85,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
   const activeController = useRef<AbortController | null>(null);
   const queryHistory = useQueryHistory();
 
-  const [normalSidebarWidth, setNormalSidebarWidth] = useState<number>(400);
-  const [sidebarWidth, setSidebarWidth] = useState<number>(400);
-  const [isResizing, setIsResizing] = useState<boolean>(false);
-
-  const startResizing = (mouseDownEvent: React.MouseEvent) => {
-    mouseDownEvent.preventDefault();
-    setIsResizing(true);
-    const startX = mouseDownEvent.clientX;
-    const startWidth = sidebarWidth;
-
-    const doDrag = (dragEvent: MouseEvent) => {
-      const maxAllowed = Math.max(800, Math.min(Math.round(window.innerWidth * 0.65), 1050));
-      const nextWidth = Math.max(280, Math.min(maxAllowed, startWidth + dragEvent.clientX - startX));
-      setSidebarWidth(nextWidth);
-      if (!queryUnderstanding || activeType !== "KIS") {
-        setNormalSidebarWidth(nextWidth);
-      }
-    };
-
-    const stopDrag = () => {
-      document.documentElement.removeEventListener('mousemove', doDrag, false);
-      document.documentElement.removeEventListener('mouseup', stopDrag, false);
-      document.body.style.cursor = '';
-      setIsResizing(false);
-    };
-
-    document.documentElement.addEventListener('mousemove', doDrag, false);
-    document.documentElement.addEventListener('mouseup', stopDrag, false);
-    document.body.style.cursor = 'col-resize';
-  };
+  const sidebar = useResizableSidebar();
 
   const searchMutation = useMutation<SearchResponse, unknown, SearchMutationVariables>({
     mutationFn: ({ payload, signal }) => search(payload, signal),
@@ -189,7 +98,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     mutationFn: ({ query, signal }) => planKisQuery(query, signal),
     onSuccess: (plan) => {
       setKisPlan(plan);
-      setSidebarWidth((prev) => Math.max(prev, 550));
+      sidebar.widenTo(550);
     },
   });
   const displayedResultCount =
@@ -204,9 +113,6 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     !searchMutation.isPending &&
     Boolean(searchMutation.data?.results.length) &&
     searchMutation.data?.query_type !== "TRAFFIC";
-  // Traffic videos have no speech, so ASR is never offered for TRAFFIC.
-  const effectiveSources: SearchSources =
-    activeType === "TRAFFIC" ? { ...sources, asr: false } : sources;
 
   useEffect(
     () => () => {
@@ -215,16 +121,6 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     [],
   );
 
-  useEffect(() => {
-    const theme = isDarkMode ? "dark" : "light";
-    document.documentElement.dataset.theme = theme;
-    try {
-      window.localStorage.setItem(DARK_MODE_STORAGE_KEY, theme);
-    } catch {
-      // The visual preference still applies for this session when storage is unavailable.
-    }
-  }, [isDarkMode]);
-
   const changeTab = (queryType: QueryType) => {
     activeController.current?.abort();
     searchMutation.reset();
@@ -232,9 +128,9 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     setValidationErrors([]);
     setActiveType(queryType);
     if (queryType !== "KIS") {
-      setSidebarWidth(normalSidebarWidth);
+      sidebar.restoreNormal();
     } else if (queryUnderstanding) {
-      setSidebarWidth((prev) => Math.max(prev, 550));
+      sidebar.widenTo(550);
     }
   };
 
@@ -288,14 +184,14 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
     planMutation.reset();
     if (enabled) {
       setEnhanceQuery(false);
-      setSidebarWidth((prev) => Math.max(prev, 550));
+      sidebar.widenTo(550);
     } else {
-      setSidebarWidth(normalSidebarWidth);
+      sidebar.restoreNormal();
     }
   };
 
   const understandKisQuery = () => {
-    const queryError = queryLengthError("Query KIS", kisQuery, config.max_query_length);
+    const queryError = queryLengthError("Truy vấn KIS", kisQuery, config.max_query_length);
     if (queryError) {
       setValidationErrors([queryError]);
       return;
@@ -335,106 +231,27 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
   };
 
   const buildPayload = (): SearchRequest | null => {
-    const errors: string[] = [];
-    const parsedTopK = Number(topK);
-    if (
-      !Number.isInteger(parsedTopK) ||
-      parsedTopK < config.min_top_k ||
-      parsedTopK > config.max_top_k
-    ) {
-      errors.push(
-        `Top-K phải là số nguyên từ ${config.min_top_k} đến ${config.max_top_k}.`,
-      );
-    }
-    if (
-      !(activeType === "KIS" && queryUnderstanding) &&
-      !Object.values(effectiveSources).some(Boolean)
-    ) {
-      errors.push("Chọn ít nhất một nguồn tìm kiếm.");
-    }
-    if (modelChoices.length === 0) {
-      errors.push("Chọn ít nhất một model.");
-    }
-    const usesObjectSource = sources.object && !(activeType === "KIS" && queryUnderstanding);
-    if (usesObjectSource && objectTerms.length === 0 && !enhanceQuery) {
-      errors.push("Thêm ít nhất một object hoặc bật Enhance query để tự chọn object.");
-    }
-
-    const common = {
-      top_k: parsedTopK,
-      enhance_query: activeType === "KIS" && queryUnderstanding ? false : enhanceQuery,
-      use_reranking: useReranking,
-      search_sources: effectiveSources,
-      model_choices: modelChoices,
-      ...(usesObjectSource && objectTerms.length > 0 ? { object_query: objectTerms } : {}),
-    };
-
-    let payload: SearchRequest;
-    if (activeType === "KIS") {
-      const queryError = queryLengthError("Query KIS", kisQuery, config.max_query_length);
-      if (queryError) errors.push(queryError);
-      if (queryUnderstanding && !kisPlan) {
-        errors.push("Hãy tạo và kiểm tra query plan trước khi tìm kiếm.");
-      }
-      if (queryUnderstanding && kisPlan) {
-        if (!kisPlan.events.some((event) => event.importance === "anchor")) {
-          errors.push("Query plan phải có ít nhất một anchor EVENT.");
-        }
-        kisPlan.events.forEach((event) => {
-          if (
-            !event.visual_query_en?.trim() &&
-            !event.asr_query_vi?.trim()
-          ) {
-            errors.push(`EVENT ${event.event_index} phải có visual hoặc ASR query.`);
-          }
-        });
-      }
-      payload = {
-        query_type: "KIS",
-        query: kisQuery.trim(),
-        ...(queryUnderstanding && kisPlan
-          ? { query_understanding: true, query_plan: kisPlan }
-          : {}),
-        include_traffic: includeTraffic,
-        ...common,
-      };
-    } else if (activeType === "TRAFFIC") {
-      const queryError = queryLengthError("Query TRAFFIC", trafficQuery, config.max_query_length);
-      if (queryError) errors.push(queryError);
-      if (
-        trafficFilters.clock_from &&
-        trafficFilters.clock_to &&
-        trafficFilters.clock_from > trafficFilters.clock_to
-      ) {
-        errors.push("Giờ bắt đầu phải trước giờ kết thúc.");
-      }
-      payload = {
-        query_type: "TRAFFIC",
-        query: trafficQuery.trim(),
-        filters: trafficFilters,
-        ...common,
-      };
-    } else {
-      if (trakeMainQuery.trim() && trakeMainQuery.trim().length > config.max_query_length) {
-        errors.push(`Main query TRAKE không được vượt quá ${config.max_query_length} ký tự.`);
-      }
-      const events = eventQueries.slice(0, eventCount).map((query, index) => {
-        const eventError = queryLengthError(
-          `EVENT ${index + 1}`,
-          query,
-          config.max_query_length,
-        );
-        if (eventError) errors.push(eventError);
-        return { event_index: index + 1, query: query.trim() };
-      });
-      payload = {
-        query_type: "TRAKE",
-        main_query: trakeMainQuery.trim() || undefined,
-        events,
-        ...common,
-      };
-    }
-
+    const { payload, errors } = buildSearchRequest(
+      {
+        activeType,
+        topK,
+        enhanceQuery,
+        useReranking,
+        sources,
+        modelChoices,
+        objectTerms,
+        kisQuery,
+        queryUnderstanding,
+        kisPlan,
+        includeTraffic,
+        trafficQuery,
+        trafficFilters,
+        trakeMainQuery,
+        eventQueries,
+        eventCount,
+      },
+      config,
+    );
     setValidationErrors(errors);
     return errors.length === 0 ? payload : null;
   };
@@ -494,35 +311,40 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
     event.currentTarget.form?.requestSubmit();
   };
 
+  const planned = activeType === "KIS" && queryUnderstanding;
+  const response = searchMutation.data;
+  const toggleModel = (model: "siglip" | "beit3", enabled: boolean) =>
+    setModelChoices((current) =>
+      enabled ? [...current, model] : current.filter((item) => item !== model),
+    );
+
   return (
     <section className="workspace" aria-label="Retrieval workspace">
       <aside
-        className="workspace__sidebar"
-        aria-label="Query controls"
+        className="rail"
+        aria-label="Truy vấn"
         style={{
-          width: sidebarWidth,
-          flexShrink: 0,
-          transition: isResizing ? "none" : "width 0.24s cubic-bezier(0.4, 0, 0.2, 1)",
+          width: sidebar.width,
+          transition: sidebar.isResizing ? "none" : undefined,
         }}
       >
-        <header className="workspace__brand">
-          <span>Media Retrieval System</span>
-          <label className="theme-switch">
-            <span className="visually-hidden">Dark mode</span>
+        <header className="rail__brand">
+          <h1>
+            Retrieval Inspector <span>AIC 2026</span>
+          </h1>
+          <label className="theme-switch" title="Chế độ tối">
             <input
               type="checkbox"
               role="switch"
-              aria-label="Dark mode"
+              aria-label="Chế độ tối"
               checked={isDarkMode}
               onChange={(event) => setIsDarkMode(event.target.checked)}
             />
-            <span className="theme-switch__track" aria-hidden="true">
-              <span className="theme-switch__thumb" />
-            </span>
+            <span className="theme-switch__track" aria-hidden="true" />
           </label>
         </header>
 
-        <div className="query-tabs" role="tablist" aria-label="Query type">
+        <div className="query-tabs" role="tablist" aria-label="Loại truy vấn">
           {QUERY_TYPES.map((queryType) => (
             <button
               key={queryType}
@@ -534,76 +356,80 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
               className="query-tab"
               onClick={() => changeTab(queryType)}
             >
-              <strong>{queryType}</strong>
+              {queryType}
             </button>
           ))}
         </div>
 
-        <form id="search-form" className="search-layout" onSubmit={submitSearch} noValidate>
-        <div
-          id={`panel-${activeType}`}
-          role="tabpanel"
-          aria-labelledby={`tab-${activeType}`}
-          className="query-panel"
-        >
-          <QueryHistorySelect
-            type={activeType}
-            entries={queryHistory.entries}
-            onRestore={restoreQuery}
-          />
-          {activeType === "KIS" && (
-            <div className="kis-query-zone">
-              <label className="field field--query-only" htmlFor="kis-query">
-                <span>Query KIS</span>
-                <textarea
-                  id="kis-query"
-                  value={kisQuery}
-                  maxLength={config.max_query_length}
-                  onChange={(event) => changeKisQuery(event.target.value)}
-                  onKeyDown={submitQueryOnEnter}
-                  aria-keyshortcuts="Enter Shift+Enter"
-                  placeholder="Enter a KIS query"
-                  rows={6}
-                />
-              </label>
+        <form id="search-form" className="rail__form" onSubmit={submitSearch} noValidate>
+          <div
+            id={`panel-${activeType}`}
+            role="tabpanel"
+            aria-labelledby={`tab-${activeType}`}
+            className="rail__section rail__query"
+          >
+            <QueryHistorySelect
+              type={activeType}
+              entries={queryHistory.entries}
+              onRestore={restoreQuery}
+            />
 
-              <section className="query-planning-card">
-                <div className="query-planning-card__header">
-                  <label className="query-planning-toggle" htmlFor="query-understanding">
-                    <strong>Multi-Event Planning</strong>
-                    <input
-                      id="query-understanding"
-                      type="checkbox"
-                      aria-label="Query Decomposition"
-                      checked={queryUnderstanding}
-                      onChange={(event) => toggleQueryUnderstanding(event.target.checked)}
-                    />
-                  </label>
+            {activeType === "KIS" && (
+              <>
+                <label className="field" htmlFor="kis-query">
+                  <span className="field__label">Truy vấn KIS</span>
+                  <textarea
+                    id="kis-query"
+                    className="field__query"
+                    value={kisQuery}
+                    maxLength={config.max_query_length}
+                    onChange={(event) => changeKisQuery(event.target.value)}
+                    onKeyDown={submitQueryOnEnter}
+                    aria-keyshortcuts="Enter Shift+Enter"
+                    placeholder="Mô tả khoảnh khắc cần tìm, ví dụ: người đàn ông áo đỏ phát biểu trước micro"
+                    rows={5}
+                  />
+                </label>
 
-                  {queryUnderstanding && (
-                    <button
-                      type="button"
-                      className="query-plan__generate"
-                      onClick={understandKisQuery}
-                      disabled={planMutation.isPending}
-                    >
-                      {planMutation.isPending ? "Executing…" : "Execute"}
-                    </button>
-                  )}
-                </div>
+                <div className="plan">
+                  <div className="plan__head">
+                    <label className="switch-row" htmlFor="query-understanding">
+                      <span>
+                        Lập kế hoạch nhiều sự kiện
+                        <small id="query-understanding-hint">Gemini tách truy vấn thành các mốc để bạn sửa trước khi tìm</small>
+                      </span>
+                      <input
+                        id="query-understanding"
+                        type="checkbox"
+                        role="switch"
+                        aria-label="Lập kế hoạch nhiều sự kiện"
+                        aria-describedby="query-understanding-hint"
+                        checked={queryUnderstanding}
+                        onChange={(event) => toggleQueryUnderstanding(event.target.checked)}
+                      />
+                    </label>
+                    {queryUnderstanding && (
+                      <button
+                        type="button"
+                        className="button button--quiet"
+                        onClick={understandKisQuery}
+                        disabled={planMutation.isPending}
+                      >
+                        {planMutation.isPending ? "Đang phân tích…" : "Phân tích truy vấn"}
+                      </button>
+                    )}
+                  </div>
 
-                {queryUnderstanding && (planMutation.isError || kisPlan) && (
-                  <section className="query-plan" aria-label="KIS query plan">
-                  {planMutation.isError && (
-                    <p className="query-plan__error" role="alert">
+                  {queryUnderstanding && planMutation.isError && (
+                    <p className="notice notice--error" role="alert">
                       {friendlySearchError(planMutation.error)}
                     </p>
                   )}
 
-                  {kisPlan && (
-                    <>
-                      <label className="field field--compact" htmlFor="kis-search-mode">
-                        <span>Search strategy</span>
+                  {queryUnderstanding && kisPlan && (
+                    <section className="plan__body" aria-label="Kế hoạch truy vấn KIS">
+                      <label className="field field--inline" htmlFor="kis-search-mode">
+                        <span className="field__label">Chiến lược</span>
                         <select
                           id="kis-search-mode"
                           value={kisPlan.search_mode}
@@ -619,60 +445,64 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
                             )
                           }
                         >
-                          <option value="single_anchor">Single anchor</option>
-                          <option value="multi_anchor">Multiple anchors</option>
-                          <option value="temporal_sequence">Temporal sequence</option>
+                          <option value="single_anchor">Một mốc chính</option>
+                          <option value="multi_anchor">Nhiều mốc, không theo thứ tự</option>
+                          <option value="temporal_sequence">Theo thứ tự thời gian</option>
                         </select>
                       </label>
 
-                      <div className="query-plan__events">
+                      <ol className="plan__events">
                         {kisPlan.events.map((planEvent, index) => (
-                          <article className="query-plan-event" key={planEvent.event_index}>
-                            <header>
+                          <li className="plan-event" key={planEvent.event_index}>
+                            <header className="plan-event__head">
+                              <span className="sequence-mark" aria-hidden="true">
+                                E{planEvent.event_index}
+                              </span>
                               <strong>EVENT {planEvent.event_index}</strong>
-                              <span>{Math.round(planEvent.confidence * 100)}% confidence</span>
+                              <span className="plan-event__confidence">
+                                {Math.round(planEvent.confidence * 100)}% tin cậy
+                              </span>
                               <button
                                 type="button"
+                                className="button button--text"
                                 onClick={() => removePlanEvent(index)}
                                 disabled={kisPlan.events.length === 1}
-                                aria-label={`Remove EVENT ${planEvent.event_index}`}
+                                aria-label={`Xoá EVENT ${planEvent.event_index}`}
                               >
-                                Remove
+                                Xoá
                               </button>
                             </header>
-                            <p className="query-plan-event__source">{planEvent.source_span_vi}</p>
-                            <div className="query-plan-event__fields">
-                              <label className="field">
-                                <span>Visual query (English)</span>
-                                <textarea
-                                  aria-label={`Visual query EVENT ${planEvent.event_index}`}
-                                  value={planEvent.visual_query_en ?? ""}
-                                  onChange={(event) =>
-                                    updatePlanEvent(index, {
-                                      visual_query_en: event.target.value || null,
-                                    })
-                                  }
-                                  rows={2}
-                                />
-                              </label>
-                              <label className="field">
-                                <span>ASR query (Vietnamese)</span>
-                                <textarea
-                                  aria-label={`ASR query EVENT ${planEvent.event_index}`}
-                                  value={planEvent.asr_query_vi ?? ""}
-                                  onChange={(event) =>
-                                    updatePlanEvent(index, {
-                                      asr_query_vi: event.target.value || null,
-                                    })
-                                  }
-                                  rows={2}
-                                />
-                              </label>
-                            </div>
-                            <label className="field field--compact">
-                              <span>Importance</span>
+                            <p className="plan-event__source">{planEvent.source_span_vi}</p>
+                            <label className="field">
+                              <span className="field__label">Hình ảnh (tiếng Anh)</span>
+                              <textarea
+                                aria-label={`Truy vấn hình ảnh EVENT ${planEvent.event_index}`}
+                                value={planEvent.visual_query_en ?? ""}
+                                onChange={(event) =>
+                                  updatePlanEvent(index, {
+                                    visual_query_en: event.target.value || null,
+                                  })
+                                }
+                                rows={2}
+                              />
+                            </label>
+                            <label className="field">
+                              <span className="field__label">Lời thoại ASR (tiếng Việt)</span>
+                              <textarea
+                                aria-label={`Truy vấn ASR EVENT ${planEvent.event_index}`}
+                                value={planEvent.asr_query_vi ?? ""}
+                                onChange={(event) =>
+                                  updatePlanEvent(index, {
+                                    asr_query_vi: event.target.value || null,
+                                  })
+                                }
+                                rows={2}
+                              />
+                            </label>
+                            <label className="field field--inline">
+                              <span className="field__label">Vai trò</span>
                               <select
-                                aria-label={`Importance EVENT ${planEvent.event_index}`}
+                                aria-label={`Vai trò EVENT ${planEvent.event_index}`}
                                 value={planEvent.importance}
                                 onChange={(event) =>
                                   updatePlanEvent(index, {
@@ -681,214 +511,210 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
                                   })
                                 }
                               >
-                                <option value="anchor">Anchor</option>
-                                <option value="supporting">Supporting</option>
-                                <option value="context">Context</option>
+                                <option value="anchor">Mốc chính</option>
+                                <option value="supporting">Hỗ trợ</option>
+                                <option value="context">Bối cảnh</option>
                               </select>
                             </label>
                             {planEvent.inferred && (
-                              <small className="query-plan-event__inferred">
-                                Contains an inference — verify before searching.
-                              </small>
+                              <p className="notice notice--warning">
+                                Có suy luận ngoài câu gốc. Kiểm tra trước khi tìm.
+                              </p>
                             )}
-                          </article>
+                          </li>
                         ))}
-                      </div>
+                      </ol>
 
                       {kisPlan.warnings.map((warning) => (
-                        <p className="query-plan__warning" key={warning}>
+                        <p className="notice notice--warning" key={warning}>
                           {warning}
                         </p>
                       ))}
-                    </>
+                    </section>
                   )}
-                  </section>
-                )}
-              </section>
-            </div>
-          )}
+                </div>
+              </>
+            )}
 
-          {activeType === "TRAFFIC" && (
-            <div className="traffic-query-zone">
-              <label className="field field--query-only" htmlFor="traffic-query">
-                <span>Query TRAFFIC</span>
-                <textarea
-                  id="traffic-query"
-                  value={trafficQuery}
-                  maxLength={config.max_query_length}
-                  onChange={(event) => setTrafficQuery(event.target.value)}
-                  onKeyDown={submitQueryOnEnter}
-                  aria-keyshortcuts="Enter Shift+Enter"
-                  placeholder="Mô tả xe, người, màu sắc, vị trí… (tên đường, giờ, thời tiết dùng bộ lọc)"
-                  rows={4}
-                />
-              </label>
-              <TrafficFilterPanel filters={trafficFilters} onChange={setTrafficFilters} />
-            </div>
-          )}
+            {activeType === "TRAFFIC" && (
+              <>
+                <label className="field" htmlFor="traffic-query">
+                  <span className="field__label">Truy vấn TRAFFIC</span>
+                  <textarea
+                    id="traffic-query"
+                    className="field__query"
+                    value={trafficQuery}
+                    maxLength={config.max_query_length}
+                    onChange={(event) => setTrafficQuery(event.target.value)}
+                    onKeyDown={submitQueryOnEnter}
+                    aria-keyshortcuts="Enter Shift+Enter"
+                    placeholder="Mô tả xe, người, màu sắc, vị trí. Tên đường, giờ và thời tiết chọn ở bộ lọc bên dưới."
+                    rows={4}
+                  />
+                </label>
+                <TrafficFilterPanel filters={trafficFilters} onChange={setTrafficFilters} />
+              </>
+            )}
 
-          {activeType === "TRAKE" && (
-            <div className="trake-fields">
-              <label className="field" htmlFor="trake-main-query">
-                <span>Main query TRAKE</span>
-                <textarea
-                  id="trake-main-query"
-                  value={trakeMainQuery}
-                  maxLength={config.max_query_length}
-                  onChange={(event) => setTrakeMainQuery(event.target.value)}
-                  onKeyDown={submitQueryOnEnter}
-                  onPaste={pasteTrakeEvents}
-                  aria-keyshortcuts="Enter Shift+Enter"
-                  placeholder={"Dán cả truy vấn để tự tách EVENT:\nE1: ...\nE2: ...\nE3: ..."}
-                  rows={3}
-                />
-              </label>
+            {activeType === "TRAKE" && (
+              <>
+                <label className="field" htmlFor="trake-main-query">
+                  <span className="field__label">Truy vấn chính</span>
+                  <textarea
+                    id="trake-main-query"
+                    value={trakeMainQuery}
+                    maxLength={config.max_query_length}
+                    onChange={(event) => setTrakeMainQuery(event.target.value)}
+                    onKeyDown={submitQueryOnEnter}
+                    onPaste={pasteTrakeEvents}
+                    aria-keyshortcuts="Enter Shift+Enter"
+                    placeholder={"Dán cả đề bài để tự tách EVENT:\nE1: …\nE2: …\nE3: …"}
+                    rows={3}
+                  />
+                </label>
 
-              <label className="trake-event-count-row" htmlFor="event-count">
-                <span>EVENT count</span>
-                <select
-                  id="event-count"
-                  value={eventCount}
-                  onChange={(event) => changeEventCount(Number(event.target.value))}
-                >
-                  {Array.from({ length: config.max_trake_events }, (_, i) => i + 1).map((count) => (
-                    <option key={count} value={count}>{count}</option>
+                <label className="field field--inline" htmlFor="event-count">
+                  <span className="field__label">Số EVENT</span>
+                  <select
+                    id="event-count"
+                    value={eventCount}
+                    onChange={(event) => changeEventCount(Number(event.target.value))}
+                  >
+                    {Array.from({ length: config.max_trake_events }, (_, i) => i + 1).map(
+                      (count) => (
+                        <option key={count} value={count}>
+                          {count}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+
+                <ol className="trake-events">
+                  {eventQueries.slice(0, eventCount).map((query, index) => (
+                    <li key={index}>
+                      <label className="trake-event" htmlFor={`event-${index + 1}`}>
+                        <span className="sequence-mark" aria-hidden="true">
+                          E{index + 1}
+                        </span>
+                        <textarea
+                          id={`event-${index + 1}`}
+                          aria-label={`EVENT ${index + 1}`}
+                          value={query}
+                          maxLength={config.max_query_length}
+                          onChange={(event) => updateEventQuery(index, event.target.value)}
+                          onKeyDown={submitQueryOnEnter}
+                          onPaste={pasteTrakeEvents}
+                          aria-keyshortcuts="Enter Shift+Enter"
+                          placeholder={`Sự kiện ${index + 1}`}
+                          rows={2}
+                        />
+                      </label>
+                    </li>
                   ))}
-                </select>
+                </ol>
+              </>
+            )}
+          </div>
+
+          <div className="rail__section">
+            <fieldset className="chip-group" disabled={planned}>
+              <legend>Nguồn</legend>
+              {SOURCE_OPTIONS.filter(
+                ({ key }) => !(activeType === "TRAFFIC" && key === "asr"),
+              ).map(({ key, label }) => (
+                <label className="chip" key={key}>
+                  <input
+                    type="checkbox"
+                    checked={sources[key]}
+                    onChange={(event) =>
+                      setSources((current) => ({ ...current, [key]: event.target.checked }))
+                    }
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </fieldset>
+
+            {sources.object && (
+              <ObjectQueryInput
+                terms={objectTerms}
+                onChange={setObjectTerms}
+                disabled={planned}
+                autoObjects={enhanceQuery}
+              />
+            )}
+
+            <fieldset className="chip-group">
+              <legend>Model ảnh</legend>
+              <label className="chip">
+                <input
+                  type="checkbox"
+                  checked={modelChoices.includes("siglip")}
+                  onChange={(event) => toggleModel("siglip", event.target.checked)}
+                />
+                <span>SigLIP-2</span>
               </label>
+              <label className="chip">
+                <input
+                  type="checkbox"
+                  checked={modelChoices.includes("beit3")}
+                  onChange={(event) => toggleModel("beit3", event.target.checked)}
+                />
+                <span>BEiT-3</span>
+              </label>
+            </fieldset>
+          </div>
 
-              <div className="event-grid">
-                {eventQueries.slice(0, eventCount).map((query, index) => (
-                  <label className="event-field" key={index} htmlFor={`event-${index + 1}`}>
-                    <div className="event-field__header">
-                      <span className="event-field__badge" aria-hidden="true">{index + 1}</span>
-                      <span className="event-field__label">EVENT {index + 1}</span>
-                    </div>
-                    <textarea
-                      id={`event-${index + 1}`}
-                      aria-label={`EVENT ${index + 1}`}
-                      value={query}
-                      maxLength={config.max_query_length}
-                      onChange={(event) => updateEventQuery(index, event.target.value)}
-                      onKeyDown={submitQueryOnEnter}
-                      onPaste={pasteTrakeEvents}
-                      aria-keyshortcuts="Enter Shift+Enter"
-                      rows={2}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="control-panel">
-          <div className="enhance-query-container">
-            <label className="toggle-row" htmlFor="enhance-query">
+          <div className="rail__section rail__switches">
+            <label className="switch-row" htmlFor="enhance-query">
               <span>
-                <strong>Enhance query</strong>
+                Enhance query
+                <small id="enhance-query-hint">Gemini viết lại truy vấn, chọn object và trọng số từng nguồn</small>
               </span>
               <input
                 id="enhance-query"
                 type="checkbox"
+                role="switch"
+                aria-label="Enhance query"
+                aria-describedby="enhance-query-hint"
                 checked={enhanceQuery}
-                disabled={activeType === "KIS" && queryUnderstanding}
+                disabled={planned}
                 onChange={(event) => setEnhanceQuery(event.target.checked)}
               />
             </label>
-          </div>
-
-          <label className="toggle-row" htmlFor="use-reranking">
-            <span>
-              <strong>Rerank (BLIP-2)</strong>
-            </span>
-            <input
-              id="use-reranking"
-              type="checkbox"
-              checked={useReranking}
-              onChange={(event) => setUseReranking(event.target.checked)}
-            />
-          </label>
-
-          {activeType === "KIS" && (
-            <label className="toggle-row" htmlFor="include-traffic">
+            <label className="switch-row" htmlFor="use-reranking">
               <span>
-                <strong>Include traffic videos (N)</strong>
+                Rerank BLIP-2
+                <small id="use-reranking-hint">Chấm lại các kết quả đầu, chậm hơn</small>
               </span>
               <input
-                id="include-traffic"
+                id="use-reranking"
                 type="checkbox"
-                checked={includeTraffic}
-                onChange={(event) => setIncludeTraffic(event.target.checked)}
+                role="switch"
+                aria-label="Rerank BLIP-2"
+                aria-describedby="use-reranking-hint"
+                checked={useReranking}
+                onChange={(event) => setUseReranking(event.target.checked)}
               />
             </label>
-          )}
-
-          <fieldset className="source-options embedding-model-options">
-            <legend>Embedding Model</legend>
-            <label>
-              <input
-                type="checkbox"
-                checked={modelChoices.includes("siglip")}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    setModelChoices(prev => [...prev, "siglip"]);
-                  } else {
-                    setModelChoices(prev => prev.filter(m => m !== "siglip"));
-                  }
-                }}
-              />
-              SigLIP-2
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={modelChoices.includes("beit3")}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    setModelChoices(prev => [...prev, "beit3"]);
-                  } else {
-                    setModelChoices(prev => prev.filter(m => m !== "beit3"));
-                  }
-                }}
-              />
-              BEiT-3
-            </label>
-          </fieldset>
-
-          <fieldset
-            className="source-options"
-            disabled={activeType === "KIS" && queryUnderstanding}
-          >
-            <legend>Sources</legend>
-            {SOURCE_OPTIONS.filter(
-              ({ key }) => !(activeType === "TRAFFIC" && key === "asr"),
-            ).map(({ key, label }) => (
-              <label key={key}>
+            {activeType === "KIS" && (
+              <label className="switch-row" htmlFor="include-traffic">
+                <span>Gồm video giao thông (N)</span>
                 <input
+                  id="include-traffic"
                   type="checkbox"
-                  checked={sources[key]}
-                  onChange={(event) =>
-                    setSources((current) => ({ ...current, [key]: event.target.checked }))
-                  }
+                  role="switch"
+                  checked={includeTraffic}
+                  onChange={(event) => setIncludeTraffic(event.target.checked)}
                 />
-                <span>{label}</span>
               </label>
-            ))}
-          </fieldset>
-
-          {sources.object && (
-            <ObjectQueryInput
-              terms={objectTerms}
-              onChange={setObjectTerms}
-              disabled={activeType === "KIS" && queryUnderstanding}
-              autoObjects={enhanceQuery}
-            />
-          )}
+            )}
+          </div>
 
           {validationErrors.length > 0 && (
-            <div className="form-errors" role="alert">
-              <strong>Kiểm tra lại form</strong>
+            <div className="notice notice--error rail__errors" role="alert">
+              <strong>Chưa tìm được</strong>
               <ul>
                 {validationErrors.map((error) => (
                   <li key={error}>{error}</li>
@@ -896,116 +722,106 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
               </ul>
             </div>
           )}
-
-        </div>
         </form>
 
-        <footer className="workspace__footer">
+        <footer className="rail__footer">
+          <label className="top-k" htmlFor="top-k">
+            <span>Top-K</span>
+            <input
+              id="top-k"
+              aria-label="Top-K"
+              form="search-form"
+              type="number"
+              min={config.min_top_k}
+              max={config.max_top_k}
+              step={1}
+              value={topK}
+              onChange={(event) => setTopK(event.target.value)}
+            />
+          </label>
           <button
-            className="search-button"
+            className="button button--primary rail__search"
             type="submit"
             form="search-form"
-            disabled={
-              planMutation.isPending ||
-              (activeType === "KIS" && queryUnderstanding && !kisPlan)
-            }
+            disabled={planMutation.isPending || (planned && !kisPlan)}
           >
-            Search
+            Tìm kiếm
           </button>
-          <input
-            id="top-k"
-            className="footer-top-k"
-            aria-label="Top-K"
-            form="search-form"
-            type="number"
-            min={config.min_top_k}
-            max={config.max_top_k}
-            step={1}
-            value={topK}
-            onChange={(event) => setTopK(event.target.value)}
-          />
         </footer>
       </aside>
 
-      <div className="sidebar-resizer" onMouseDown={startResizing} aria-hidden="true" title="Drag to resize sidebar" />
+      <div
+        className="rail-resizer"
+        onMouseDown={(event) => sidebar.startResizing(event, !planned)}
+        aria-hidden="true"
+        title="Kéo để đổi độ rộng"
+      />
 
-      <div className="workspace__results" aria-label="Search results">
-        <header
-          className={`result-zone__header${
-            showProgramFilter ? "" : " result-zone__header--without-program"
-          }`}
-          aria-label="Result tools"
-        >
-          <div className="result-zone__header-start">
-            {searchMutation.data?.results.length ? (
-              searchMutation.data.query_type === "TRAKE" ? (
-                <div className="result-zone__summary">
-                  <strong>{displayedResultCount} candidates</strong>
-                  <span>Temporal candidate rows</span>
-                </div>
-              ) : (
-                <div className="result-group-controls">
-                  <label className="result-group-toggle">
-                    <input
-                      type="checkbox"
-                      checked={groupByVideo}
-                      onChange={(event) => setGroupByVideo(event.target.checked)}
-                    />
-                    <span>Group by video</span>
-                  </label>
-                  {groupByVideo && (
-                    <label className="result-group-sort">
-                      <span>Sort by</span>
-                      <select
-                        aria-label="Sort grouped results"
-                        value={groupSort}
-                        onChange={(event) => setGroupSort(event.target.value as GroupSort)}
-                      >
-                        <option value="score">Score</option>
-                        <option value="time">Time</option>
-                      </select>
-                    </label>
-                  )}
-                  {searchMutation.data.query_type === "TRAFFIC" && (
-                    <span className="result-zone__filtered">
-                      {searchMutation.data.filtered_keyframes.toLocaleString("vi-VN")} keyframe
-                      qua bộ lọc
-                    </span>
-                  )}
-                </div>
-              )
+      <div className="sheet" aria-label="Kết quả tìm kiếm">
+        <header className="toolbar" aria-label="Công cụ kết quả">
+          <div className="toolbar__group">
+            {response?.results.length && !searchMutation.isPending ? (
+              <p className="toolbar__count">
+                <strong>{displayedResultCount}</strong>{" "}
+                {response.query_type === "TRAKE" ? "chuỗi ứng viên" : "kết quả"}
+                {response.query_type === "TRAFFIC" && (
+                  <span>
+                    {" "}
+                    trong {response.filtered_keyframes.toLocaleString("vi-VN")} keyframe qua bộ lọc
+                  </span>
+                )}
+              </p>
             ) : null}
-          </div>
-          <VideoLookup />
-          {showProgramFilter && (
-            <label className="program-filter">
-              <span>Program</span>
+            {response?.results.length &&
+            !searchMutation.isPending &&
+            response.query_type !== "TRAKE" ? (
+              <>
+                <label className="chip chip--small">
+                  <input
+                    type="checkbox"
+                    checked={groupByVideo}
+                    onChange={(event) => setGroupByVideo(event.target.checked)}
+                  />
+                  <span>Gộp theo video</span>
+                </label>
+                {groupByVideo && (
+                  <select
+                    className="select--small"
+                    aria-label="Sắp xếp trong nhóm"
+                    value={groupSort}
+                    onChange={(event) => setGroupSort(event.target.value as GroupSort)}
+                  >
+                    <option value="score">Theo điểm</option>
+                    <option value="time">Theo thời gian</option>
+                  </select>
+                )}
+              </>
+            ) : null}
+            {showProgramFilter && (
               <select
-                aria-label="Program"
+                className="select--small"
+                aria-label="Chương trình"
                 value={programFilter}
-                onChange={(event) =>
-                  setProgramFilter(event.target.value)
-                }
+                onChange={(event) => setProgramFilter(event.target.value)}
               >
-                <option value="ALL">ALL</option>
+                <option value="ALL">Mọi chương trình</option>
                 {resultProgramOptions.map(({ key, label }) => (
                   <option key={key} value={key}>
                     {label}
                   </option>
                 ))}
               </select>
-            </label>
-          )}
-          <div className="result-zone__header-end">
+            )}
+          </div>
+          <div className="toolbar__group toolbar__group--end">
+            <VideoLookup />
             <SubmissionLogButton />
-            {searchMutation.data?.results.length ? (
-              <span className="mini-badge">{searchMutation.data.query_type}</span>
-            ) : null}
           </div>
         </header>
-        {!searchMutation.isPending && searchMutation.data && (
+
+        {!searchMutation.isPending && response && (
           <SearchInsight
-            response={searchMutation.data}
+            response={response}
             payload={searchMutation.variables?.payload}
             objectTerms={objectTerms}
             onPinObject={(term) => {
@@ -1014,7 +830,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
             }}
           />
         )}
-        <div className="result-zone__content">
+        <div className="sheet__content">
           <SearchState
             mutation={searchMutation}
             maxAnswerLength={config.max_answer_length}
@@ -1045,19 +861,16 @@ function SearchState({
 }: SearchStateProps) {
   if (mutation.isPending) {
     return (
-      <section className="result-state" aria-live="polite" aria-busy="true">
+      <section className="sheet-state" aria-live="polite" aria-busy="true">
         <span className="spinner" aria-hidden="true" />
-        <div>
-          <strong>Đang tìm kiếm…</strong>
-          <p>Request trước đã được hủy nếu vẫn đang chạy.</p>
-        </div>
+        <strong>Đang tìm kiếm…</strong>
       </section>
     );
   }
 
   if (mutation.isError) {
     return (
-      <section className="result-state result-state--error" role="alert">
+      <section className="sheet-state sheet-state--error" role="alert">
         <strong>Tìm kiếm không thành công</strong>
         <p>{friendlySearchError(mutation.error)}</p>
       </section>
@@ -1066,31 +879,31 @@ function SearchState({
 
   if (!mutation.data) {
     return (
-      <section className="result-state result-state--idle">
+      <section className="sheet-state">
         <strong>Chưa có kết quả</strong>
-        <p>Kết quả sẽ xuất hiện tại đây sau khi tìm kiếm.</p>
+        <p>Nhập truy vấn ở cột trái rồi nhấn Enter. Kết quả hiện ở đây theo thứ hạng.</p>
       </section>
     );
   }
 
   if (mutation.data.results.length === 0) {
     return (
-      <section className="result-state result-state--empty" role="status">
-        <strong>Không tìm thấy candidate</strong>
-        <p>Thử mô tả khác hoặc bật thêm nguồn tìm kiếm.</p>
+      <section className="sheet-state" role="status">
+        <strong>Không tìm thấy kết quả</strong>
+        <p>Thử mô tả theo cách khác hoặc bật thêm nguồn tìm kiếm.</p>
       </section>
     );
   }
 
-  const displayedResults = mutation.data.results.filter(
-    (result) => matchesProgram(result.video_id, programFilter),
+  const displayedResults = mutation.data.results.filter((result) =>
+    matchesProgram(result.video_id, programFilter),
   );
 
   if (displayedResults.length === 0) {
     return (
-      <section className="result-state result-state--empty" role="status">
+      <section className="sheet-state" role="status">
         <strong>Không có kết quả thuộc chương trình đã chọn</strong>
-        <p>Chọn ALL hoặc một chương trình khác để xem kết quả.</p>
+        <p>Chọn Mọi chương trình để xem lại toàn bộ kết quả.</p>
       </section>
     );
   }
@@ -1106,9 +919,9 @@ function SearchState({
     <section className="result-preview" aria-live="polite">
       {displayedResponse.query_type === "TRAKE" ? (
         submittedTrakeEventCount === null ? (
-          <section className="trake-validation-error" role="alert">
-            <strong>Cannot display TRAKE results</strong>
-            <p>The submitted EVENT count is unavailable for response validation.</p>
+          <section className="sheet-state sheet-state--error" role="alert">
+            <strong>Không hiển thị được kết quả TRAKE</strong>
+            <p>Thiếu số EVENT đã gửi để kiểm tra phản hồi.</p>
           </section>
         ) : (
           <TrakeResultInspector

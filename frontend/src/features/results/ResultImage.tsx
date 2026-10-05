@@ -14,9 +14,8 @@ export function ResultImage({ src, alt, className = "", eager = false }: ResultI
 
   if (failed) {
     return (
-      <span className={`result-image-fallback ${className}`} role="img" aria-label={alt}>
-        <span aria-hidden="true">×</span>
-        Image unavailable
+      <span className={`image-missing ${className}`.trim()} role="img" aria-label={alt}>
+        Không có ảnh
       </span>
     );
   }
