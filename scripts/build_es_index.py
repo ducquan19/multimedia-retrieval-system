@@ -11,34 +11,30 @@ shift, so every document id would be stale) or lost its asr_text (regenerated ma
 """
 
 import argparse
-import hashlib
 import json
 import logging
+import sys
 from pathlib import Path
 
 from elasticsearch import Elasticsearch, helpers
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+from _common import keyframe_order_hash as _order_hash
+from _common import setup_logging
+
 logger = logging.getLogger(__name__)
 
 INDEX_NAME = "keyframes_metadata"
 STATE_VERSION = 1
-MAPPING = {
-    "mappings": {
-        "properties": {
-            "faiss_id": {"type": "integer"},
-            "asr_text": {"type": "text"},
-        }
+MAPPINGS = {
+    "properties": {
+        "faiss_id": {"type": "integer"},
+        "asr_text": {"type": "text"},
     }
 }
 
 
 def keyframe_order_hash(keyframes: list[dict]) -> str:
-    digest = hashlib.sha1()
-    for keyframe in keyframes:
-        digest.update(keyframe["keyframe_id"].encode("utf-8"))
-        digest.update(b"\n")
-    return digest.hexdigest()
+    return _order_hash([keyframe["keyframe_id"] for keyframe in keyframes])
 
 
 def folder_signature(video_dir: Path) -> list[int]:
@@ -55,7 +51,7 @@ def read_video_texts(video_dir: Path) -> dict[str, str]:
         try:
             with open(asr_file, encoding="utf-8") as f:
                 text = json.load(f).get("text", "").strip()
-        except Exception as e:
+        except (OSError, ValueError, AttributeError) as e:
             logger.error("Failed to read %s: %s", asr_file, e)
             continue
         if text:
@@ -69,26 +65,29 @@ def load_state(state_path: Path) -> dict:
     try:
         with open(state_path, encoding="utf-8") as f:
             state = json.load(f)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.warning("Ignoring unreadable state %s: %s", state_path, e)
         return {}
     return state if state.get("version") == STATE_VERSION else {}
 
 
-def build_es_index(data_root: Path, es_url: str, full: bool = False) -> None:
+def build_es_index(
+    data_root: Path, es_url: str, full: bool = False, index_name: str = INDEX_NAME
+) -> bool:
+    """Returns False when the index could not be (fully) built."""
     keyframes_path = data_root / "keyframes.json"
     asr_dir = data_root / "asr"
     state_path = data_root / "indexing" / "es_asr_state.json"
 
     if not keyframes_path.exists():
         logger.error("keyframes.json not found at %s", keyframes_path)
-        return
+        return False
 
     logger.info("Connecting to Elasticsearch at %s...", es_url)
     es = Elasticsearch(es_url)
     if not es.ping():
-        logger.error("Could not connect to Elasticsearch. Is it running?")
-        return
+        logger.error("Could not connect to Elasticsearch. Is it running? (docker compose up -d)")
+        return False
 
     logger.info("Loading keyframes manifest...")
     with open(keyframes_path, encoding="utf-8") as f:
@@ -97,7 +96,7 @@ def build_es_index(data_root: Path, es_url: str, full: bool = False) -> None:
     order_hash = keyframe_order_hash(keyframes)
 
     state = {} if full else load_state(state_path)
-    if not es.indices.exists(index=INDEX_NAME):
+    if not es.indices.exists(index=index_name):
         state = {}
     if state and state.get("keyframe_order") != order_hash:
         logger.info("keyframes.json order changed since the last build, rebuilding everything")
@@ -131,7 +130,7 @@ def build_es_index(data_root: Path, es_url: str, full: bool = False) -> None:
     )
     if not touched_videos:
         logger.info("Nothing changed, Elasticsearch index is up to date.")
-        return
+        return True
 
     segment_texts: dict[str, str] = {}
     for video_dir in changed:
@@ -147,21 +146,23 @@ def build_es_index(data_root: Path, es_url: str, full: bool = False) -> None:
         text = segment_texts.get(keyframe.get("segment_id") or "")
         if text:
             keyframe["asr_text"] = text
-            actions.append({
-                "_index": INDEX_NAME,
-                "_id": str(idx),
-                "_source": {"faiss_id": idx, "asr_text": text},
-            })
+            actions.append(
+                {
+                    "_index": index_name,
+                    "_id": str(idx),
+                    "_source": {"faiss_id": idx, "asr_text": text},
+                }
+            )
             updated += 1
         elif keyframe.pop("asr_text", None) is not None and not full:
-            actions.append({"_op_type": "delete", "_index": INDEX_NAME, "_id": str(idx)})
+            actions.append({"_op_type": "delete", "_index": index_name, "_id": str(idx)})
             deleted += 1
     logger.info("Keyframes with ASR text updated: %d, removed: %d", updated, deleted)
 
     if full:
-        if es.indices.exists(index=INDEX_NAME):
-            es.indices.delete(index=INDEX_NAME)
-        es.indices.create(index=INDEX_NAME, body=MAPPING)
+        if es.indices.exists(index=index_name):
+            es.indices.delete(index=index_name)
+        es.indices.create(index=index_name, mappings=MAPPINGS)
 
     logger.info("Sending %d actions to Elasticsearch...", len(actions))
     # A delete of a document that is already gone is not an error
@@ -170,8 +171,8 @@ def build_es_index(data_root: Path, es_url: str, full: bool = False) -> None:
     if real_errors:
         logger.error("%d bulk errors, first: %s", len(real_errors), real_errors[0])
         logger.error("State not saved; the next run will retry these folders.")
-        return
-    es.indices.refresh(index=INDEX_NAME)
+        return False
+    es.indices.refresh(index=index_name)
 
     # Save back to keyframes.json so the UI can show the transcript
     logger.info("Saving updated keyframes.json...")
@@ -191,12 +192,21 @@ def build_es_index(data_root: Path, es_url: str, full: bool = False) -> None:
             indent=1,
         )
     logger.info("Done building Elasticsearch index!")
+    return True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--data-root", type=Path, default=Path("data"))
+    parser.add_argument("--es-url", default="http://localhost:9200")
+    parser.add_argument("--index-name", default=INDEX_NAME, help="must match AIC_ES_INDEX_NAME")
+    parser.add_argument("--full", action="store_true", help="Rebuild everything from scratch")
+    args = parser.parse_args()
+    setup_logging()
+    return 0 if build_es_index(args.data_root, args.es_url, args.full, args.index_name) else 1
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build the ASR BM25 index in Elasticsearch")
-    parser.add_argument("--data-root", type=str, default="./data")
-    parser.add_argument("--es-url", type=str, default="http://localhost:9200")
-    parser.add_argument("--full", action="store_true", help="Rebuild everything from scratch")
-    args = parser.parse_args()
-    build_es_index(Path(args.data_root), args.es_url, args.full)
+    sys.exit(main())

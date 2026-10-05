@@ -27,11 +27,11 @@ import bisect
 import csv
 import json
 import logging
+import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # label -> (max score, max instance count in a single frame)
@@ -94,9 +94,7 @@ def read_shots(data_root: Path, video_id: str) -> list[tuple[int, int]]:
     if not scenes_path.exists():
         return []
     with open(scenes_path, encoding="utf-8") as f:
-        shots = [
-            (int(row["start_frame"]), int(row["end_frame"])) for row in csv.DictReader(f)
-        ]
+        shots = [(int(row["start_frame"]), int(row["end_frame"])) for row in csv.DictReader(f)]
     shots.sort()
     return shots
 
@@ -186,9 +184,7 @@ def build_object_index(
     def job(item: tuple[str, list[dict]]) -> tuple[str, dict[str, Detections], str]:
         video_id, video_keyframes = item
         shot_level = video_id.startswith(shot_level_prefixes)
-        detections, mode = build_video(
-            data_root, video_id, video_keyframes, shot_level, min_score
-        )
+        detections, mode = build_video(data_root, video_id, video_keyframes, shot_level, min_score)
         return video_id, detections, mode
 
     all_detections: dict[str, Detections] = {}
@@ -235,10 +231,12 @@ def build_object_index(
     logger.info("Object index saved to %s", output_path)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build the object search index")
-    parser.add_argument("--data-root", type=str, default="./data")
-    parser.add_argument("--output", type=str, default=None, help="Default: <data-root>/objects_index.json")
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--data-root", type=Path, default=Path("data"))
+    parser.add_argument("--output", type=Path, help="Default: <data-root>/objects_index.json")
     parser.add_argument("--min-score", type=float, default=0.3)
     parser.add_argument(
         "--shot-level-prefixes",
@@ -248,12 +246,20 @@ if __name__ == "__main__":
     )
     parser.add_argument("--workers", type=int, default=16)
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-    data_root = Path(args.data_root)
+    if not (args.data_root / "keyframes.json").exists():
+        logger.error("keyframes.json not found in %s", args.data_root)
+        return 1
     build_object_index(
-        data_root,
-        Path(args.output) if args.output else data_root / "objects_index.json",
+        args.data_root,
+        args.output or args.data_root / "objects_index.json",
         args.min_score,
         tuple(args.shot_level_prefixes),
         args.workers,
     )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

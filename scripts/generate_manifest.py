@@ -3,14 +3,12 @@ import bisect
 import csv
 import json
 import logging
+import sys
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+from _common import IMAGE_EXTENSIONS, setup_logging
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+logger = logging.getLogger(__name__)
 
 
 def load_frame_map(data_root: Path, video_id: str) -> dict[int, int]:
@@ -38,9 +36,12 @@ def load_shots(data_root: Path, video_id: str) -> list[tuple[int, int, int]]:
 def shot_for_frame(shots: list[tuple[int, int, int]], starts: list[int], frame: int) -> int:
     """scene_id of the shot containing frame; frames in a gap go to the nearest shot."""
     index = max(bisect.bisect_right(starts, frame) - 1, 0)
-    if frame > shots[index][1] and index + 1 < len(shots):
-        if shots[index + 1][0] - frame < frame - shots[index][1]:
-            index += 1
+    if (
+        frame > shots[index][1]
+        and index + 1 < len(shots)
+        and shots[index + 1][0] - frame < frame - shots[index][1]
+    ):
+        index += 1
     return shots[index][2]
 
 
@@ -93,7 +94,7 @@ def flat_keyframes(data_root: Path, video_dir: Path, image_files: list[Path]) ->
     return entries
 
 
-def generate_manifest(keyframes_dir: Path, output_path: Path):
+def generate_manifest(keyframes_dir: Path, output_path: Path) -> bool:
     """
     Scans the keyframes directory and generates a real manifest.json.
     Sorting MUST match the Kaggle extraction script:
@@ -105,7 +106,7 @@ def generate_manifest(keyframes_dir: Path, output_path: Path):
     data_root = keyframes_dir.parent
     if not keyframes_dir.exists():
         logger.error("Keyframes directory not found at %s", keyframes_dir)
-        return
+        return False
 
     keyframes_list = []
     logger.info("Scanning directory: %s", keyframes_dir)
@@ -116,8 +117,7 @@ def generate_manifest(keyframes_dir: Path, output_path: Path):
         video_id = video_dir.name
 
         flat_images = [
-            f for f in video_dir.iterdir()
-            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+            f for f in video_dir.iterdir() if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
         ]
         if flat_images:
             if any(d.is_dir() and d.name.startswith("S") for d in video_dir.iterdir()):
@@ -195,19 +195,18 @@ def generate_manifest(keyframes_dir: Path, output_path: Path):
         json.dump(manifest_data, f, ensure_ascii=False, indent=2)
 
     logger.info("Manifest saved successfully to %s", output_path)
+    logger.info("keyframes.json changed: rebuild the FAISS, Elasticsearch and object indexes next.")
+    return True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate keyframes.json from data/keyframes/")
+    parser.add_argument("--data-root", type=Path, default=Path("data"))
+    args = parser.parse_args()
+    setup_logging()
+    ok = generate_manifest(args.data_root / "keyframes", args.data_root / "keyframes.json")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate manifest.json from keyframes folder"
-    )
-    parser.add_argument(
-        "--data-root", type=str, default="./data", help="Root data directory"
-    )
-    args = parser.parse_args()
-
-    data_root = Path(args.data_root)
-    keyframes_dir = data_root / "keyframes"
-    manifest_path = data_root / "keyframes.json"
-
-    generate_manifest(keyframes_dir, manifest_path)
+    sys.exit(main())
