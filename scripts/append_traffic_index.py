@@ -2,11 +2,13 @@
 
 N is kept out of data/keyframes/ because its videos are VFR: the provided frame_idx
 (pts_time x average fps) is only approximate, so the submission time and the frame to seek
-must come from the decoded frame table instead. Run this after steps 1-4 of the README
-(generate_manifest, build_faiss_index, build_es_index, build_object_index); it appends N at the
-END, so the FAISS ids of L/M/S (used by Elasticsearch) never move.
+must come from the decoded frame table instead. Run this after steps 1-4 of
+scripts/README.md (generate_manifest, build_faiss_index, build_es_index,
+build_object_index); it appends N at the END, so the FAISS ids of L/M/S (used by
+Elasticsearch) never move. It also rewrites <index>.meta.json for the backend's startup check.
 
-Per N keyframe (row n of map-keyframes/<video_id>.csv = row n-1 of embeddings/<model>/<video_id>.npy):
+Per N keyframe (row n of map-keyframes/<video_id>.csv = row n-1 of
+embeddings/<model>/<video_id>.npy):
   keyframe_id  <video_id>/<n:04d>
   frame_id     decoded frame index: the image of map pts_time t is the last decoded frame
                with (pts - first pts) < t + 1 s (traffic_probe/merged/frames/<video_id>.npz)
@@ -32,6 +34,8 @@ from pathlib import Path
 import faiss
 import numpy as np
 
+from _common import write_index_meta
+
 INDEXES = {"siglip": "indexing/siglip.index", "beit3": "indexing/beit3.index"}
 
 
@@ -54,22 +58,25 @@ def traffic_entries(data_root: Path, video_id: str, rows: list[dict], camera: st
     for row in rows:
         n = int(row["n"])
         index = max(int(np.searchsorted(relative, (float(row["pts_time"]) + 1.0) * 1e6)) - 1, 0)
-        entries.append({
-            "keyframe_id": f"{video_id}/{n:04d}",
-            "video_id": video_id,
-            "frame_id": index,
-            "time_ms": int(round(pts_us[index] / 1000)),
-            "group_id": camera,
-            "image_path": f"{IMAGE_DIR}/{video_id}/{names.get(n, f'{n:03d}.jpg')}",
-        })
+        entries.append(
+            {
+                "keyframe_id": f"{video_id}/{n:04d}",
+                "video_id": video_id,
+                "frame_id": index,
+                "time_ms": int(round(pts_us[index] / 1000)),
+                "group_id": camera,
+                "image_path": f"{IMAGE_DIR}/{video_id}/{names.get(n, f'{n:03d}.jpg')}",
+            }
+        )
     return entries
 
 
 def read_detections(path: Path, min_score: float) -> dict[str, tuple[float, int]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     found: dict[str, tuple[float, int]] = {}
-    for label, raw in zip(data.get("detection_class_entities", []), data.get("detection_scores", []),
-                          strict=False):
+    for label, raw in zip(
+        data.get("detection_class_entities", []), data.get("detection_scores", []), strict=False
+    ):
         score = float(raw)
         if score < min_score:
             continue
@@ -78,7 +85,9 @@ def read_detections(path: Path, min_score: float) -> dict[str, tuple[float, int]
     return found
 
 
-def object_detections(data_root: Path, keyframe_id: str, min_score: float) -> dict[str, tuple[float, int]]:
+def object_detections(
+    data_root: Path, keyframe_id: str, min_score: float
+) -> dict[str, tuple[float, int]]:
     video_id, n = keyframe_id.split("/")
     for name in (f"{int(n):03d}.json", f"{int(n):04d}.json"):
         object_file = data_root / "objects" / video_id / name
@@ -89,8 +98,11 @@ def object_detections(data_root: Path, keyframe_id: str, min_score: float) -> di
 
 def append_objects(data_root: Path, entries: list[dict], min_score: float) -> int:
     path = data_root / "objects_index.json"
-    index = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {
-        "version": 1, "min_score": min_score, "labels": [], "keyframes": {}}
+    index = (
+        json.loads(path.read_text(encoding="utf-8"))
+        if path.exists()
+        else {"version": 1, "min_score": min_score, "labels": [], "keyframes": {}}
+    )
     # build_object_index.py may have matched N by frame_idx, which is not N's frame_id: drop it.
     index["keyframes"] = {k: v for k, v in index["keyframes"].items() if not k.startswith("N")}
     labels = index["labels"]
@@ -99,7 +111,7 @@ def append_objects(data_root: Path, entries: list[dict], min_score: float) -> in
     with ThreadPoolExecutor(max_workers=16) as executor:
         found = executor.map(lambda k: object_detections(data_root, k, min_score), keyframe_ids)
     added = 0
-    for keyframe_id, detections in zip(keyframe_ids, found):
+    for keyframe_id, detections in zip(keyframe_ids, found, strict=True):
         if not detections:
             continue
         for label in detections:
@@ -140,13 +152,21 @@ def relink_images(root: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--data-root", type=Path, default=Path("data"))
     parser.add_argument("--min-score", type=float, default=0.3)
-    parser.add_argument("--objects-only", action="store_true",
-                        help="only (re)add N to objects_index.json; keyframes.json must already contain N")
-    parser.add_argument("--relink-images", action="store_true",
-                        help=f"only point image_path of existing N keyframes to {IMAGE_DIR}/")
+    parser.add_argument(
+        "--objects-only",
+        action="store_true",
+        help="only (re)add N to objects_index.json; keyframes.json must already contain N",
+    )
+    parser.add_argument(
+        "--relink-images",
+        action="store_true",
+        help=f"only point image_path of existing N keyframes to {IMAGE_DIR}/",
+    )
     args = parser.parse_args()
     root = args.data_root
     if args.relink_images:
@@ -156,8 +176,11 @@ def main() -> None:
         manifest = json.loads((root / "keyframes.json").read_text(encoding="utf-8"))
         entries = [k for k in manifest["keyframes"] if k["video_id"].startswith("N")]
         if not entries:
-            raise SystemExit("keyframes.json has no N keyframes: run this script without --objects-only")
-        print(f"N objects re-added for {append_objects(root, entries, args.min_score)} of {len(entries)} keyframes")
+            raise SystemExit(
+                "keyframes.json has no N keyframes: run this script without --objects-only"
+            )
+        added = append_objects(root, entries, args.min_score)
+        print(f"N objects re-added for {added} of {len(entries)} keyframes")
         return
 
     manifest_path = root / "keyframes.json"
@@ -185,23 +208,32 @@ def main() -> None:
         for name, index in indexes.items():
             matrix = np.load(root / "embeddings" / name / f"{video_id}.npy").astype(np.float32)
             if matrix.shape != (len(rows), index.d):
-                raise SystemExit(f"embeddings/{name}/{video_id}.npy: {matrix.shape}, need ({len(rows)}, {index.d})")
+                raise SystemExit(
+                    f"embeddings/{name}/{video_id}.npy: {matrix.shape}, "
+                    f"need ({len(rows)}, {index.d})"
+                )
             vectors[name].append(matrix)
     missing = [e["image_path"] for e in entries if not (root / e["image_path"]).is_file()]
     if missing:
         raise SystemExit(f"{len(missing)} N keyframe images missing, e.g. {missing[:3]}")
 
     # Write only after every check passed.
+    manifest["keyframes"].extend(entries)
+    keyframe_ids = [keyframe["keyframe_id"] for keyframe in manifest["keyframes"]]
     for name, index in indexes.items():
         matrix = np.concatenate(vectors[name])
         faiss.normalize_L2(matrix)
         index.add(matrix)
         faiss.write_index(index, str(root / INDEXES[name]))
-    manifest["keyframes"].extend(entries)
+        write_index_meta(
+            root / INDEXES[name], ntotal=index.ntotal, dim=index.d, keyframe_ids=keyframe_ids
+        )
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     with_objects = append_objects(root, entries, args.min_score)
-    print(f"N: {len(videos)} videos, {len(entries)} keyframes appended after {base_count} "
-          f"(total {base_count + len(entries)}); objects for {with_objects} keyframes")
+    print(
+        f"N: {len(videos)} videos, {len(entries)} keyframes appended after {base_count} "
+        f"(total {base_count + len(entries)}); objects for {with_objects} keyframes"
+    )
 
 
 if __name__ == "__main__":

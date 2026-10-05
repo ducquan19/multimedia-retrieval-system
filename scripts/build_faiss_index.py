@@ -1,150 +1,144 @@
+"""Build the FAISS indexes (SigLIP, BEiT-3) from per-video embedding files.
+
+Input:  <data-root>/embeddings/<model>/<video_id>.npy, shape (N, D), row i = i-th keyframe of
+        the video in keyframe_id order (the order embed_keyframes.py writes).
+Output: <data-root>/indexing/<model>.index (IndexFlatIP) where row i = keyframes.json[i], plus
+        <model>.index.meta.json with the keyframe order hash checked by the backend at startup.
+
+The build stops when a video's .npy is missing or has a different number of rows than the
+manifest: copying rows by position would silently attach vectors to the wrong keyframes.
+``--allow-missing`` only tolerates missing videos (their keyframes get zero vectors and can
+never be found visually); a row count mismatch is always an error.
+
+Example:
+    python scripts/build_faiss_index.py --data-root data
+"""
+
 import argparse
 import json
 import logging
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 import faiss
 import numpy as np
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+from _common import setup_logging, write_index_meta
+
 logger = logging.getLogger(__name__)
+
+MODELS = {"siglip": 1152, "beit3": 768}
+
+
+class IndexBuildError(RuntimeError):
+    pass
 
 
 def build_faiss_index(
-    embedding_dir: Path, manifest_path: Path, output_index_path: Path, dimension: int = 512
-):
-    """
-    Builds a FAISS index from video-level .npy files (N, D).
-    To ensure the faiss_id exactly matches the global keyframe index in keyframes.json:
-    1. Group manifest keyframes by video_id.
-    2. Sort them by keyframe_id (matching the alphabetical sort used during extraction).
-    3. Map row `i` of video_id.npy to the `global_index` of the sorted manifest keyframe.
-    """
-    logger.info("Loading manifest from %s", manifest_path)
-    try:
-        with open(manifest_path, "r", encoding="utf-8") as f:
-            manifest = json.load(f)
-    except Exception as e:
-        logger.error("Failed to load manifest: %s", e)
-        return
+    embedding_dir: Path,
+    keyframes: list[dict],
+    output_index_path: Path,
+    dimension: int,
+    allow_missing: bool = False,
+) -> int:
+    """Build one index; returns the number of videos without embeddings (zero vectors)."""
+    # Group keyframes by video, remembering each keyframe's global position (= FAISS id).
+    video_to_positions: dict[str, list[tuple[str, int]]] = defaultdict(list)
+    for position, keyframe in enumerate(keyframes):
+        video_to_positions[keyframe["video_id"]].append((keyframe["keyframe_id"], position))
 
-    keyframes = manifest.get("keyframes", [])
-    if not keyframes:
-        logger.warning("No keyframes found in manifest.")
-        return
-
-    total_frames = len(keyframes)
-    logger.info("Total keyframes in manifest: %d", total_frames)
-
-    # 1. Group keyframes by video_id
-    video_to_frames = defaultdict(list)
-    for global_idx, kf in enumerate(keyframes):
-        video_id = kf["video_id"]
-        # Lưu lại global_idx để sau này gán vector vào đúng vị trí tổng
-        video_to_frames[video_id].append({
-            "global_idx": global_idx,
-            "keyframe_id": kf["keyframe_id"],
-            "video_id": video_id
-        })
-
-    # 2. Sort frames within each video (must match extraction logic)
-    for video_id in video_to_frames:
-        # Sort alphabetically by keyframe_id (e.g., L01_V001/S001/0001)
-        video_to_frames[video_id].sort(key=lambda x: x["keyframe_id"])
-
-    # Prepare an empty array for all vectors
-    # Using np.zeros allows us to keep the index aligned even if some files are missing
-    all_vectors = np.zeros((total_frames, dimension), dtype=np.float32)
-    missing_videos = 0
-    mismatched_frames = 0
-
-    # 3. Read .npy files and populate all_vectors
-    for video_id, frames_metadata in video_to_frames.items():
+    all_vectors = np.zeros((len(keyframes), dimension), dtype=np.float32)
+    missing: list[str] = []
+    problems: list[str] = []
+    for video_id, entries in sorted(video_to_positions.items()):
+        # Rows follow keyframe_id order within the video (zero-padded ids sort numerically).
+        entries.sort()
         npy_path = embedding_dir / f"{video_id}.npy"
-
         if not npy_path.exists():
-            logger.warning("Missing embedding file for video %s: %s", video_id, npy_path)
-            missing_videos += 1
+            missing.append(video_id)
             continue
+        vectors = np.load(npy_path)
+        if vectors.ndim == 1:
+            vectors = vectors.reshape(1, -1)
+        if vectors.shape != (len(entries), dimension):
+            problems.append(
+                f"{video_id}: {npy_path.name} has shape {vectors.shape}, "
+                f"expected ({len(entries)}, {dimension})"
+            )
+            continue
+        all_vectors[[position for _, position in entries]] = vectors
 
-        try:
-            # .npy file should have shape (N, D)
-            video_vectors = np.load(npy_path)
+    if problems:
+        raise IndexBuildError(
+            f"{len(problems)} videos do not match keyframes.json:\n  " + "\n  ".join(problems[:20])
+        )
+    if missing:
+        message = f"{len(missing)} videos have no embeddings, e.g. {missing[:10]}"
+        if not allow_missing:
+            raise IndexBuildError(message + " (use --allow-missing to index them as zeros)")
+        logger.warning("%s; their keyframes get zero vectors", message)
 
-            if video_vectors.ndim == 1:
-                video_vectors = video_vectors.reshape(1, -1)
-
-            N, D = video_vectors.shape
-            expected_N = len(frames_metadata)
-
-            if D != dimension:
-                logger.error("Video %s has wrong dimension: %d (expected %d)", video_id, D, dimension)
-                continue
-
-            if N != expected_N:
-                logger.warning(
-                    "Video %s frame count mismatch: .npy has %d, manifest expects %d",
-                    video_id, N, expected_N
-                )
-                mismatched_frames += abs(N - expected_N)
-
-            # Copy vectors to their global positions
-            # If N < expected_N, we only copy N vectors
-            # If N > expected_N, we only copy expected_N vectors
-            limit = min(N, expected_N)
-            for i in range(limit):
-                global_idx = frames_metadata[i]["global_idx"]
-                all_vectors[global_idx] = video_vectors[i]
-
-        except Exception as e:
-            logger.error("Error processing %s: %s", npy_path, e)
-            missing_videos += 1
-
-    # 4. Normalize L2 (required for Inner Product to act as Cosine Similarity)
-    # Note: The extraction scripts should have already normalized the vectors.
-    # However, to be safe, we re-normalize. We must avoid dividing by zero for missing frames (which are all zeros).
-    logger.info("Normalizing valid vectors (L2) to prevent NaNs...")
-    norms = np.linalg.norm(all_vectors, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0  # Avoid division by zero for missing frames
-    all_vectors = all_vectors / norms
-
-    # 5. Build FAISS Index
-    logger.info("Building FAISS FlatIP index...")
+    # The extraction scripts L2-normalize already; re-normalize defensively (IP = cosine).
+    faiss.normalize_L2(all_vectors)
     index = faiss.IndexFlatIP(dimension)
     index.add(all_vectors)
 
-    logger.info("Finished. Total indexed vectors: %d (Missing videos: %d, Mismatched frames: %d)",
-                index.ntotal, missing_videos, mismatched_frames)
-
-    # Save the index
     output_index_path.parent.mkdir(parents=True, exist_ok=True)
     faiss.write_index(index, str(output_index_path))
-    logger.info("Saved index to %s", output_index_path)
+    meta_path = write_index_meta(
+        output_index_path,
+        ntotal=index.ntotal,
+        dim=dimension,
+        keyframe_ids=[keyframe["keyframe_id"] for keyframe in keyframes],
+    )
+    logger.info("Saved %s (%d vectors) and %s", output_index_path, index.ntotal, meta_path.name)
+    return len(missing)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--data-root", type=Path, default=Path("data"))
+    parser.add_argument("--models", nargs="+", choices=sorted(MODELS), default=sorted(MODELS))
+    parser.add_argument("--dim-siglip", type=int, default=MODELS["siglip"])
+    parser.add_argument("--dim-beit3", type=int, default=MODELS["beit3"])
+    parser.add_argument("--allow-missing", action="store_true")
+    args = parser.parse_args()
+    setup_logging()
+
+    manifest_path = args.data_root / "keyframes.json"
+    try:
+        keyframes = json.loads(manifest_path.read_text(encoding="utf-8"))["keyframes"]
+    except (OSError, ValueError, KeyError) as exc:
+        logger.error("Cannot read %s: %s", manifest_path, exc)
+        return 1
+    if not keyframes:
+        logger.error("%s has no keyframes", manifest_path)
+        return 1
+    logger.info("%d keyframes in %s", len(keyframes), manifest_path)
+
+    dims = {"siglip": args.dim_siglip, "beit3": args.dim_beit3}
+    for model in args.models:
+        embedding_dir = args.data_root / "embeddings" / model
+        if not embedding_dir.is_dir():
+            logger.error("Embedding folder not found: %s", embedding_dir)
+            return 1
+        logger.info("--- Building %s index ---", model)
+        try:
+            build_faiss_index(
+                embedding_dir,
+                keyframes,
+                args.data_root / "indexing" / f"{model}.index",
+                dims[model],
+                args.allow_missing,
+            )
+        except IndexBuildError as exc:
+            logger.error("%s index not written: %s", model, exc)
+            return 1
+    return 0
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build FAISS Index from video-level embeddings")
-    parser.add_argument("--data-root", type=str, default="./data", help="Root data directory")
-    parser.add_argument("--dim-siglip", type=int, default=1152, help="SigLIP Embedding dimension")
-    parser.add_argument("--dim-beit3", type=int, default=768, help="BEiT Embedding dimension")
-    args = parser.parse_args()
-
-    data_root = Path(args.data_root)
-    manifest_path = data_root / "keyframes.json"
-
-    # Build SigLIP Index
-    siglip_dir = data_root / "embeddings" / "siglip"
-    if siglip_dir.exists():
-        logger.info("--- Building SigLIP Index ---")
-        build_faiss_index(siglip_dir, manifest_path, data_root / "indexing" / "siglip.index", dimension=args.dim_siglip)
-    else:
-        logger.warning("SigLIP embedding dir not found: %s", siglip_dir)
-
-    # Build BEiT3 Index
-    beit3_dir = data_root / "embeddings" / "beit3"
-    if beit3_dir.exists():
-        logger.info("--- Building BEiT3 Index ---")
-        build_faiss_index(beit3_dir, manifest_path, data_root / "indexing" / "beit3.index", dimension=args.dim_beit3)
-    else:
-        logger.warning("BEiT3 embedding dir not found: %s", beit3_dir)
+    sys.exit(main())

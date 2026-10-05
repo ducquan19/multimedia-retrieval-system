@@ -1,0 +1,11 @@
+# Lint settings for scripts/ and notebooks/ (backend/ has its own in backend/pyproject.toml).
+target-version = "py312"
+line-length = 100
+extend-exclude = ["backend", "frontend"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "BLE"]
+
+[lint.isort]
+# Sibling helper imported by the preprocessing scripts.
+known-first-party = ["_common"]
