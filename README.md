@@ -21,14 +21,13 @@ Thứ tự các dòng nộp bài có ý nghĩa. Backend luôn giữ nguyên th�
 - FAISS (index SigLIP và BEiT-3)
 - Elasticsearch (tìm BM25 trên transcript)
 - Google Gemini 3.5 Flash Lite (Enhance query, KIS Query Understanding & Planning)
-- Kiến trúc stateless, metadata lưu trong SQLite
+- Metadata keyframe đọc từ `keyframes.json` vào RAM khi khởi động; không cần cơ sở dữ liệu
 
 ### Frontend
 
 - React và TypeScript (strict mode)
 - Vite
 - TanStack Query
-- dnd-kit (kéo thả để sắp xếp lại kết quả)
 - Vitest, React Testing Library và Playwright
 
 ## Yêu cầu
@@ -51,11 +50,11 @@ python -m venv .venv
 
 ```powershell
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install -r .\backend\requirements.lock
-python -m pip install --no-deps -e .\backend
+python -m pip install -e ".\backend[dev]" -c .\backend\requirements.lock
 npm --prefix frontend ci
 ```
+
+Mọi dependency Python khai báo ở một chỗ: `backend/pyproject.toml`. `backend/requirements.lock` pin chính xác phiên bản web stack và công cụ dev, được dùng làm constraints (`-c`). Cần chạy các script tiền xử lý trong `scripts/` thì cài thêm nhóm `scripts`: `".\backend[dev,scripts]"`.
 
 ### 3. Cấu hình môi trường
 
@@ -72,6 +71,10 @@ Copy-Item .env.example .env
 | `AIC_HF_TOKEN` | trống | Token đọc (read-only) Hugging Face để phát video trong repo riêng tư |
 | `AIC_DRES_USERNAME`, `AIC_DRES_PASSWORD` | trống | Tài khoản nộp bài DRES |
 | `AIC_DRES_BASE_URL` | `https://eventretrieval.one` | Địa chỉ server DRES |
+| `AIC_DEVICE` | tự chọn | `cuda` hoặc `cpu` cho các model |
+| `AIC_LOG_LEVEL` | `INFO` | Mức log của backend (ghi ra console và `logs/backend.log`) |
+
+Danh sách đầy đủ (model, index, Elasticsearch, tham số TRAKE, ...) nằm trong `backend/src/core/config.py`; mọi trường đều đặt được bằng biến `AIC_<TÊN_TRƯỜNG>`.
 
 Top-K mặc định là `100`, tối đa `500`.
 
@@ -90,6 +93,9 @@ python scripts/dev.py     # backend + frontend
 - Frontend: <http://localhost:5173>
 - Backend API: <http://localhost:8000>
 - Swagger UI: <http://localhost:8000/docs>
+- Trạng thái các thành phần (model, index, Elasticsearch, Gemini): <http://localhost:8000/api/health/ready>
+
+Backend chỉ phục vụ các thư mục media `keyframes/`, `traffic_keyframes/` và `videos/` của `data/` qua `/media` (đổi bằng `AIC_MEDIA_DIRS`). Index, metadata và log nộp DRES không tải được qua HTTP.
 
 ## Chuẩn bị dữ liệu
 
@@ -159,10 +165,11 @@ data/
 ├── keyframes.json                   # generate_manifest.py + append_traffic_index.py
 ├── indexing/
 │   ├── siglip.index                 # build_faiss_index.py + append_traffic_index.py
-│   └── beit3.index
+│   ├── siglip.index.meta.json       # hash thứ tự keyframe, backend kiểm tra khi khởi động
+│   ├── beit3.index
+│   └── beit3.index.meta.json
 ├── objects_index.json               # build_object_index.py + append_traffic_index.py
-├── video_sources.json               # generate_video_sources.py
-├── metadata.db
+├── video_sources.json               # nguồn phát và fps của từng video (có trong gói dữ liệu)
 └── dres_submissions.jsonl           # lịch sử nộp DRES, backend tự ghi
 ```
 
@@ -184,9 +191,9 @@ Tương tự, chuyển các thư mục video trong `Objects_*` (cả N) vào `da
 
 ### Các bước build dữ liệu
 
-Chạy theo đúng thứ tự dưới đây. Mỗi khi thêm hoặc bớt keyframe, cần chạy lại từ bước 1 (kể cả bước 5).
+Chạy theo đúng thứ tự dưới đây. Mỗi khi thêm hoặc bớt keyframe, cần chạy lại từ bước 1 (kể cả bước 5). Tham số và cách chạy trên Kaggle của từng script: [scripts/README.md](scripts/README.md).
 
-Embedding `.npy` của keyframe BTC (M, N, S) được trích bằng `scripts/embed_keyframes.py` trên máy có GPU (Kaggle, Lightning, ...), cùng tiền xử lý với notebook batch 1. Dòng i của `<video_id>.npy` là ảnh thứ i theo số `n` tăng dần.
+Embedding `.npy` được trích trên GPU bằng notebook `notebooks/embed_siglip2.ipynb` / `embed_beit3.ipynb` (Kaggle), hoặc `scripts/embed_keyframes.py` (Colab, Lightning, máy local). Dòng i của `<video_id>.npy` là ảnh thứ i theo số `n` tăng dần.
 
 1. **Tạo `keyframes.json`**. Script quét `data/keyframes/`:
    - Thư mục chia shot `S*/F<frame>.jpg` (batch 1): `frame_id` lấy từ tên file.
@@ -196,7 +203,7 @@ Embedding `.npy` của keyframe BTC (M, N, S) được trích bằng `scripts/em
    python scripts/generate_manifest.py
    ```
 
-2. **Build FAISS index** từ các file `.npy`. Thứ tự vector trong mỗi file `.npy` phải khớp với thứ tự keyframe khi trích embedding: batch 1 theo thư mục shot rồi tên file, batch 2 theo số `n` tăng dần.
+2. **Build FAISS index** từ các file `.npy`. Thứ tự vector trong mỗi file `.npy` phải khớp với thứ tự keyframe khi trích embedding: batch 1 theo thư mục shot rồi tên file, batch 2 theo số `n` tăng dần. Script dừng nếu một video thiếu `.npy` hoặc có số dòng khác số keyframe (thêm `--allow-missing` nếu chấp nhận vector 0 cho video thiếu), và ghi `<model>.index.meta.json` để backend kiểm tra index có khớp `keyframes.json` không.
 
    ```powershell
    python scripts/build_faiss_index.py
@@ -281,11 +288,12 @@ Transcript được lưu theo shot, mỗi shot một file `data/asr/<video_id>/S
 }
 ```
 
-- **Batch 1 (L):** trích bằng Whisper large-v3 trên Kaggle (`scripts/extract_asr_kaggle.py`), rồi tải về `data/asr/`.
+- **Batch 1 (L):** trích bằng Whisper large-v3 trên Kaggle (`notebooks/extract_asr.ipynb`), rồi tải về `data/asr/`.
 - **Batch 2 (M, S):** lấy phụ đề YouTube từ trường `watch_url` trong `media-info`. Cần có file `scenes/<video_id>.scenes.csv` trước; video chưa có scenes sẽ bị bỏ qua.
 
   ```powershell
   python -m pip install "youtube-transcript-api>=1.0" yt-dlp tqdm
+  $env:PYTHONUTF8 = "1"
   python scripts/extract_youtube_transcript.py --prefix M --cookies-from-browser firefox
   ```
 
@@ -295,7 +303,7 @@ Transcript được lưu theo shot, mỗi shot một file `data/asr/<video_id>/S
 
 ### Chia shot (scenes)
 
-`scripts/extract_scenes.py` chia shot bằng TransNetV2 trên Kaggle và xuất `<video_id>.scenes.csv`:
+`notebooks/extract_scenes.ipynb` chia shot trên Kaggle bằng TransNetV2 (kèm SliTraNet để loại ranh giới sai) và xuất `<video_id>.scenes.csv`:
 
 ```text
 video_id,scene_id,start_frame,end_frame,start_time_s,end_time_s,duration_s,fps
@@ -306,13 +314,7 @@ Hiện đã có scenes cho nhóm L và M. Scenes của L được chuyển từ 
 ### Phát video
 
 - **Video local:** đặt file vào `data/videos/<video_id>.mp4` rồi dùng nút "Open Local Video" trên giao diện.
-- **Video từ xa:** `data/video_sources.json` lưu `remote_url` và `fps` của từng video, được tạo từ `data/metadata.json`:
-
-  ```powershell
-  python scripts/generate_video_sources.py
-  ```
-
-  Video nằm trong repo Hugging Face riêng tư (`dwctien/aic26-videos-private`) dùng `private_path` thay cho `remote_url`, và cần đặt `AIC_HF_TOKEN` trong `.env`. Backend đổi token thành URL ký sẵn có thời hạn, nên token không bị gửi xuống trình duyệt.
+- **Video từ xa:** `data/video_sources.json` (có trong gói dữ liệu) lưu `remote_url`, `fps` và với nhóm N cả `time_offset_ms` của từng video. Video nằm trong repo Hugging Face riêng tư (`dwctien/aic26-videos-private`) dùng `private_path` thay cho `remote_url`, và cần đặt `AIC_HF_TOKEN` trong `.env`. Backend đổi token thành URL ký sẵn có thời hạn, nên token không bị gửi xuống trình duyệt.
 
 ## Tìm kiếm kết hợp và Enhance query
 
@@ -348,7 +350,7 @@ Mở chi tiết một kết quả, bấm **Submit DRES**, chọn evaluation, ki�
 - **VQA** (dùng được cả trên kết quả KIS): `QA-<ANSWER>-<VIDEO_ID>-<TIME(ms)>`.
 - **TRAKE**: `TR-<VIDEO_ID>-<FRAME_ID1>,<FRAME_ID2>,...` lấy từ cả hàng ứng viên.
 
-Khi đang mở trình phát video, nút **Dùng frame đang xem** lấy thời điểm đang xem (với TRAKE là frame của sự kiện đó). Mọi câu trả lời đã được DRES chấm được ghi thêm vào `data/dres_submissions.jsonl`. Nộp lại đúng câu trả lời cũ cho cùng evaluation sẽ bị chặn, trừ khi xác nhận **Vẫn nộp lại**.
+Khi đang mở trình phát video, nút **Dùng frame đang xem** lấy thời điểm đang xem (với TRAKE là frame của sự kiện đó). Mọi câu trả lời đã được DRES chấm được ghi thêm vào `data/dres_submissions.jsonl`. Nộp lại đúng câu trả lời cũ cho cùng evaluation luôn bị chặn (`409`), kể cả sau khi khởi động lại backend; thời điểm `"12000"` và `12000` được coi là cùng một câu trả lời.
 
 ## Kiểm tra chất lượng
 
@@ -359,14 +361,27 @@ make test
 make build
 ```
 
+`make test` không cần GPU, model hay `data/`: test backend dựng app với FAISS trong bộ nhớ, encoder và Elasticsearch giả (`backend/tests/fakes.py`). GitHub Actions (`.github/workflows/ci.yml`) chạy các lệnh trên cho mỗi push và pull request.
+
+### Đánh giá chất lượng tìm kiếm
+
+Trước khi giữ một thay đổi về trọng số fusion, tham số TRAKE, model hay index, chạy lại bộ truy vấn có nhãn và so sánh Recall@K và MRR:
+
+```powershell
+python scripts/evaluate_retrieval.py data/eval/queries.jsonl --top-k 100 --output eval_before.json
+```
+
+Định dạng file truy vấn được mô tả ở đầu `scripts/evaluate_retrieval.py`.
+
 ## Cấu trúc dự án
 
 ```text
 .
-├── backend/              # Ứng dụng FastAPI, domain model, adapter và test
+├── backend/              # Ứng dụng FastAPI, domain model, repository và test
 ├── data/                 # Dữ liệu, index và media (không đưa lên Git)
 ├── frontend/             # Ứng dụng React/Vite và test frontend
-├── scripts/              # Trích xuất dữ liệu (Kaggle), build index, chạy dev
+├── notebooks/            # Notebook Kaggle: chia shot, ASR, embedding, OCR, object (GPU)
+├── scripts/              # Build index, dev.py, evaluate_retrieval.py: xem README trong thư mục
 ├── .env.example
 ├── Makefile
 └── README.md
