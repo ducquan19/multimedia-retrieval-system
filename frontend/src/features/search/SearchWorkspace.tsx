@@ -43,6 +43,7 @@ const SOURCE_OPTIONS: { key: keyof SearchSources; label: string }[] = [
 ];
 
 type GroupSort = "score" | "time";
+const PLAN_EDITOR_WIDTH = 550;
 
 interface SearchMutationVariables {
   payload: SearchRequest;
@@ -97,10 +98,7 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     { query: string; signal: AbortSignal }
   >({
     mutationFn: ({ query, signal }) => planKisQuery(query, signal),
-    onSuccess: (plan) => {
-      setKisPlan(plan);
-      sidebar.widenTo(550);
-    },
+    onSuccess: (plan) => setKisPlan(plan),
   });
   const displayedResultCount =
     searchMutation.data?.results.filter((result) =>
@@ -122,17 +120,21 @@ export function SearchWorkspace({ config }: SearchWorkspaceProps) {
     [],
   );
 
+  // The plan editor (two query boxes per event) needs room; widen only while it is shown, then
+  // return to the width the user chose for the regular form.
+  const planVisible = activeType === "KIS" && queryUnderstanding && kisPlan !== null;
+  const { widenTo, restoreNormal } = sidebar;
+  useEffect(() => {
+    if (planVisible) widenTo(PLAN_EDITOR_WIDTH);
+    else restoreNormal();
+  }, [planVisible, widenTo, restoreNormal]);
+
   const changeTab = (queryType: QueryType) => {
     activeController.current?.abort();
     searchMutation.reset();
     planMutation.reset();
     setValidationErrors([]);
     setActiveType(queryType);
-    if (queryType !== "KIS") {
-      sidebar.restoreNormal();
-    } else if (queryUnderstanding) {
-      sidebar.widenTo(550);
-    }
   };
 
   const changeEventCount = (nextCount: number) => {
@@ -183,12 +185,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
     setQueryUnderstanding(enabled);
     setKisPlan(null);
     planMutation.reset();
-    if (enabled) {
-      setEnhanceQuery(false);
-      sidebar.widenTo(550);
-    } else {
-      sidebar.restoreNormal();
-    }
+    if (enabled) setEnhanceQuery(false);
   };
 
   const understandKisQuery = () => {
@@ -753,7 +750,7 @@ E2: ..." anywhere in the TRAKE form fills every EVENT at once. */
 
       <div
         className="rail-resizer"
-        onMouseDown={(event) => sidebar.startResizing(event, !planned)}
+        onMouseDown={(event) => sidebar.startResizing(event, !planVisible)}
         aria-hidden="true"
         title="Kéo để đổi độ rộng"
       />

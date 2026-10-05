@@ -525,6 +525,32 @@ describe("App query workspace", () => {
   });
 
   it(
+    "widens the query rail only while a KIS plan is on screen",
+    async () => {
+      setupApi();
+      const user = userEvent.setup();
+      renderApp();
+      const rail = await screen.findByRole("complementary", { name: "Truy vấn" });
+      const width = () => rail.style.width;
+      const normal = width();
+
+      await user.type(screen.getByLabelText(/^Truy vấn KIS/), "tháo máy ảnh rồi lau lens");
+      await user.click(screen.getByLabelText(/^Lập kế hoạch nhiều sự kiện/));
+      // Turning the switch on shows nothing new yet, so the rail keeps its width.
+      expect(width()).toBe(normal);
+
+      await user.click(screen.getByRole("button", { name: "Phân tích truy vấn" }));
+      await screen.findByLabelText("Truy vấn hình ảnh EVENT 1");
+      expect(width()).toBe("550px");
+
+      // Editing the raw query discards the plan: back to the regular width.
+      await user.type(screen.getByLabelText(/^Truy vấn KIS/), " nhanh");
+      expect(screen.queryByLabelText("Truy vấn hình ảnh EVENT 1")).not.toBeInTheDocument();
+      expect(width()).toBe(normal);
+    },
+  );
+
+  it(
     "plans and submits an editable advanced KIS query only when opted in",
     async () => {
       const fetchMock = setupApi(() =>
