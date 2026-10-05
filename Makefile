@@ -1,27 +1,28 @@
 .PHONY: install dev lint typecheck test build backend-install frontend-install
 
+PYTHON ?= python
+
 install: backend-install frontend-install
 
 backend-install:
-	python -m pip install -r backend/requirements.lock
-	python -m pip install --no-deps -e ./backend
+	$(PYTHON) -m pip install -e "./backend[dev]" -c backend/requirements.lock
 
 frontend-install:
-	npm --prefix frontend install
+	npm --prefix frontend ci
 
 dev:
-	python scripts/dev.py
+	$(PYTHON) scripts/dev.py
 
 lint:
-	python -m ruff check backend scripts
-	python -m ruff format --check backend scripts
+	$(PYTHON) -m ruff check backend scripts notebooks
+	$(PYTHON) -m ruff format --check backend scripts notebooks
 	npm --prefix frontend run lint
 
 typecheck:
 	npm --prefix frontend run typecheck
 
 test:
-	python -m pytest backend
+	$(PYTHON) -m pytest backend
 	npm --prefix frontend run test
 
 build:
