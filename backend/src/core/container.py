@@ -97,6 +97,7 @@ def build_services(settings: Settings, video_sources: VideoSourceService) -> App
         trake_config=TrakeConfig(
             max_gap_seconds=settings.trake_max_gap_seconds,
             decay_per_second=settings.trake_decay_per_second,
+            dedup_seconds=settings.trake_dedup_seconds,
         ),
     )
     query_enhancer = GeminiQueryEnhancer(

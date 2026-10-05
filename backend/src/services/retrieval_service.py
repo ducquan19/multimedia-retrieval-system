@@ -55,6 +55,9 @@ class TrakeConfig:
     max_gap_seconds: float = 120.0
     decay_per_second: float = 0.010
     default_fps: float = 25.0
+    # Two sequences are the same answer when every event shows the same moment: same shot, or
+    # at most this many seconds apart. Only the best of such a group is kept. 0 disables it.
+    dedup_seconds: float = 2.0
 
 
 class RetrievalService:
@@ -420,11 +423,18 @@ class RetrievalService:
         if not candidates_by_event[0]:
             return ()
 
-        beams: list[tuple[float, tuple[_BeamStep, ...]]] = [
-            (c.similarity_score, ((c, 1.0),)) for c in candidates_by_event[0][:beam_width]
-        ]
-        for candidates in candidates_by_event[1:]:
-            beams = self._extend_beams(beams, candidates)[:beam_width]
+        # Near-identical sequences are merged at every step, so beam slots go to sequences that
+        # are actually different instead of to adjacent frames of the same moment.
+        last_stage = len(candidates_by_event) - 1
+        beams = self._distinct_beams(
+            [(c.similarity_score, ((c, 1.0),)) for c in candidates_by_event[0]],
+            beam_width,
+            complete=last_stage == 0,
+        )
+        for stage, candidates in enumerate(candidates_by_event[1:], start=1):
+            beams = self._distinct_beams(
+                self._extend_beams(beams, candidates), beam_width, complete=stage == last_stage
+            )
             if not beams:
                 return ()
 
@@ -498,6 +508,69 @@ class RetrievalService:
                 )
         next_beams.sort(key=lambda item: item[0], reverse=True)
         return next_beams
+
+    def _distinct_beams(
+        self,
+        beams: list[tuple[float, tuple[_BeamStep, ...]]],
+        limit: int,
+        *,
+        complete: bool,
+    ) -> list[tuple[float, tuple[_BeamStep, ...]]]:
+        """Best-first, keep a sequence only if no kept one shows the same moment at every event.
+
+        A partial sequence (``complete=False``) is only dropped for a kept duplicate that ends at
+        the same frame or earlier: every later event it could still reach is then reachable from
+        the kept one too, so merging never loses the eventual best sequence.
+
+        ``beams`` must be sorted by score, best first. Kept sequences are indexed by the shot and
+        the time bucket of their first event, so each new sequence is compared only with the few
+        kept ones that can be duplicates (a duplicate's first event is in the same shot or at most
+        one bucket away).
+        """
+        window = self._trake.dedup_seconds
+        if window <= 0:
+            return beams[:limit]
+
+        kept: list[tuple[float, tuple[_BeamStep, ...]]] = []
+        index: dict[tuple, list[tuple[_BeamStep, ...]]] = {}
+        for beam in beams:
+            sequence = beam[1]
+            first = sequence[0][0].keyframe
+            bucket = int(self._seconds(first) // window)
+            shot_key = (first.video_id, "shot", first.segment_id) if first.segment_id else None
+            time_keys = [(first.video_id, "t", bucket + offset) for offset in (-1, 0, 1)]
+            nearby = [
+                other
+                for key in ([shot_key] if shot_key else []) + time_keys
+                for other in index.get(key, ())
+            ]
+            last_frame = sequence[-1][0].keyframe.frame_id
+            if any(
+                self._same_sequence(sequence, other)
+                and (complete or other[-1][0].keyframe.frame_id <= last_frame)
+                for other in nearby
+            ):
+                continue
+            kept.append(beam)
+            if len(kept) >= limit:
+                break
+            if shot_key:
+                index.setdefault(shot_key, []).append(sequence)
+            index.setdefault((first.video_id, "t", bucket), []).append(sequence)
+        return kept
+
+    def _same_sequence(self, left: tuple[_BeamStep, ...], right: tuple[_BeamStep, ...]) -> bool:
+        return all(
+            self._same_moment(a.keyframe, b.keyframe)
+            for (a, _), (b, _) in zip(left, right, strict=True)
+        )
+
+    def _same_moment(self, left: Keyframe, right: Keyframe) -> bool:
+        if left.video_id != right.video_id:
+            return False
+        if left.segment_id and left.segment_id == right.segment_id:
+            return True
+        return abs(self._seconds(left) - self._seconds(right)) <= self._trake.dedup_seconds
 
     def _rerank_gates(
         self,

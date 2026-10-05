@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     # TRAKE temporal constraints (seconds of video time between consecutive events)
     trake_max_gap_seconds: float = Field(default=120.0, gt=0)
     trake_decay_per_second: float = Field(default=0.010, ge=0)
+    # Sequences whose every event shows the same moment (same shot, or within this many seconds)
+    # count as one candidate; only the best is kept. 0 disables the merge.
+    trake_dedup_seconds: float = Field(default=2.0, ge=0)
 
     # DRES submission (credentials only live in .env; the browser never sees them)
     dres_base_url: str = "https://eventretrieval.one"
