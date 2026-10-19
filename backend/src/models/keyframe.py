@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -77,9 +78,14 @@ class KeyframeCollection:
     keyframes: tuple[Keyframe, ...]
 
     @classmethod
-    def from_dict(cls, data: Any) -> "KeyframeCollection":
+    def from_dict(
+        cls, data: Any, asr_texts: Mapping[str, Mapping[str, str]] | None = None
+    ) -> "KeyframeCollection":
         """Build from parsed keyframes.json. Consumes ``data``: converted entries are dropped
-        from its list to keep the peak memory of loading ~450k keyframes low."""
+        from its list to keep the peak memory of loading ~450k keyframes low.
+
+        ``asr_texts`` (video_id -> segment_id -> text, from asr_texts.json) sets the transcript
+        of every keyframe of a transcribed shot, replacing any asr_text of the manifest."""
         if not isinstance(data, dict) or data.get("version") != 1:
             raise ValueError("keyframes.json must be an object with version 1")
         entries = data.get("keyframes")
@@ -90,6 +96,10 @@ class KeyframeCollection:
         shared_texts: dict[str, str] = {}
         for position, entry in enumerate(entries):
             try:
+                if asr_texts and isinstance(entry, dict):
+                    video_texts = asr_texts.get(entry.get("video_id"))
+                    if video_texts and entry.get("segment_id") in video_texts:
+                        entry["asr_text"] = video_texts[entry["segment_id"]]
                 text = entry.get("asr_text") if isinstance(entry, dict) else None
                 if isinstance(text, str):
                     entry["asr_text"] = shared_texts.setdefault(text, text)

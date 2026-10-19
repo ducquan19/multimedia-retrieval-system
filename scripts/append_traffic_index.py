@@ -34,7 +34,7 @@ from pathlib import Path
 import faiss
 import numpy as np
 
-from _common import write_index_meta
+from _common import atomic_path, write_index_meta, write_json_atomic
 
 INDEXES = {"siglip": "indexing/siglip.index", "beit3": "indexing/beit3.index"}
 
@@ -123,7 +123,7 @@ def append_objects(data_root: Path, entries: list[dict], min_score: float) -> in
             for label, (score, count) in sorted(detections.items(), key=lambda item: -item[1][0])
         ]
         added += 1
-    path.write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    write_json_atomic(path, index, separators=(",", ":"))
     return added
 
 
@@ -147,7 +147,7 @@ def relink_images(root: Path) -> None:
         entry["image_path"] = path
     if missing:
         raise SystemExit(f"{len(missing)} N images missing in {IMAGE_DIR}/, e.g. {missing[:3]}")
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_atomic(manifest_path, manifest, indent=2)
     print(f"relinked {changed} N keyframes to {IMAGE_DIR}/ ({len(names)} videos)")
 
 
@@ -224,11 +224,12 @@ def main() -> None:
         matrix = np.concatenate(vectors[name])
         faiss.normalize_L2(matrix)
         index.add(matrix)
-        faiss.write_index(index, str(root / INDEXES[name]))
+        with atomic_path(root / INDEXES[name]) as tmp:
+            faiss.write_index(index, str(tmp))
         write_index_meta(
             root / INDEXES[name], ntotal=index.ntotal, dim=index.d, keyframe_ids=keyframe_ids
         )
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_atomic(manifest_path, manifest, indent=2)
     with_objects = append_objects(root, entries, args.min_score)
     print(
         f"N: {len(videos)} videos, {len(entries)} keyframes appended after {base_count} "

@@ -32,6 +32,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from _common import write_json_atomic
+
 logger = logging.getLogger(__name__)
 
 # label -> (max score, max instance count in a single frame)
@@ -217,9 +219,7 @@ def build_object_index(
         },
     }
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, separators=(",", ":"))
+    write_json_atomic(output_path, output, separators=(",", ":"))
 
     logger.info("Videos by mapping mode: %s", dict(modes))
     logger.info(

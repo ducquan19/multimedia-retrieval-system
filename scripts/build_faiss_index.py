@@ -24,7 +24,7 @@ from pathlib import Path
 import faiss
 import numpy as np
 
-from _common import setup_logging, write_index_meta
+from _common import atomic_path, setup_logging, write_index_meta
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +84,8 @@ def build_faiss_index(
     index = faiss.IndexFlatIP(dimension)
     index.add(all_vectors)
 
-    output_index_path.parent.mkdir(parents=True, exist_ok=True)
-    faiss.write_index(index, str(output_index_path))
+    with atomic_path(output_index_path) as tmp:
+        faiss.write_index(index, str(tmp))
     meta_path = write_index_meta(
         output_index_path,
         ntotal=index.ntotal,

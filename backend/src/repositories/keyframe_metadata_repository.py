@@ -1,11 +1,14 @@
 import hashlib
 import json
+import logging
 import threading
 from bisect import bisect_left
 from collections.abc import Callable
 from pathlib import Path
 
 from models.keyframe import Keyframe, KeyframeCollection
+
+logger = logging.getLogger(__name__)
 
 
 class KeyframeMetadataError(RuntimeError):
@@ -35,8 +38,12 @@ class KeyframeMetadataRepository:
         data_root: Path,
         keyframes_filename: str = "keyframes.json",
         read_bytes: Callable[[Path], bytes] | None = None,
+        asr_texts_filename: str | None = "asr_texts.json",
     ) -> None:
         self._keyframes_path = data_root / keyframes_filename
+        # Transcripts written by scripts/build_es_index.py (optional: older data packages
+        # carry asr_text inside keyframes.json instead)
+        self._asr_texts_path = data_root / asr_texts_filename if asr_texts_filename else None
         self._read_bytes = read_bytes or (lambda path: path.read_bytes())
         self._lock = threading.Lock()
         self._collection: KeyframeCollection | None = None
@@ -58,7 +65,7 @@ class KeyframeMetadataRepository:
         try:
             raw_data = self._read_bytes(self._keyframes_path)
             # stdlib json: orjson needs ~4x more transient memory on this ~250 MB file.
-            collection = KeyframeCollection.from_dict(json.loads(raw_data))
+            collection = KeyframeCollection.from_dict(json.loads(raw_data), self._read_asr_texts())
         except (OSError, ValueError) as exc:
             raise KeyframeMetadataError(
                 f"Unable to load the normalized keyframes from {self._keyframes_path}: {exc}"
@@ -71,6 +78,21 @@ class KeyframeMetadataRepository:
             index_by_id[keyframe.keyframe_id] = position
         self._index_by_id = index_by_id
         return collection
+
+    def _read_asr_texts(self) -> dict[str, dict[str, str]] | None:
+        if self._asr_texts_path is None or not self._asr_texts_path.exists():
+            return None
+        try:
+            data = json.loads(self._asr_texts_path.read_bytes())
+        except (OSError, ValueError) as exc:
+            # Transcripts are display-only; a broken file must not keep the app from starting.
+            logger.warning("Ignoring unreadable %s: %s", self._asr_texts_path, exc)
+            return None
+        videos = data.get("videos") if isinstance(data, dict) and data.get("version") == 1 else None
+        if not isinstance(videos, dict):
+            logger.warning("Ignoring %s: unsupported format", self._asr_texts_path)
+            return None
+        return videos
 
     def __len__(self) -> int:
         return len(self.load().keyframes)
@@ -90,12 +112,23 @@ class KeyframeMetadataRepository:
         self.load()
         return self._index_by_id.get(keyframe_id)
 
-    def order_hash(self) -> str:
+    def order_hash(self, count: int | None = None) -> str:
+        """Order hash of all keyframes, or of the first ``count`` (an index built before the
+        traffic group was appended covers only that prefix)."""
+        keyframes = self.load().keyframes
+        if count is not None and count != len(keyframes):
+            return keyframe_order_hash([keyframe.keyframe_id for keyframe in keyframes[:count]])
         if self._order_hash is None:
-            self._order_hash = keyframe_order_hash(
-                [keyframe.keyframe_id for keyframe in self.load().keyframes]
-            )
+            self._order_hash = keyframe_order_hash([keyframe.keyframe_id for keyframe in keyframes])
         return self._order_hash
+
+    def find_frame(self, video_id: str, frame_id: int) -> int | None:
+        """FAISS id of the keyframe at exactly this frame of the video, if there is one."""
+        frames = self.video_keyframes(video_id)
+        position = bisect_left(self._frame_ids_by_video.get(video_id, []), frame_id)
+        if position < len(frames) and frames[position].frame_id == frame_id:
+            return self.find_index(frames[position].keyframe_id)
+        return None
 
     def video_keyframes(self, video_id: str) -> tuple[Keyframe, ...]:
         """All keyframes of one video, ordered by frame_id; empty for an unknown video."""

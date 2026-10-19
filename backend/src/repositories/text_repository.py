@@ -1,14 +1,15 @@
 import logging
+import threading
 import time
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from elasticsearch import Elasticsearch
 
 from core.intro_exclusion import IntroExclusionPolicy
+from models.candidate import ScoredCandidate
 from repositories import id_filter
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
-from schemas.retrieval import ScoredCandidate
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +18,24 @@ class TextSearchUnavailable(RuntimeError):
     """Raised when Elasticsearch cannot answer a query (offline, missing index, ...)."""
 
 
+class TextIndexMismatch(TextSearchUnavailable):
+    """The index was built from another keyframes.json, so its ids point at other keyframes."""
+
+
+# "ok": the index matches keyframes.json; "mismatch": it does not (ASR is disabled);
+# "unverified": built before the order was recorded, or its mapping could not be read.
+IndexOrderStatus = Literal["ok", "mismatch", "unverified"]
+
+_REBUILD_HINT = "rerun scripts/build_es_index.py"
+
+
 class KeyframeTextRepository:
     """BM25 search over the ASR transcripts indexed by scripts/build_es_index.py.
 
     Documents carry the FAISS id of their keyframe, so restrictions (intro frames, traffic
     filters) are sent to Elasticsearch as faiss_id ranges instead of being applied afterwards.
+    Because of that, the index is only trusted when the keyframe order recorded in its mapping
+    (``_meta``) matches the loaded keyframes.json.
     """
 
     # A restriction with more runs than this is applied after the search instead.
@@ -30,6 +44,8 @@ class KeyframeTextRepository:
     # After a failure, skip Elasticsearch for a while instead of paying connection retries on
     # every query (ES offline used to add ~17 s per search).
     _RETRY_AFTER_SECONDS = 30.0
+    # The index can be rebuilt while the backend runs; its recorded order is re-read this often.
+    _ORDER_RECHECK_SECONDS = 60.0
 
     def __init__(
         self,
@@ -50,6 +66,48 @@ class KeyframeTextRepository:
         self.index_name = index_name
         self._keyframe_repository = keyframe_repository
         self._intro_exclusion_policy = intro_exclusion_policy or IntroExclusionPolicy()
+        self._order_lock = threading.Lock()
+        self._order_checked_at: float | None = None
+        self._order_meta: tuple[object, object] | None = None
+        self._order_status: tuple[IndexOrderStatus, str] = ("unverified", "not checked yet")
+        self._warned_unverified = False
+
+    def index_order_status(self) -> tuple[IndexOrderStatus, str]:
+        """Whether the index was built from the loaded keyframes.json, with a detail message."""
+        try:
+            return self._read_order_status()
+        except Exception as exc:  # noqa: BLE001 - offline or missing index: check again later
+            return "unverified", f"cannot read the index mapping: {exc}"
+
+    def _read_order_status(self) -> tuple[IndexOrderStatus, str]:
+        now = self._clock()
+        with self._order_lock:
+            if (
+                self._order_checked_at is not None
+                and now - self._order_checked_at < self._ORDER_RECHECK_SECONDS
+            ):
+                return self._order_status
+            response = self.es.indices.get_mapping(index=self.index_name)
+            mappings = next(iter(dict(response).values()), {}).get("mappings", {})
+            meta = mappings.get("_meta") or {}
+            recorded = (meta.get("keyframe_order"), meta.get("keyframe_count"))
+            if recorded != self._order_meta:
+                self._order_status = self._compare_order(*recorded)
+                self._order_meta = recorded
+            self._order_checked_at = now
+            return self._order_status
+
+    def _compare_order(self, order: object, count: object) -> tuple[IndexOrderStatus, str]:
+        if not isinstance(order, str) or not isinstance(count, int) or isinstance(count, bool):
+            return "unverified", f"the index does not record its keyframe order; {_REBUILD_HINT}"
+        if count > len(self._keyframe_repository) or (
+            self._keyframe_repository.order_hash(count) != order
+        ):
+            return "mismatch", (
+                f"the index was built from another keyframes.json, so ASR is disabled; "
+                f"{_REBUILD_HINT}"
+            )
+        return "ok", "ok"
 
     def ping(self) -> bool:
         try:
@@ -108,9 +166,17 @@ class KeyframeTextRepository:
         if self._clock() < self._unavailable_until:
             raise TextSearchUnavailable("ASR search is unavailable (Elasticsearch is down)")
         try:
+            order_status, detail = self._read_order_status()
+            if order_status == "mismatch":
+                raise TextIndexMismatch(detail)
+            if order_status == "unverified" and not self._warned_unverified:
+                self._warned_unverified = True
+                logger.warning("ASR index keyframe order is not verified: %s", detail)
             response = self.es.search(
                 index=self.index_name, query=query, size=size, source=["faiss_id"]
             )
+        except TextIndexMismatch:
+            raise
         except Exception as exc:  # noqa: BLE001 - surfaced to the user as a warning
             self._unavailable_until = self._clock() + self._RETRY_AFTER_SECONDS
             logger.error(

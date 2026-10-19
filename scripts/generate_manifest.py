@@ -1,12 +1,11 @@
 import argparse
 import bisect
 import csv
-import json
 import logging
 import sys
 from pathlib import Path
 
-from _common import IMAGE_EXTENSIONS, setup_logging
+from _common import IMAGE_EXTENSIONS, setup_logging, write_json_atomic
 
 logger = logging.getLogger(__name__)
 
@@ -190,9 +189,7 @@ def generate_manifest(keyframes_dir: Path, output_path: Path) -> bool:
 
     manifest_data = {"version": 1, "keyframes": keyframes_list}
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(manifest_data, f, ensure_ascii=False, indent=2)
+    write_json_atomic(output_path, manifest_data, indent=2)
 
     logger.info("Manifest saved successfully to %s", output_path)
     logger.info("keyframes.json changed: rebuild the FAISS, Elasticsearch and object indexes next.")

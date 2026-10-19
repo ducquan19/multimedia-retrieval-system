@@ -4,9 +4,12 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import shutil
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
@@ -36,21 +39,47 @@ def write_index_meta(
 ) -> Path:
     """Write <index>.meta.json; the backend refuses an index whose keyframe order differs."""
     meta_path = index_path.with_name(index_path.name + ".meta.json")
-    meta_path.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "ntotal": ntotal,
-                "dim": dim,
-                "keyframe_count": len(keyframe_ids),
-                "keyframe_order": keyframe_order_hash(keyframe_ids),
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+    write_json_atomic(
+        meta_path,
+        {
+            "version": 1,
+            "ntotal": ntotal,
+            "dim": dim,
+            "keyframe_count": len(keyframe_ids),
+            "keyframe_order": keyframe_order_hash(keyframe_ids),
+        },
+        indent=2,
     )
     return meta_path
+
+
+@contextmanager
+def atomic_path(path: Path) -> Iterator[Path]:
+    """Yield a temporary sibling of ``path`` to write; it replaces ``path`` only on success.
+
+    An interrupted run (Ctrl+C, full disk, crash) then leaves the previous file intact instead
+    of a truncated one. That matters most for keyframes.json, which every index is aligned to.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        yield tmp
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def write_json_atomic(
+    path: Path,
+    data: Any,
+    *,
+    indent: int | None = None,
+    separators: tuple[str, str] | None = None,
+) -> None:
+    with atomic_path(path) as tmp, open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=indent, separators=separators)
+        if indent is not None:
+            f.write("\n")
 
 
 def shard_arg(value: str) -> tuple[int, int]:

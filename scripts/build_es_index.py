@@ -1,13 +1,21 @@
 """Build the Elasticsearch BM25 index of ASR transcripts (index "keyframes_metadata").
 
 Every keyframe whose shot has ASR text becomes a document with _id = its position in
-keyframes.json (the FAISS id); asr_text is also written back to keyframes.json for the UI.
+keyframes.json (the FAISS id). keyframes.json is only read: the transcripts the UI shows are
+written to data/asr_texts.json (video_id -> segment_id -> text), which the backend merges in
+when it loads the manifest.
+
+The index mapping carries ``_meta.keyframe_order`` and ``_meta.keyframe_count``, the order
+hash of the keyframes the documents were built from. The backend compares it with its own
+keyframes.json and ignores ASR results from an index whose ids point at other keyframes.
+Group N, appended at the end by append_traffic_index.py, keeps every earlier position, so an
+index built before that step stays valid.
 
 Incremental by default: data/indexing/es_asr_state.json remembers the keyframe order and a
 signature (file count, latest mtime) of every data/asr/<video_id>/ folder, so a rerun only
 reads the ASR folders that were added or changed. A full rebuild happens with --full, when
-the index does not exist yet, or when keyframes.json changed its keyframe order (FAISS ids
-shift, so every document id would be stale) or lost its asr_text (regenerated manifest).
+the index or asr_texts.json does not exist yet, or when keyframes.json changed its keyframe
+order (FAISS ids shift, so every document id would be stale).
 """
 
 import argparse
@@ -19,12 +27,13 @@ from pathlib import Path
 from elasticsearch import Elasticsearch, helpers
 
 from _common import keyframe_order_hash as _order_hash
-from _common import setup_logging
+from _common import setup_logging, write_json_atomic
 
 logger = logging.getLogger(__name__)
 
 INDEX_NAME = "keyframes_metadata"
-STATE_VERSION = 1
+ASR_TEXTS_FILENAME = "asr_texts.json"
+STATE_VERSION = 2
 MAPPINGS = {
     "properties": {
         "faiss_id": {"type": "integer"},
@@ -71,12 +80,26 @@ def load_state(state_path: Path) -> dict:
     return state if state.get("version") == STATE_VERSION else {}
 
 
+def load_asr_texts(path: Path) -> dict[str, dict[str, str]]:
+    """video_id -> segment_id -> text written by a previous run (empty when absent)."""
+    if not path.exists():
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        logger.warning("Ignoring unreadable %s: %s", path, e)
+        return {}
+    return data.get("videos", {}) if data.get("version") == 1 else {}
+
+
 def build_es_index(
     data_root: Path, es_url: str, full: bool = False, index_name: str = INDEX_NAME
 ) -> bool:
     """Returns False when the index could not be (fully) built."""
     keyframes_path = data_root / "keyframes.json"
     asr_dir = data_root / "asr"
+    asr_texts_path = data_root / ASR_TEXTS_FILENAME
     state_path = data_root / "indexing" / "es_asr_state.json"
 
     if not keyframes_path.exists():
@@ -91,8 +114,7 @@ def build_es_index(
 
     logger.info("Loading keyframes manifest...")
     with open(keyframes_path, encoding="utf-8") as f:
-        manifest = json.load(f)
-    keyframes = manifest.get("keyframes", [])
+        keyframes = json.load(f).get("keyframes", [])
     order_hash = keyframe_order_hash(keyframes)
 
     state = {} if full else load_state(state_path)
@@ -101,12 +123,11 @@ def build_es_index(
     if state and state.get("keyframe_order") != order_hash:
         logger.info("keyframes.json order changed since the last build, rebuilding everything")
         state = {}
-    # generate_manifest.py rewrites keyframes.json without asr_text
-    asr_keyframes = sum(1 for keyframe in keyframes if keyframe.get("asr_text"))
-    if state and state.get("asr_keyframes") != asr_keyframes:
-        logger.info("keyframes.json lost its asr_text since the last build, rebuilding everything")
+    if state and not asr_texts_path.exists():
+        logger.info("%s is missing, rebuilding everything", ASR_TEXTS_FILENAME)
         state = {}
     full = not state
+    old_texts = {} if full else load_asr_texts(asr_texts_path)
     old_folders: dict[str, list[int]] = state.get("folders", {})
 
     # Which ASR folders need to be (re)read
@@ -128,24 +149,27 @@ def build_es_index(
         len(changed),
         len(removed),
     )
-    if not touched_videos:
+    if not full and not touched_videos:
         logger.info("Nothing changed, Elasticsearch index is up to date.")
         return True
 
-    segment_texts: dict[str, str] = {}
+    texts = {video: texts for video, texts in old_texts.items() if video not in touched_videos}
     for video_dir in changed:
-        segment_texts.update(read_video_texts(video_dir))
-    logger.info("Found ASR texts for %d segments.", len(segment_texts))
+        video_texts = read_video_texts(video_dir)
+        if video_texts:
+            texts[video_dir.name] = video_texts
+    logger.info("Found ASR texts for %d segments.", sum(len(t) for t in texts.values()))
 
-    # Update keyframes of the touched videos; delete documents whose text disappeared
+    # Index keyframes of the touched videos; delete documents whose text disappeared
     actions = []
     updated = deleted = 0
     for idx, keyframe in enumerate(keyframes):
-        if not full and keyframe["video_id"] not in touched_videos:
+        video_id = keyframe["video_id"]
+        if not full and video_id not in touched_videos:
             continue
-        text = segment_texts.get(keyframe.get("segment_id") or "")
+        segment_id = keyframe.get("segment_id") or ""
+        text = texts.get(video_id, {}).get(segment_id)
         if text:
-            keyframe["asr_text"] = text
             actions.append(
                 {
                     "_index": index_name,
@@ -154,7 +178,7 @@ def build_es_index(
                 }
             )
             updated += 1
-        elif keyframe.pop("asr_text", None) is not None and not full:
+        elif not full and segment_id in old_texts.get(video_id, {}):
             actions.append({"_op_type": "delete", "_index": index_name, "_id": str(idx)})
             deleted += 1
     logger.info("Keyframes with ASR text updated: %d, removed: %d", updated, deleted)
@@ -173,24 +197,19 @@ def build_es_index(
         logger.error("State not saved; the next run will retry these folders.")
         return False
     es.indices.refresh(index=index_name)
+    # The backend compares this with its keyframes.json before trusting the document ids
+    es.indices.put_mapping(
+        index=index_name,
+        meta={"keyframe_order": order_hash, "keyframe_count": len(keyframes)},
+    )
 
-    # Save back to keyframes.json so the UI can show the transcript
-    logger.info("Saving updated keyframes.json...")
-    with open(keyframes_path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=2)
-
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(state_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "version": STATE_VERSION,
-                "keyframe_order": order_hash,
-                "asr_keyframes": sum(1 for keyframe in keyframes if keyframe.get("asr_text")),
-                "folders": folders,
-            },
-            f,
-            indent=1,
-        )
+    write_json_atomic(asr_texts_path, {"version": 1, "videos": texts}, indent=1)
+    write_json_atomic(
+        state_path,
+        {"version": STATE_VERSION, "keyframe_order": order_hash, "folders": folders},
+        indent=1,
+    )
+    logger.info("Saved transcripts to %s; restart the backend to load them.", asr_texts_path)
     logger.info("Done building Elasticsearch index!")
     return True
 
