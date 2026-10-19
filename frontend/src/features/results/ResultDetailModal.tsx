@@ -29,6 +29,10 @@ interface ResultDetailModalProps {
   submitTarget?: SubmitTarget;
   /** When set, the modal shows neighbouring keyframes and moves to the one picked. */
   onNavigate?: (keyframe: VideoKeyframe) => void;
+  /** When set, the modal offers to search keyframes that look like the one shown. */
+  onFindSimilar?: (videoId: string, frameId: number) => void;
+  /** When set, the modal offers to hide every result of this video. */
+  onHideVideo?: (videoId: string) => void;
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -57,6 +61,8 @@ export function ResultDetailModal({
   onClose,
   submitTarget,
   onNavigate,
+  onFindSimilar,
+  onHideVideo,
 }: ResultDetailModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
@@ -285,6 +291,26 @@ export function ResultDetailModal({
             </button>
           </div>
           <div className="detail__actions">
+            {onHideVideo && (
+              <button
+                type="button"
+                className="button button--text"
+                onClick={() => onHideVideo(result.video_id)}
+                title="Ẩn mọi kết quả của video này trong lần tìm hiện tại"
+              >
+                Ẩn video
+              </button>
+            )}
+            {onFindSimilar && (
+              <button
+                type="button"
+                className="button button--quiet"
+                onClick={() => onFindSimilar(result.video_id, result.frame_id)}
+                title="Tìm các keyframe trông giống keyframe đang xem"
+              >
+                Tìm ảnh tương tự
+              </button>
+            )}
             {videoSource && (
               <button type="button" className="button button--quiet" onClick={pauseAtKeyframe}>
                 Về keyframe
