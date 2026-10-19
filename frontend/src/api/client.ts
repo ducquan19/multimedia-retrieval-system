@@ -1,5 +1,6 @@
 import type {
   DresEvaluation,
+  DresSubmissionRecord,
   DresSubmitRequest,
   DresSubmitResponse,
   KISQueryPlan,
@@ -7,6 +8,8 @@ import type {
   PublicConfig,
   SearchRequest,
   SearchResponse,
+  SimilarSearchRequest,
+  SimilarSearchResponse,
   TrafficOptions,
   VideoKeyframesResponse,
   VideoSourceResponse,
@@ -110,8 +113,24 @@ export function getTrafficOptions(signal?: AbortSignal): Promise<TrafficOptions>
   return requestJson<TrafficOptions>("/api/traffic/options", { signal });
 }
 
+export function searchSimilar(
+  payload: SimilarSearchRequest,
+  signal?: AbortSignal,
+): Promise<SimilarSearchResponse> {
+  return requestJson<SimilarSearchResponse>("/api/search/similar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+}
+
 export function getDresEvaluations(signal?: AbortSignal): Promise<DresEvaluation[]> {
   return requestJson<DresEvaluation[]>("/api/dres/evaluations", { signal });
+}
+
+export function getDresSubmissions(signal?: AbortSignal): Promise<DresSubmissionRecord[]> {
+  return requestJson<DresSubmissionRecord[]>("/api/dres/submissions", { signal });
 }
 
 export function submitToDres(payload: DresSubmitRequest): Promise<DresSubmitResponse> {

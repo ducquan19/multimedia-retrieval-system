@@ -1,18 +1,24 @@
+/**
+ * Types of the backend API.
+ *
+ * Responses come straight from schema.gen.ts, generated from the backend's Pydantic models
+ * (scripts/generate_api_types.py), so a renamed or retyped field fails the build.
+ * Requests are written here to keep the optional fields the UI omits; ApiContract below
+ * checks at compile time that each of them is still accepted by the backend.
+ */
+import type * as Api from "./schema.gen";
+
 export const QUERY_TYPES = ["TRAKE", "KIS", "TRAFFIC"] as const;
 export type QueryType = (typeof QUERY_TYPES)[number];
 
 export type TopK = number;
 
-export interface SearchSources {
-  image: boolean;
-  asr: boolean;
-  object: boolean;
-}
-
-export interface ObjectQueryTerm {
-  label: string;
-  min_count: number;
-}
+export type SearchSources = Api.SearchSources;
+export type ObjectQueryTerm = Api.ObjectQueryTerm;
+export type KISQueryPlanEvent = Api.KISQueryPlanEvent;
+export type KISQueryPlan = Api.KISQueryPlan;
+export type KISSearchMode = KISQueryPlan["search_mode"];
+export type KISEventImportance = KISQueryPlanEvent["importance"];
 
 interface BaseSearchRequest {
   top_k: TopK;
@@ -21,26 +27,6 @@ interface BaseSearchRequest {
   search_sources: SearchSources;
   model_choices: ("siglip" | "beit3")[];
   object_query?: ObjectQueryTerm[];
-}
-
-export type KISSearchMode = "single_anchor" | "multi_anchor" | "temporal_sequence";
-export type KISEventImportance = "anchor" | "supporting" | "context";
-
-export interface KISQueryPlanEvent {
-  event_index: number;
-  source_span_vi: string;
-  visual_query_en: string | null;
-  asr_query_vi: string | null;
-  importance: KISEventImportance;
-  confidence: number;
-  inferred: boolean;
-}
-
-export interface KISQueryPlan {
-  search_mode: KISSearchMode;
-  events: KISQueryPlanEvent[];
-  warnings: string[];
-  planner_model: string;
 }
 
 export interface KISSearchRequest extends BaseSearchRequest {
@@ -67,8 +53,8 @@ export interface TRAKESearchRequest extends BaseSearchRequest {
   events: TRAKEEventQuery[];
 }
 
-export type Daypart = "morning" | "midday" | "night";
-export type Weather = "dry" | "wet";
+export type Daypart = Api.TrafficFilters["dayparts"][number];
+export type Weather = Api.TrafficFilters["weathers"][number];
 
 export interface TrafficFilters {
   camera_ids: string[];
@@ -91,80 +77,14 @@ export type SearchRequest =
   | TRAKESearchRequest
   | TrafficSearchRequest;
 
-export interface SingleSearchResult {
-  result_id: string;
-  rank: number;
-  video_id: string;
-  frame_id: number;
-  keyframe_url: string;
-  segment_id: string;
-  asr_text: string;
-  objects: Record<string, unknown>[];
-  similarity_score: number;
-  answer: string;
-  /** Original presentation time (ms) for VFR videos; absent -> frame_id / fps. */
-  time_ms?: number | null;
-  camera_name?: string | null;
-  clock_time?: string | null;
-  weather?: string | null;
-}
-
-export interface TRAKEEventResult {
-  event_index: number;
-  frame_id: number;
-  keyframe_url: string;
-  segment_id: string;
-  asr_text: string;
-  objects: Record<string, unknown>[];
-  similarity_score: number;
-}
-
-export interface TRAKESearchResult {
-  result_id: string;
-  rank: number;
-  video_id: string;
-  similarity_score: number;
-  events: TRAKEEventResult[];
-}
-
-export interface AppliedWeights {
-  w_vis: number;
-  w_asr: number;
-  w_obj?: number;
-}
-
-interface BaseSearchResponse {
-  original_query: string;
-  enhanced_query: string | null;
-  model_choices: string[];
-  applied_weights: AppliedWeights | null;
-  warnings: string[];
-}
-
-export interface KISSearchResponse extends BaseSearchResponse {
-  query_type: "KIS";
-  query_plan?: KISQueryPlan | null;
-  auto_object_query?: ObjectQueryTerm[];
-  results: SingleSearchResult[];
-}
-
-export interface VQASearchResponse extends BaseSearchResponse {
-  query_type: "VQA";
-  auto_object_query?: ObjectQueryTerm[];
-  results: SingleSearchResult[];
-}
-
-export interface TRAKESearchResponse extends BaseSearchResponse {
-  query_type: "TRAKE";
-  results: TRAKESearchResult[];
-}
-
-export interface TrafficSearchResponse extends BaseSearchResponse {
-  query_type: "TRAFFIC";
-  auto_object_query?: ObjectQueryTerm[];
-  filtered_keyframes: number;
-  results: SingleSearchResult[];
-}
+export type SingleSearchResult = Api.SingleSearchResult;
+export type TRAKEEventResult = Api.TRAKEEventResult;
+export type TRAKESearchResult = Api.TRAKESearchResult;
+export type AppliedWeights = Api.AppliedWeights;
+export type KISSearchResponse = Api.KISSearchResponse;
+export type VQASearchResponse = Api.VQASearchResponse;
+export type TRAKESearchResponse = Api.TRAKESearchResponse;
+export type TrafficSearchResponse = Api.TrafficSearchResponse;
 
 export type SearchResponse =
   | KISSearchResponse
@@ -172,41 +92,28 @@ export type SearchResponse =
   | TRAKESearchResponse
   | TrafficSearchResponse;
 
-export interface TrafficCamera {
-  camera_id: string;
-  name: string;
-  streets: string[];
-  video_ids: string[];
+/** Query by example: keyframes that look like one keyframe. */
+export interface SimilarSearchRequest {
+  video_id: string;
+  frame_id: number;
+  top_k: TopK;
+  model_choices: ("siglip" | "beit3")[];
+  include_traffic?: boolean;
 }
+export type SimilarSearchResponse = Api.SimilarSearchResponse;
+/** A response the single-frame result grid can show. */
+export type SingleFrameResponse =
+  | KISSearchResponse
+  | VQASearchResponse
+  | TrafficSearchResponse
+  | SimilarSearchResponse;
 
-export interface TrafficOptions {
-  available: boolean;
-  cameras: TrafficCamera[];
-  dates: string[];
-  dayparts: Daypart[];
-  weathers: Weather[];
-}
-
-export interface PublicConfig {
-  min_top_k: number;
-  max_top_k: number;
-  default_top_k: number;
-  max_trake_events: number;
-  max_query_length: number;
-  max_answer_length: number;
-}
-
-export interface ObjectLabelsResponse {
-  available: boolean;
-  labels: string[];
-}
-
-export interface DresEvaluation {
-  id: string;
-  name: string;
-  type: string | null;
-  status: string | null;
-}
+export type TrafficCamera = Api.TrafficCamera;
+export type TrafficOptions = Api.TrafficOptionsResponse;
+export type PublicConfig = Api.PublicConfigResponse;
+export type ObjectLabelsResponse = Api.ObjectLabelsResponse;
+export type DresEvaluation = Api.DresEvaluation;
+export type DresSubmissionRecord = Api.DresSubmissionRecord;
 
 export type DresAnswer =
   | { mediaItemName: string; start: string; end: string }
@@ -220,35 +127,23 @@ export interface DresSubmitRequest extends DresSubmitBody {
   evaluation_id: string;
 }
 
-export interface DresSubmitResponse {
-  accepted: boolean;
-  status_code: number;
-  submission: string | null;
-  description: string | null;
+export type DresSubmitResponse = Omit<Api.DresSubmitResponse, "body"> & {
+  /** The body that was forwarded to DRES. */
   body: DresSubmitBody;
-}
+};
 
-export interface VideoSourceResponse {
-  video_id: string;
-  url: string;
-  source: "local" | "remote";
-  fps: number;
-  /** Original pts of the first frame: original ms = currentTime * 1000 + time_offset_ms. */
-  time_offset_ms?: number;
-}
+export type VideoSourceResponse = Api.VideoSourceResponse;
+export type VideoKeyframe = Api.VideoKeyframe;
+export type VideoKeyframesResponse = Api.VideoKeyframesResponse;
 
-export interface VideoKeyframe {
-  frame_id: number;
-  time_ms?: number | null;
-  keyframe_url: string;
-  segment_id: string;
-  asr_text: string;
-  objects: Record<string, unknown>[];
-}
-
-export interface VideoKeyframesResponse {
-  video_id: string;
-  /** Index in `keyframes` of the keyframe closest to the requested frame. */
-  center_index: number;
-  keyframes: VideoKeyframe[];
-}
+/** Compile-time only: a request type that no longer matches the backend breaks the build. */
+type Accepts<Backend, Sent extends Backend> = [Backend, Sent];
+export type ApiContract = [
+  Accepts<Api.KISSearchRequestInput, KISSearchRequest>,
+  Accepts<Api.VQASearchRequestInput, VQASearchRequest>,
+  Accepts<Api.TRAKESearchRequestInput, TRAKESearchRequest>,
+  Accepts<Api.TrafficSearchRequestInput, TrafficSearchRequest>,
+  Accepts<Api.DresSubmitRequestInput, DresSubmitRequest>,
+  Accepts<Api.KISQueryPlanRequestInput, { query: string }>,
+  Accepts<Api.SimilarSearchRequestInput, SimilarSearchRequest>,
+];

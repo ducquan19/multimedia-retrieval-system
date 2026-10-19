@@ -10,8 +10,18 @@ import type {
 import { renderWithQuery as render } from "../../test/renderWithQuery";
 import { SingleResultInspector } from "./SingleResultInspector";
 
+// What the backend returns besides the fields these tests vary.
+const resultDefaults = {
+  image_path: "keyframes/frame.jpg",
+  time_ms: null,
+  camera_name: null,
+  clock_time: null,
+  weather: null,
+} satisfies Partial<SingleSearchResult>;
+
 const results: SingleSearchResult[] = [
   {
+    ...resultDefaults,
     result_id: "result-a",
     rank: 1,
     video_id: "L01_V001",
@@ -24,6 +34,7 @@ const results: SingleSearchResult[] = [
     answer: "answer A",
   },
   {
+    ...resultDefaults,
     result_id: "result-b",
     rank: 2,
     video_id: "L02_V002",
@@ -36,6 +47,7 @@ const results: SingleSearchResult[] = [
     answer: "answer B",
   },
   {
+    ...resultDefaults,
     result_id: "result-c",
     rank: 3,
     video_id: "L03_V003",
@@ -56,10 +68,11 @@ function response(queryType: "KIS" | "VQA", nextResults = results) {
     model_choices: ["siglip", "beit3"],
     applied_weights: null,
     warnings: [],
+    auto_object_query: [],
     results: nextResults,
   };
   return queryType === "KIS"
-    ? ({ ...base, query_type: "KIS" } satisfies KISSearchResponse)
+    ? ({ ...base, query_type: "KIS", query_plan: null } satisfies KISSearchResponse)
     : ({ ...base, query_type: "VQA" } satisfies VQASearchResponse);
 }
 

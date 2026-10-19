@@ -1,4 +1,4 @@
-.PHONY: install dev lint typecheck test build backend-install frontend-install
+.PHONY: install dev lint typecheck test build backend-install frontend-install api-types
 
 PYTHON ?= python
 
@@ -18,7 +18,12 @@ lint:
 	$(PYTHON) -m ruff format --check backend scripts notebooks
 	npm --prefix frontend run lint
 
+# Regenerate frontend/src/api/schema.gen.ts after changing an API model
+api-types:
+	$(PYTHON) scripts/generate_api_types.py
+
 typecheck:
+	$(PYTHON) scripts/generate_api_types.py --check
 	npm --prefix frontend run typecheck
 
 test:
