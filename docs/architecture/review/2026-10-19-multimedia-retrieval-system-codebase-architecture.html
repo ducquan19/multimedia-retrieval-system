@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture Review — multimedia-retrieval-system</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      line-height: 1.6;
+      display: flex;
+      min-height: 100vh;
+      min-width: 0;
+    }
+
+    nav {
+      width: 220px;
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid #e5e5ea;
+      padding: 2rem 1.25rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    nav h2 {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8e8e93;
+      margin-bottom: 1rem;
+    }
+
+    nav a {
+      display: block;
+      padding: 0.4rem 0.75rem;
+      border-radius: 6px;
+      color: #3a3a3c;
+      text-decoration: none;
+      font-size: 0.875rem;
+      margin-bottom: 0.25rem;
+      transition: background 0.15s;
+    }
+
+    nav a:hover { background: #f2f2f7; }
+
+    main {
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 2.5rem 3rem;
+      max-width: 1600px;
+    }
+
+    header {
+      margin-bottom: 2.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid #e5e5ea;
+    }
+
+    header h1 { font-size: 1.75rem; font-weight: 700; }
+    header p { margin-top: 0.5rem; color: #6e6e73; font-size: 0.95rem; }
+    header .meta { margin-top: 0.75rem; font-size: 0.8rem; color: #8e8e93; }
+
+    section { margin-bottom: 3rem; scroll-margin-top: 2rem; }
+
+    section h2 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid #e5e5ea;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e5e5ea;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+
+    .card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; }
+    .card p { color: #3a3a3c; font-size: 0.9rem; overflow-wrap: break-word; word-break: break-word; }
+    .card p + p { margin-top: 0.6rem; }
+
+    .diagram-card {
+      background: #fff;
+      border: 1px solid #e5e5ea;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+      overflow-x: auto;
+      overflow-wrap: break-word;
+      word-break: break-word;
+      min-width: 0;
+    }
+
+    .diagram-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+    .diagram-desc { color: #6e6e73; font-size: 0.85rem; margin-bottom: 1rem; }
+    .mermaid {
+      min-height: 80px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .findings { display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .finding {
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+      padding: 0.875rem 1rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      min-width: 0;
+    }
+
+    .finding.strength { background: #f0faf4; border-left: 3px solid #30d158; }
+    .finding.concern  { background: #fffbf0; border-left: 3px solid #ff9f0a; }
+    .finding.risk     { background: #fff5f5; border-left: 3px solid #ff3b30; }
+
+    .badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .finding-text {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+
+    .badge-strength { background: #30d158; color: #fff; }
+    .badge-concern  { background: #ff9f0a; color: #fff; }
+    .badge-risk     { background: #ff3b30; color: #fff; }
+
+    .finding-text strong { display: block; margin-bottom: 0.2rem; overflow-wrap: break-word; word-break: break-word; }
+    .finding-text p { color: #3a3a3c; overflow-wrap: break-word; word-break: break-word; }
+    .finding-text * { overflow-wrap: break-word; word-break: break-word; }
+
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.85em; background: #f2f2f7; padding: 0.05rem 0.3rem; border-radius: 4px; }
+
+    .recommendations ol { padding-left: 1.5rem; }
+    .recommendations li { margin-bottom: 0.75rem; color: #3a3a3c; font-size: 0.9rem; overflow-wrap: break-word; word-break: break-word; }
+    .recommendations li strong { color: #1d1d1f; }
+
+    @media (max-width: 600px) {
+      body {
+        flex-direction: column;
+      }
+
+      nav {
+        width: 100%;
+        min-width: 100%;
+        height: auto;
+        max-height: 30vh;
+        position: relative;
+        border-right: none;
+        border-bottom: 1px solid #e5e5ea;
+        overflow-x: auto;
+      }
+
+      nav a {
+        display: inline-block;
+        margin-bottom: 0;
+        margin-right: 0.25rem;
+      }
+
+      main {
+        padding: 1.5rem 1.25rem;
+        max-width: 100%;
+      }
+
+      .diagram-card { margin-left: -1.25rem; margin-right: -1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <h2>Architecture Review</h2>
+    <a href="#current">Current Architecture</a>
+    <a href="#separation-of-concerns">Separation of Concerns</a>
+    <a href="#cohesion-and-coupling">Cohesion and Coupling</a>
+    <a href="#layered-architecture">Layered Architecture</a>
+    <a href="#hexagonal-architecture-ports-and-adapters">Hexagonal Architecture / Ports and Adapters</a>
+    <a href="#scalability">Scalability</a>
+    <a href="#observability">Observability</a>
+    <a href="#security">Security</a>
+    <a href="#reliability">Reliability</a>
+    <a href="#resilience">Resilience</a>
+    <a href="#data-architecture">Data Architecture</a>
+    <a href="#cost-efficiency-finops">Cost Efficiency (FinOps)</a>
+    <a href="#operability">Operability</a>
+    <a href="#deployment-architecture">Deployment Architecture</a>
+    <a href="#event-architecture">Event Architecture</a>
+    <a href="#ai-architecture">AI Architecture</a>
+    <a href="#multi-tenancy">Multi-Tenancy</a>
+    <a href="#architecture-governance">Architecture Governance</a>
+    <a href="#domain-architecture">Domain Architecture</a>
+    <a href="#api-architecture">API Architecture</a>
+    <a href="#architecture-fitness-metrics">Architecture Fitness Metrics</a>
+    <a href="#common-anti-patterns">Common Anti-Patterns</a>
+    <a href="#testability">Testability</a>
+    <a href="#evolvability">Evolvability</a>
+    <a href="#architectural-smells-codebase-review-only-not-applicable-in-design-review">Architectural Smells</a>
+    <a href="#recommended">Recommended Architecture</a>
+  </nav>
+
+  <main>
+    <header>
+      <h1>multimedia-retrieval-system Architecture Review</h1>
+      <p>AIC 2026 Retrieval Inspector: ứng dụng chạy local để tìm keyframe video (KIS, VQA, TRAKE, TRAFFIC) bằng SigLIP/BEiT-3 + BM25 ASR + object, rồi nộp bài lên DRES.</p>
+      <p class="meta">Generated 2026-10-19 · Codebase Review</p>
+    </header>
+
+    <!-- ============================================================ -->
+    <section id="current">
+      <h2>Current Architecture</h2>
+
+      <div class="card">
+        <p><em>CodeGraph not available — structural analysis based on file/grep heuristics.</em></p>
+        <p>Hệ thống gồm ba phần: <strong>backend FastAPI</strong> (<code>backend/src</code>, khoảng 5,8k dòng, chia lớp <code>router → services → repositories / infrastructure</code>, ghép nối trong <code>core/container.py</code>), <strong>frontend React 19 + TanStack Query</strong> (<code>frontend/src</code>, khoảng 4,8k dòng không kể test, chia theo <code>features/search | results | submission</code>), và <strong>pipeline dữ liệu offline</strong> (10 script trong <code>scripts/</code> cùng các notebook Kaggle) sinh ra manifest, FAISS index, object index và index Elasticsearch.</p>
+        <p>Mọi dữ liệu được nạp vào RAM khi khởi động (khoảng 444k vector × 2 model, 423k keyframe có object), không có cơ sở dữ liệu. Thứ tự keyframe trong <code>keyframes.json</code> chính là <code>faiss_id</code> và là khoá nối của mọi index. Mỗi thành viên chạy một bản backend riêng trên máy mình; dữ liệu đã build được phân phối bằng file zip.</p>
+        <p>Kết luận chung: nền móng tốt (DI qua <code>create_app(services_factory)</code>, test không cần GPU, health/readiness, giảm cấp có cảnh báo khi một nguồn hỏng). Điểm yếu tập trung ở ba chỗ: <strong>hợp đồng dữ liệu theo vị trí chưa được kiểm tra đủ</strong> (ES), <strong>hai lớp lõi quá lớn</strong> (<code>RetrievalService</code>, <code>SearchWorkspace.tsx</code>), và <strong>schema API bị dùng làm model nội bộ</strong> ở mọi tầng.</p>
+      </div>
+
+      <div class="diagram-card">
+        <h3>System Context</h3>
+        <p class="diagram-desc">Hệ thống như một hộp đen: ai dùng nó và nó phụ thuộc vào dịch vụ nào.</p>
+        <div class="mermaid">
+graph TB
+  U(["Thành viên đội thi"]) -->|tìm, xem, nộp bài| SYS["AIC 2026 Retrieval Inspector"]
+  BLD(["Người build dữ liệu"]) -->|chạy scripts và notebook| DATA[("data/ - ảnh, manifest, FAISS, objects")]
+  KG["Kaggle / Colab GPU"] -->|embedding, ASR, scenes| DATA
+  SYS --> DATA
+  SYS -->|enhance query, KIS plan| GEM["Google Gemini API"]
+  SYS -->|BM25 trên transcript| ES[("Elasticsearch - Docker local")]
+  SYS -->|tải model, ký URL video riêng tư| HF["Hugging Face Hub"]
+  SYS -->|nộp KIS, VQA, TRAKE| DRES["DRES - eventretrieval.one"]
+        </div>
+      </div>
+
+      <div class="diagram-card">
+        <h3>Component Diagram</h3>
+        <p class="diagram-desc">Các module thực tế và quan hệ import giữa chúng; nét đứt đỏ là các phụ thuộc ngược chiều vào schema API.</p>
+        <div class="mermaid">
+graph LR
+  subgraph sg-fe["Frontend React / Vite"]
+    APP["App.tsx"] --> SW["SearchWorkspace.tsx - 1021 dòng, 31 hook"]
+    SW --> RES["features/results"]
+    SW --> SUB["features/submission - DresSubmitPanel 559 dòng"]
+    SW --> APIC["api/client.ts + types.ts viết tay"]
+    RES --> APIC
+    SUB --> APIC
+    SUB --> LS[("localStorage - log nộp bài")]
+  end
+  subgraph sg-be["Backend FastAPI"]
+    R["router: search, dres, config, health"] --> DEP["core/dependencies - app.state"]
+    CONT["core/container build_services"] -.->|ghép nối| SS
+    R --> SS["SearchService"]
+    R --> DS["DresSubmissionService"]
+    R --> VS["VideoSourceService"]
+    SS --> QE["GeminiQueryEnhancer"]
+    SS --> RS["RetrievalService - 669 dòng"]
+    RS --> EMB["EmbeddingService - SigLIP + BEiT-3"]
+    RS --> VR["KeyframeVectorRepository x2 - FAISS"]
+    RS --> TR["KeyframeTextRepository - ES"]
+    RS --> OR["KeyframeObjectRepository"]
+    RS --> TRF["TrafficMetadataRepository"]
+    RS --> RR["BLIP2Reranker"]
+    VR --> KM["KeyframeMetadataRepository"]
+    TR --> KM
+    OR --> KM
+    TRF --> KM
+    DS --> DC["DresClient"]
+    DS --> JL[("dres_submissions.jsonl")]
+    VS --> HFS["HuggingFaceUrlSigner"]
+    SCH["schemas/search.py - Pydantic API"]
+    TRF -.->|trả TrafficOptionsResponse| SCH
+    OR -.->|ObjectQueryTerm| SCH
+    QE -.->|QueryVariants, KISQueryPlan| SCH
+    RS -.->|dựng SingleSearchResult| SCH
+  end
+  APIC -->|HTTP /api qua Vite proxy| R
+  classDef hot fill:#fff5f5,stroke:#ff3b30,stroke-width:2px;
+  class RS,SW,SCH hot
+  linkStyle 27,28,29,30 stroke:#ff3b30,stroke-dasharray:4
+        </div>
+      </div>
+
+      <div class="diagram-card">
+        <h3>Application Diagram</h3>
+        <p class="diagram-desc">Các ứng dụng chạy online trên máy từng thành viên và pipeline offline sinh dữ liệu.</p>
+        <div class="mermaid">
+graph LR
+  subgraph sg-online["Chạy trên máy mỗi thành viên"]
+    BR["Trình duyệt"] --> VITE["Vite dev server :5173"]
+    VITE -->|proxy /api và /media| API["FastAPI :8000"]
+    API --> ESC[("Elasticsearch :9200")]
+    API --> DATA[("data/")]
+    DEV["scripts/dev.py"] -.->|khởi chạy| VITE
+    DEV -.->|khởi chạy| API
+  end
+  subgraph sg-offline["Pipeline offline - một người build"]
+    NB["notebooks Kaggle GPU"] --> RAW[("embeddings, asr, scenes, objects")]
+    RAW --> SC["scripts build 1 đến 5"]
+    SC --> ART[("keyframes.json, FAISS, objects_index")]
+  end
+  ART -->|gói zip gửi tay| DATA
+  DATA -->|mỗi máy tự chạy build_es_index| ESC
+        </div>
+      </div>
+
+      <div class="diagram-card">
+        <h3>Data / Information Architecture</h3>
+        <p class="diagram-desc">Dòng dữ liệu giữa các bước build và cách backend kiểm tra từng artifact khi khởi động.</p>
+        <div class="mermaid">
+graph TB
+  KFD[("keyframes/ - ảnh L, M, S")] --> GM["Bước 1: generate_manifest.py"]
+  MAP[("map-keyframes, scenes")] --> GM
+  GM -->|ghi| MAN[("keyframes.json - vị trí = faiss_id")]
+  EMBD[("embeddings/*.npy")] --> BF["Bước 2: build_faiss_index.py"]
+  MAN --> BF
+  BF --> FI[("siglip.index, beit3.index + meta.json order hash")]
+  ASR[("asr/")] --> BE["Bước 3: build_es_index.py"]
+  MAN --> BE
+  BE -->|doc có faiss_id| ESI[("ES keyframes_metadata")]
+  BE -->|ghi đè, không atomic| MAN
+  OBJ[("objects/")] --> BO["Bước 4: build_object_index.py"]
+  MAN --> BO
+  BO --> OI[("objects_index.json")]
+  TP[("traffic_probe, traffic_keyframes")] --> AT["Bước 5: append_traffic_index.py"]
+  AT -->|nối nhóm N vào cuối| MAN
+  AT --> FI
+  AT --> OI
+  MAN --> BACK["Backend khởi động"]
+  FI -->|có kiểm tra order hash| BACK
+  ESI -->|KHÔNG kiểm tra order hash| BACK
+  OI -->|chỉ cảnh báo keyframe lạ| BACK
+  classDef bad fill:#fff5f5,stroke:#ff3b30,stroke-width:2px;
+  class ESI,BE bad
+        </div>
+      </div>
+
+      <div class="diagram-card">
+        <h3>Sequence — POST /api/search</h3>
+        <p class="diagram-desc">Một lần tìm KIS hoặc TRAFFIC đi qua Gemini, hai model embedding, FAISS, ES, object index rồi fusion.</p>
+        <div class="mermaid">
+sequenceDiagram
+  actor U as Người dùng
+  participant FE as Frontend
+  participant SS as SearchService
+  participant G as Gemini
+  participant RS as RetrievalService
+  participant E as EmbeddingService
+  participant F as FAISS x2
+  participant ES as Elasticsearch
+  participant O as ObjectRepository
+  participant B as BLIP-2
+  U->>FE: Nhập truy vấn, bấm Search
+  FE->>SS: POST /api/search qua router
+  SS->>SS: validate độ dài, số event, object
+  opt Enhance query bật
+    SS->>G: enhance hoặc enhance_batch, không đặt timeout
+    G-->>SS: QueryVariants, hoặc lỗi thì fallback kèm warning
+  end
+  opt Truy vấn TRAFFIC
+    SS->>SS: allowed_mask lần 1 để đếm
+  end
+  SS->>RS: retrieve với request và enhanced
+  RS->>RS: allowed_mask lần 2 để lọc
+  loop mỗi model x mỗi biến thể truy vấn
+    RS->>E: embed, giữ khoá toàn cục
+    RS->>F: search fetch_k = top_k x 5
+  end
+  RS->>ES: BM25 asr_text, timeout 5s
+  ES-->>RS: hits, hoặc TextSearchUnavailable thì warning
+  RS->>O: search object terms
+  RS->>RS: RRF có trọng số, chuẩn hoá lại trọng số
+  opt use_reranking
+    RS->>B: rerank top candidates
+  end
+  RS-->>SS: RetrievalOutcome chứa sẵn DTO API
+  SS-->>FE: SearchResponse 200
+        </div>
+      </div>
+
+      <div class="diagram-card">
+        <h3>Sequence — Nộp bài DRES</h3>
+        <p class="diagram-desc">Chặn nộp trùng nằm trong bộ nhớ của một backend; frontend giữ một log riêng.</p>
+        <div class="mermaid">
+sequenceDiagram
+  participant FE as DresSubmitPanel
+  participant D as DresSubmissionService
+  participant C as DresClient
+  participant X as DRES server
+  participant L as dres_submissions.jsonl
+  FE->>D: POST /api/dres/submit
+  D->>D: khoá, kiểm tra submitted và in_flight
+  alt Đáp án đã nộp hoặc đang gửi
+    D-->>FE: 409 DuplicateSubmission
+  else Chưa nộp
+    D->>C: submit evaluation_id, body
+    C->>X: đăng nhập nếu cần, rồi POST
+    X-->>C: verdict
+    C-->>D: status_code, payload
+    opt status 2xx
+      D->>L: append một dòng
+    end
+    D-->>FE: DresSubmitResponse
+  end
+  FE->>FE: ghi log riêng vào localStorage
+        </div>
+      </div>
+
+      <div class="diagram-card">
+        <h3>Integration Diagram</h3>
+        <p class="diagram-desc">Bốn dịch vụ ngoài, kèm cấu hình timeout và retry thực tế của từng adapter.</p>
+        <div class="mermaid">
+graph LR
+  subgraph sg-sys["Backend adapters"]
+    QE["GeminiQueryEnhancer"]
+    TR["KeyframeTextRepository"]
+    EMB["EmbeddingService, BLIP2Reranker"]
+    HS["HuggingFaceUrlSigner"]
+    DC["DresClient"]
+  end
+  QE -->|google-genai, không timeout, LRU cache| GEM["Gemini API"]
+  TR -->|HTTP, timeout 5s, 1 retry| ES[("Elasticsearch")]
+  EMB -->|from_pretrained mỗi lần khởi động, revision main| HFH["Hugging Face Hub"]
+  HS -->|urllib, timeout 10s, URL ký có TTL| HFH
+  DC -->|httpx, timeout 15s, tự đăng nhập lại| DRES["DRES"]
+  classDef weak fill:#fff5f5,stroke:#ff3b30,stroke-width:2px;
+  class QE,EMB weak
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="separation-of-concerns">
+      <h2>Separation of Concerns</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Router mỏng, logic nằm ở services</strong>
+            <p>Các endpoint trong <code>router/search_router.py</code> chỉ gọi service và đổi exception thành mã HTTP (422, 503, 404). I/O với FAISS, ES, file và HTTP ngoài đều nằm trong <code>repositories/</code> và <code>infrastructure/</code>.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Service tự dựng response cho giao diện</strong>
+            <p><code>RetrievalService._single_results_from_candidates</code> dựng thẳng <code>SingleSearchResult</code>: tạo URL <code>/media/...</code>, định dạng giờ camera <code>%d/%m %H:%M:%S</code>, gắn tên camera và thời tiết. Đây là việc của tầng trình bày. Router <code>get_video_keyframes</code> lại tự lặp logic "objects của keyframe, nếu trống thì lấy từ object repository", vốn đã có ở <code>RetrievalService._objects_for</code>.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Kiểm tra TRAFFIC bị lặp ở hai lớp</strong>
+            <p><code>SearchService.search</code> kiểm tra traffic metadata rồi gọi <code>allowed_mask</code> để đếm; <code>RetrievalService.retrieve</code> kiểm tra lại và tính <code>allowed_mask</code> lần nữa để lọc. Hai nơi cùng giữ một quy tắc, và mask được tính hai lần mỗi lần tìm.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="cohesion-and-coupling">
+      <h2>Cohesion and Coupling</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Không thấy phụ thuộc vòng; import nặng được trì hoãn</strong>
+            <p>Đồ thị import một chiều (router → services → repositories/infrastructure → models/schemas). <code>build_services</code> chỉ import torch, FAISS và BLIP-2 bên trong hàm, nên import app để test không phải nạp model.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>RetrievalService ôm quá nhiều việc</strong>
+            <p>669 dòng với 25 phương thức: fusion RRF có trọng số, KIS theo plan, beam search TRAKE, loại trùng chuỗi, gating rerank, mask traffic và map sang DTO. Bảy dependency được inject qua constructor. Mỗi thay đổi về một chế độ tìm đều đụng vào cùng một file.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Rẽ nhánh theo loại truy vấn bị chia làm hai nơi</strong>
+            <p>Cả <code>SearchService.search</code> lẫn <code>RetrievalService.retrieve</code> đều rẽ nhánh bằng <code>isinstance</code> trên bốn loại request (KIS, VQA, TRAKE, TRAFFIC), cộng nhánh KIS có plan. Thêm một loại truy vấn phải sửa đồng bộ cả hai, cùng với <code>searchPayload.ts</code> và <code>SearchWorkspace.tsx</code> ở frontend.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>SearchWorkspace.tsx là component trung tâm quá lớn</strong>
+            <p>1021 dòng, 31 lời gọi hook (state, effect, query, mutation), quản lý cùng lúc form theo từng chế độ, chọn nguồn, editor KIS plan, lịch sử, cache, layout rail và hiển thị kết quả. <code>DresSubmitPanel.tsx</code> (559 dòng) và <code>ResultDetailModal.tsx</code> (459 dòng) có xu hướng tương tự.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="layered-architecture">
+      <h2>Layered Architecture</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Model miền tách khỏi schema Pydantic</strong>
+            <p><code>models/keyframe.py</code> (<code>Keyframe</code>, <code>KeyframeCollection</code>) là dataclass thuần, không phụ thuộc FastAPI hay Pydantic; <code>schemas/retrieval.ScoredCandidate</code> cũng vậy.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Tầng trong phụ thuộc vào hợp đồng HTTP</strong>
+            <p><code>repositories/traffic_repository.py</code> trả thẳng <code>TrafficOptionsResponse</code> và nhận <code>TrafficFilters</code>; <code>object_repository</code> nhận <code>ObjectQueryTerm</code>; <code>infrastructure/query_enhancer.py</code> và <code>infrastructure/retrieval.py</code> trả <code>QueryVariants</code>, <code>KISQueryPlan</code>, <code>SingleSearchResult</code>, tất cả đều từ <code>schemas/search.py</code>. Đổi một trường trên API kéo theo sửa repository và adapter.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Interface của service nằm trong infrastructure/</strong>
+            <p><code>RetrievalEngine</code>, <code>EnhancedQueries</code>, <code>RetrievalOutcome</code> và <code>RetrievalDataError</code> (ở <code>infrastructure/retrieval.py</code>) cùng <code>QueryEnhancer</code> (ở <code>infrastructure/query_enhancer.py</code>) là khái niệm của tầng ứng dụng, nhưng lại đặt ở tầng hạ tầng. Vì vậy <code>services/</code> phải import từ <code>infrastructure/</code> chỉ để lấy kiểu.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="hexagonal-architecture-ports-and-adapters">
+      <h2>Hexagonal Architecture / Ports and Adapters</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Đã có port cho các phần dễ thay</strong>
+            <p><code>SearchService</code> phụ thuộc vào Protocol <code>RetrievalEngine</code> và <code>QueryEnhancer</code>; <code>VideoSourceService</code> phụ thuộc <code>PrivateUrlSigner</code>; <code>DresClient</code> nhận <code>transport</code> để test. Gemini có lớp chống nhiễm (<code>_Gemini*</code> model riêng rồi mới chuyển sang kiểu nội bộ).</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Lõi retrieval phụ thuộc lớp cụ thể</strong>
+            <p><code>RetrievalService</code> import trực tiếp <code>EmbeddingService</code>, <code>BLIP2Reranker</code>, <code>KeyframeVectorRepository</code>, <code>KeyframeTextRepository</code> (Elasticsearch). Hợp đồng chỉ tồn tại ngầm qua duck typing trong <code>tests/fakes.py</code>; <code>_embed</code> rẽ nhánh bằng chuỗi <code>"siglip"</code> thay vì nhận một encoder theo interface.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="scalability">
+      <h2>Scalability</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Phù hợp quy mô hiện tại: đọc nhiều, trạng thái chỉ đọc trong RAM</strong>
+            <p>Endpoint nặng là <code>def</code> thường nên chạy trong threadpool, không chặn event loop phục vụ <code>/media</code>. FAISS lọc bằng mask nhị phân, ES lọc bằng khoảng <code>faiss_id</code>, nên lọc không làm mất recall. Có LRU cache cho Gemini và cache kết quả ở frontend.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Mọi lần embed đi qua một khoá duy nhất</strong>
+            <p><code>EmbeddingService</code> giữ một <code>threading.Lock</code> cho cả SigLIP và BEiT-3. Một lần tìm có thể embed 2 model × nhiều biến thể (TRAKE còn nhân thêm số sự kiện), nên khi hai người cùng dùng một backend thì các request phải xếp hàng. Chấp nhận được khi mỗi người chạy một bản, nhưng cần biết nếu đội chuyển sang dùng chung một server có GPU.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Bộ nhớ và thời gian khởi động tăng theo dữ liệu</strong>
+            <p>Hai index phẳng 443.781 vector, manifest JSON và object index đều nạp toàn bộ vào RAM; khởi động khoảng 26–30 giây trên CPU. Với mỗi batch dữ liệu mới, cả hai con số này tăng tuyến tính trên máy của mọi thành viên.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="observability">
+      <h2>Observability</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Health và readiness theo từng thành phần</strong>
+            <p><code>/api/health/ready</code> báo riêng trạng thái SigLIP, BEiT-3, Elasticsearch, object index và Gemini. Logging cấu hình một chỗ (<code>core/logger.py</code>), có file xoay vòng <code>logs/backend.log</code>. Các lần giảm cấp (ES tắt, Gemini lỗi) được trả về giao diện qua <code>warnings</code>.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Không đo thời gian theo từng bước của một lần tìm</strong>
+            <p>Không có log hoặc số đo cho thời gian Gemini, embed, FAISS, ES, fusion và rerank của từng request, cũng không có request id. Khi một truy vấn chậm, không biết chậm ở đâu; khi chỉnh <code>fetch_k</code> hay bật rerank, không có số liệu để so sánh.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="security">
+      <h2>Security</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Bí mật ở lại phía server</strong>
+            <p>Key Gemini, tài khoản DRES và token HF là <code>SecretStr</code> đọc từ <code>.env</code> (đã có trong <code>.gitignore</code>). Video riêng tư được phát qua URL ký có thời hạn, token không xuống trình duyệt. <code>MediaFiles</code> chỉ mở <code>keyframes/</code>, <code>traffic_keyframes/</code>, <code>videos/</code>. CORS chỉ cho một origin với GET/POST. Elasticsearch chỉ bind <code>127.0.0.1</code>.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>API không xác thực, an toàn chỉ nhờ chạy localhost</strong>
+            <p>Không có lớp xác thực nào. Nếu ai đó chạy uvicorn với <code>--host 0.0.0.0</code> để chia sẻ cho đồng đội, mọi máy trong mạng LAN đều gọi được <code>POST /api/dres/submit</code> và nộp bài bằng tài khoản của đội. Nên ghi rõ giả định "chỉ localhost" và chặn khi bind ra ngoài mà không đặt token.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="reliability">
+      <h2>Reliability</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Giảm cấp có kiểm soát</strong>
+            <p>ES không chạy thì tìm tiếp bằng hình ảnh và object kèm cảnh báo; Gemini lỗi hoặc thiếu key thì dùng truy vấn gốc; model không nạp được thì readiness báo lỗi chứ app không sập; trọng số được chuẩn hoá lại trên những nguồn thực sự có kết quả.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Gemini là lời gọi ngoài duy nhất không có timeout</strong>
+            <p>ES có timeout 5s, DRES 15s, HF 10s, nhưng <code>genai.Client(api_key=...)</code> được tạo không kèm <code>http_options</code>. Gemini nằm ngay trên đường đi đồng bộ của <code>/api/search</code> và <code>/api/search/kis/plan</code>, nên một lời gọi bị treo sẽ giữ một worker của threadpool và người dùng không nhận được fallback.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Frontend không tự thử lại khi backend đang khởi động</strong>
+            <p><code>App.tsx</code> gọi <code>/api/config</code> với <code>retry: false</code>. Vite sẵn sàng trong khoảng 1 giây còn backend cần khoảng 30 giây, nên mở trang sớm sẽ dừng ở màn hình lỗi cho tới khi tải lại trang.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="resilience">
+      <h2>Resilience</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Chặn nộp trùng tính cả lúc đang gửi</strong>
+            <p><code>DresSubmissionService</code> giữ tập <code>in_flight</code> dưới khoá, nên bấm hai lần liên tiếp không gửi hai lần; chỉ đáp án DRES đã chấm (2xx) mới bị khoá vĩnh viễn, và trạng thái được dựng lại từ <code>jsonl</code> sau khi khởi động lại.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Phạm vi chặn trùng chỉ là một máy</strong>
+            <p>Chú thích trong code viết "two clicks (or two machines) cannot both send it", nhưng mỗi thành viên chạy backend và <code>dres_submissions.jsonl</code> riêng. Hai người nộp cùng một đáp án từ hai máy vẫn đi qua. Ngoài ra frontend giữ một log riêng trong <code>localStorage</code> không đồng bộ với <code>jsonl</code>; xoá dữ liệu trình duyệt là mất lịch sử, trong khi backend vẫn chặn.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="data-architecture">
+      <h2>Data Architecture</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Một nguồn sự thật cho thứ tự keyframe, có kiểm tra với FAISS</strong>
+            <p><code>keyframes.json</code> quy định <code>faiss_id</code>. <code>build_faiss_index.py</code> ghi <code>.meta.json</code> chứa order hash, và <code>KeyframeVectorRepository</code> từ chối index lệch thứ tự khi khởi động. Một test (<code>test_order_hash_matches_the_builders_algorithm</code>) giữ cho hàm hash ở script và backend luôn khớp nhau.</p>
+          </div>
+        </div>
+        <div class="finding risk">
+          <span class="badge badge-risk">Risk</span>
+          <div class="finding-text">
+            <strong>Index Elasticsearch lệch thứ tự sẽ cho kết quả sai mà không báo</strong>
+            <p>Document ES lưu <code>faiss_id</code> theo vị trí. <code>build_es_index.py</code> có ghi <code>keyframe_order</code> vào file state của nó, nhưng backend không đọc lại để đối chiếu; <code>KeyframeTextRepository</code> chỉ cảnh báo khi id vượt biên. Khi một thành viên giải nén gói index mới mà quên chạy lại <code>build_es_index.py</code> (README yêu cầu làm tay ở bước 4), ASR sẽ cộng điểm cho keyframe sai mà readiness vẫn báo "ok".</p>
+          </div>
+        </div>
+        <div class="finding risk">
+          <span class="badge badge-risk">Risk</span>
+          <div class="finding-text">
+            <strong>File gốc có nhiều nơi ghi, và ghi không atomic</strong>
+            <p><code>keyframes.json</code> bị ghi bởi <code>generate_manifest.py</code>, <code>append_traffic_index.py</code> và cả <code>build_es_index.py</code> (ghi lại để thêm <code>asr_text</code>, bằng <code>open(..., "w")</code> rồi <code>json.dump</code> trực tiếp). Nếu script dừng giữa chừng (Ctrl+C, hết đĩa), file gốc của toàn hệ thống bị cắt cụt. Bước build ES lẽ ra chỉ đọc manifest giờ lại trở thành một nơi ghi nữa.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Gói dữ liệu không có phiên bản</strong>
+            <p>Các gói <code>aic26_index_*.zip</code> được gửi tay. README dặn "không dùng lẫn", nhưng ngoài order hash của FAISS thì không có mã phiên bản hay danh sách hash từng artifact để backend kiểm tra <code>objects_index.json</code> hay <code>video_sources.json</code> có cùng lần build hay không.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="cost-efficiency-finops">
+      <h2>Cost Efficiency (FinOps)</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Gọi LLM có chủ đích</strong>
+            <p>Gemini chỉ được gọi khi người dùng bật Enhance hoặc Understand query; dùng model flash-lite rẻ; có LRU cache cho enhance và KIS plan; TRAKE gộp mọi sự kiện vào một lời gọi batch. BLIP-2 (đắt trên CPU) mặc định tắt.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Không theo dõi lượng token và quota</strong>
+            <p>Không ghi lại token vào/ra hay số lời gọi Gemini, nên khi bị giới hạn quota trong lúc thi, đội không biết đã dùng bao nhiêu và phần nào tốn nhất.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="operability">
+      <h2>Operability</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Tài liệu vận hành chi tiết</strong>
+            <p>README mô tả đủ biến môi trường, cấu trúc <code>data/</code>, thứ tự build và quy trình riêng cho thành viên chỉ nhận gói. <code>Makefile</code> và <code>scripts/dev.py</code> gom các lệnh thường dùng.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Build dữ liệu là chuỗi bước làm tay, kiến thức tập trung ở một người</strong>
+            <p>Năm script phải chạy đúng thứ tự, kèm các notebook Kaggle và ngoại lệ (<code>--objects-only</code>, <code>--relink-images</code>, "muốn chạy lại thì chạy lại từ bước 1"). Không có lệnh điều phối hay lệnh "kiểm tra thư mục data" chạy được trước khi khởi động backend.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>dev.py để lại tiến trình con khi bị dừng cứng</strong>
+            <p>Khi <code>dev.py</code> bị kill (không qua Ctrl+C), uvicorn và Vite vẫn chạy và giữ cổng 8000/5173; lần chạy sau Vite tự nhảy sang 5174, còn uvicorn báo lỗi bind. Đã quan sát thấy trong lúc review.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="deployment-architecture">
+      <h2>Deployment Architecture</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>CI cho mọi push và pull request</strong>
+            <p><code>.github/workflows/ci.yml</code> chạy ruff, pytest (CPU torch, không cần dữ liệu), eslint, typecheck, vitest và build. Elasticsearch được mô tả bằng <code>docker-compose.yml</code> có healthcheck; web stack được pin trong <code>requirements.lock</code>.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Thư viện ML không được pin</strong>
+            <p><code>torch&gt;=2.4.0</code>, <code>transformers&gt;=4.56.0</code>, <code>faiss-cpu&gt;=1.9.0,&lt;2</code>, <code>google-genai&gt;=1.0</code> không có trong lock (lock ghi rõ các gói này "follow the ranges"). Hai máy có thể chạy transformers khác nhau, nên tiền xử lý của processor SigLIP có thể khác với lúc trích embedding, kéo chất lượng tìm kiếm khác nhau giữa các thành viên mà không ai biết.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="event-architecture">
+      <h2>Event Architecture</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">No material findings</span>
+          <div class="finding-text">
+            <strong>No material findings</strong>
+            <p>The available evidence did not reveal notable strengths, concerns, or risks for this area. Hệ thống không dùng event, queue hay message bus; mọi tương tác là HTTP đồng bộ.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="ai-architecture">
+      <h2>AI Architecture</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Đầu ra LLM có cấu trúc, được kiểm tra và để người duyệt</strong>
+            <p>Gemini trả về theo schema Pydantic; nhãn vật thể bị loại nếu không có trong <code>objects_index.json</code>; trọng số bị kẹp trong khoảng hợp lệ; lỗi thì fallback có cảnh báo. KIS plan là bản nháp người dùng sửa được trước khi tìm. Có <code>scripts/evaluate_retrieval.py</code> đo Recall@K và MRR.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Model embedding không pin revision</strong>
+            <p><code>from_pretrained("google/siglip2-so400m-patch14-384")</code> luôn lấy nhánh <code>main</code> (log khởi động cho thấy resolve <code>main</code> mỗi lần). Nếu repo upstream đổi processor hay config, vector truy vấn sẽ không còn cùng không gian với embedding đã index. <code>.meta.json</code> của index cũng không ghi model nào đã tạo ra nó.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Prompt nằm rải trong code, không có phiên bản; bộ eval không có sẵn</strong>
+            <p>Ba prompt là f-string trong <code>query_enhancer.py</code> (enhance, enhance_batch, plan_kis). Log và response không ghi phiên bản prompt nào đã sinh ra kết quả. Script eval cần <code>data/eval/queries.jsonl</code>, nhưng thư mục này không tồn tại trên máy review, nên việc đổi prompt hay trọng số hiện không có thước đo.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="multi-tenancy">
+      <h2>Multi-Tenancy</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">No material findings</span>
+          <div class="finding-text">
+            <strong>No material findings</strong>
+            <p>The available evidence did not reveal notable strengths, concerns, or risks for this area. Ứng dụng là công cụ một đội, mỗi người chạy một bản; không có khái niệm tenant.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="architecture-governance">
+      <h2>Architecture Governance</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Lý do được viết ngay cạnh code</strong>
+            <p>Các quyết định khó (vì sao endpoint là <code>def</code>, vì sao nối nhóm N vào cuối, công thức fusion, vì sao ASR over-fetch) đều có comment giải thích "tại sao", không chỉ "làm gì".</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Không có ADR hay thư mục docs</strong>
+            <p>Các quyết định cấp hệ thống (dữ liệu nạp hết vào RAM thay vì DB, <code>faiss_id</code> theo vị trí, mỗi người một backend, RRF hằng số 60, loại intro) chỉ có trong README và comment rải rác. Người mới không có một chỗ để xem các lựa chọn khác đã cân nhắc và điều kiện nào thì nên xem lại.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="domain-architecture">
+      <h2>Domain Architecture</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Frontend chia theo năng lực nghiệp vụ</strong>
+            <p><code>features/search</code>, <code>features/results</code> và <code>features/submission</code> khớp với ba việc của người dùng: tìm, kiểm tra kết quả, nộp bài.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Khái niệm "chế độ truy vấn" không có chỗ ở riêng</strong>
+            <p>KIS, VQA, TRAKE và TRAFFIC là trục nghiệp vụ chính, nhưng quy tắc của mỗi chế độ bị chia ra giữa <code>schemas/search.py</code>, <code>SearchService</code>, <code>RetrievalService</code>, <code>searchPayload.ts</code> và <code>SearchWorkspace.tsx</code>. Nhóm N (traffic) còn được nhận diện bằng tiền tố tên video (<code>is_traffic_video</code>) ở nhiều chỗ.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="api-architecture">
+      <h2>API Architecture</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Hợp đồng có kiểu, có OpenAPI, lỗi nhất quán</strong>
+            <p>Request và response là model Pydantic có ràng buộc (top_k, độ dài truy vấn, số sự kiện); FastAPI sinh OpenAPI tại <code>/docs</code>; lỗi dùng chung dạng <code>HTTPException(detail)</code> với mã 404/409/422/503 có nghĩa rõ ràng.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Kiểu TypeScript chép tay từ schema backend</strong>
+            <p><code>frontend/src/api/types.ts</code> (254 dòng) mô phỏng lại <code>schemas/*.py</code> bằng tay. Không có bước sinh kiểu từ OpenAPI hay test đối chiếu, nên một trường đổi tên ở backend chỉ lộ ra lúc chạy thật; test frontend dùng dữ liệu giả cũng viết tay theo cùng kiểu đó.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="architecture-fitness-metrics">
+      <h2>Architecture Fitness Metrics</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Có một fitness function cho hợp đồng dữ liệu</strong>
+            <p>Test đối chiếu hàm order hash giữa <code>scripts/_common.py</code> và backend là một kiểm tra kiến trúc tự động thực thụ, chạy trong CI.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Chiều phụ thuộc giữa các tầng không được kiểm tra tự động</strong>
+            <p>Ruff chỉ kiểm tra style và lỗi; không có quy tắc kiểu import-linter ("repositories không import schemas", "services không import router"). Các vi phạm ở mục Layered Architecture đã lọt vào mà không có cảnh báo nào.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="common-anti-patterns">
+      <h2>Common Anti-Patterns</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Không có Big Ball of Mud hay Distributed Monolith</strong>
+            <p>Một backend, một frontend, ranh giới module rõ ràng; file lớn nhất (BEiT-3 vendored, 916 dòng) là mã bên thứ ba được cô lập trong <code>infrastructure/beit3</code>. Gemini và DRES có lớp chống nhiễm (model riêng, map sang kiểu nội bộ).</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Leaky Abstraction: schema API dùng làm model nội bộ</strong>
+            <p><code>schemas/search.py</code> vừa là hợp đồng HTTP vừa là kiểu trao đổi giữa repository, adapter Gemini và service. Đây là cùng một gốc với các phát hiện ở Layered Architecture và Separation of Concerns: không thể đổi API mà không chạm vào tầng dữ liệu.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="testability">
+      <h2>Testability</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Test backend không cần GPU, model hay dữ liệu</strong>
+            <p><code>create_app(settings, services_factory)</code> cho test thay toàn bộ service bằng FAISS trong bộ nhớ, encoder giả và ES giả (<code>tests/fakes.py</code>); <code>DresClient</code> nhận transport giả. Frontend có Vitest, React Testing Library và Playwright. Tất cả chạy trong CI.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Pipeline dữ liệu gần như không có test</strong>
+            <p>Ngoài test hash, các script sinh ra artifact quan trọng nhất (manifest, ghép object theo shot, nối nhóm N, tính <code>time_ms</code> từ pts) không có test với bộ dữ liệu nhỏ. Lỗi ở đây chỉ lộ ra sau khi build toàn bộ, khi kết quả tìm kiếm hoặc thời điểm nộp bài sai.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="evolvability">
+      <h2>Evolvability</h2>
+      <div class="findings">
+        <div class="finding strength">
+          <span class="badge badge-strength">Strength</span>
+          <div class="finding-text">
+            <strong>Hành vi điều khiển bằng cấu hình</strong>
+            <p>Model, đường dẫn index, tham số TRAKE, độ sâu rerank, thư mục media đều đặt được qua biến <code>AIC_*</code>; người dùng bật/tắt từng nguồn và model ngay trên giao diện.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Thêm một nguồn tìm kiếm mới đòi sửa nhiều nơi</strong>
+            <p>Ba modality (vis, asr, obj) được viết cứng trong <code>_search_candidates</code>, <code>services/weights.py</code>, prompt Gemini, <code>SearchSources</code> và <code>SOURCE_OPTIONS</code> ở frontend. Repo đã có notebook OCR; đưa OCR vào sẽ phải sửa cả năm chỗ. Tương tự, thêm một model embedding phải sửa <code>_embed</code> và <code>build_services</code>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="architectural-smells-codebase-review-only-not-applicable-in-design-review">
+      <h2>Architectural Smells (codebase review only — not applicable in design review)</h2>
+      <div class="findings">
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>God service</strong>
+            <p><code>RetrievalService</code> (669 dòng, 7 dependency, 4 chế độ tìm cùng fusion, rerank và map DTO) là ứng viên rõ nhất.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Smart UI</strong>
+            <p><code>SearchWorkspace.tsx</code> giữ phần lớn trạng thái và quy tắc của màn hình tìm kiếm; các hàm thuần đã được tách ra (<code>searchPayload.ts</code>, <code>trakeEventParser.ts</code>, <code>programFilter.ts</code>) là hướng đúng nhưng chưa đủ.</p>
+          </div>
+        </div>
+        <div class="finding concern">
+          <span class="badge badge-concern">Concern</span>
+          <div class="finding-text">
+            <strong>Leaky abstraction</strong>
+            <p>Như đã nêu ở Common Anti-Patterns: schema HTTP đi xuyên qua mọi tầng.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="recommended">
+      <h2>Recommended Architecture</h2>
+
+      <div class="diagram-card">
+        <h3>Component Diagram — đề xuất</h3>
+        <p class="diagram-desc">Thay đổi: thêm tầng domain chứa port và model; router map sang schema API; RetrievalService tách thành chiến lược theo chế độ và một FusionEngine nhận danh sách modality; frontend sinh kiểu từ OpenAPI.</p>
+        <div class="mermaid">
+graph LR
+  subgraph sg-api["router - mỏng"]
+    R["router/*"] --> MAP["presenters: domain sang schemas API, URL media, định dạng giờ"]
+  end
+  subgraph sg-app["services - ứng dụng"]
+    SS["SearchService - điều phối, validate một lần"] --> STR["QueryMode: Single, PlannedKIS, Trake, Traffic"]
+    STR --> FUS["FusionEngine - nhận danh sách Modality"]
+  end
+  subgraph sg-dom["domain - không phụ thuộc framework"]
+    PORTS["ports: TextEncoder, VectorIndex, TextIndex, ObjectIndex, QueryEnhancer, Reranker"]
+    DM["models: Keyframe, Candidate, QueryPlan, SearchHit, TrafficOptions"]
+  end
+  subgraph sg-infra["repositories, infrastructure - adapters"]
+    AD["FAISS, ES, Object, Gemini, SigLIP, BEiT-3, BLIP-2"]
+  end
+  subgraph sg-fe2["Frontend"]
+    SWN["SearchWorkspace tách: useSearchForm, SourcePanel, KisPlanEditor, ResultsPane"] --> GEN["api/types sinh từ OpenAPI"]
+  end
+  GEN -->|HTTP| R
+  R --> SS
+  MAP --> DM
+  STR --> PORTS
+  FUS --> PORTS
+  AD -.->|implements| PORTS
+  AD --> DM
+  classDef new fill:#f0faf4,stroke:#30d158,stroke-width:2px;
+  class MAP,STR,FUS,PORTS,DM,GEN,SWN new
+        </div>
+      </div>
+
+      <div class="diagram-card">
+        <h3>Data / Information Architecture — đề xuất</h3>
+        <p class="diagram-desc">Thay đổi: mọi index đều mang order hash và được backend kiểm tra; keyframes.json chỉ có hai nơi ghi và ghi atomic; gói dữ liệu có manifest phiên bản.</p>
+        <div class="mermaid">
+graph TB
+  GM["generate_manifest, append_traffic_index"] -->|ghi tmp rồi rename| MAN[("keyframes.json")]
+  BE["build_es_index - chỉ đọc manifest"] --> ESI[("ES + _meta keyframe_order")]
+  BE --> ASRF[("asr_text cho UI: file riêng hoặc lấy từ ES")]
+  BF["build_faiss_index"] --> FI[("FAISS + meta: order hash, model, revision")]
+  BO["build_object_index"] --> OI[("objects_index + keyframe_order")]
+  PK["đóng gói"] --> DMF[("data_manifest.json: version gói, hash từng artifact")]
+  MAN --> BACK["Backend khởi động"]
+  FI -->|kiểm tra hash và revision model| BACK
+  ESI -->|kiểm tra hash, readiness báo lỗi| BACK
+  OI -->|kiểm tra hash| BACK
+  DMF -->|hiện version trên /api/health/ready| BACK
+  classDef new fill:#f0faf4,stroke:#30d158,stroke-width:2px;
+  class ESI,DMF,ASRF,BE new
+        </div>
+      </div>
+
+      <div class="diagram-card">
+        <h3>Integration Diagram — đề xuất</h3>
+        <p class="diagram-desc">Thay đổi: Gemini có timeout và ghi token; model pin theo commit và chạy offline sau lần tải đầu; lịch sử nộp bài lấy từ backend thay vì localStorage.</p>
+        <div class="mermaid">
+graph LR
+  QE["GeminiQueryEnhancer"] -->|timeout khoảng 8s, ghi token, prompt có version| GEM["Gemini API"]
+  EMB["Encoders"] -->|revision pin theo commit, HF_HUB_OFFLINE khi đã cache| HFH["Hugging Face Hub"]
+  TR["TextRepository"] -->|timeout 5s, kiểm tra order hash| ES[("Elasticsearch")]
+  DC["DresClient"] -->|timeout 15s| DRES["DRES"]
+  FE["Frontend"] -->|GET lịch sử nộp| DS["DresSubmissionService"]
+  DS --> JL[("dres_submissions.jsonl")]
+  classDef new fill:#f0faf4,stroke:#30d158,stroke-width:2px;
+  class QE,EMB,FE new
+        </div>
+      </div>
+
+      <div class="card">
+        <p>Sơ đồ Application và hai Sequence không vẽ lại: cấu trúc ứng dụng đã hợp lý. Thay đổi trên sequence tìm kiếm chỉ là tính <code>allowed_mask</code> một lần và đặt timeout cho Gemini, đã nêu trong danh sách bên dưới.</p>
+      </div>
+
+      <div class="card recommendations">
+        <h3>Các thay đổi đề xuất (theo thứ tự ưu tiên)</h3>
+        <ol>
+          <li><strong>Kiểm tra order hash của index Elasticsearch khi khởi động</strong> — <code>build_es_index.py</code> ghi <code>keyframe_order</code> vào <code>_meta</code> của mapping index (hoặc một document riêng); <code>KeyframeTextRepository</code> đọc và so với <code>KeyframeMetadataRepository.order_hash()</code>, lệch thì readiness <code>elasticsearch</code> báo lỗi và tắt ASR kèm cảnh báo. Làm tương tự cho <code>objects_index.json</code>. Thay đổi nhỏ, chặn được lỗi sai kết quả mà không báo.</li>
+          <li><strong>keyframes.json: ghi atomic và chỉ hai nơi ghi</strong> — thêm hàm <code>write_json_atomic</code> (ghi file tạm rồi <code>os.replace</code>) vào <code>scripts/_common.py</code> và dùng cho mọi artifact. Bỏ việc <code>build_es_index.py</code> ghi lại manifest: lưu <code>asr_text</code> cho giao diện ở file riêng hoặc lấy từ ES theo <code>segment_id</code>.</li>
+          <li><strong>Pin model và thư viện ML</strong> — đặt <code>revision=&lt;commit&gt;</code> cho SigLIP (và BLIP-2) trong <code>Settings</code>; ghi model id và revision vào <code>.meta.json</code> của FAISS và kiểm tra khi khởi động; thêm torch, transformers, faiss-cpu, google-genai vào <code>requirements.lock</code>; đặt <code>HF_HUB_OFFLINE=1</code> sau lần tải đầu.</li>
+          <li><strong>Timeout và số đo cho Gemini</strong> — tạo client với <code>http_options</code> có timeout (khoảng 8 giây) để fallback chạy thật; log thời gian và token của mỗi lời gọi; gắn hằng số phiên bản cho từng prompt và trả về trong <code>SearchResponse</code>.</li>
+          <li><strong>Tách RetrievalService</strong> — mỗi chế độ một lớp chiến lược (<code>SingleSearch</code>, <code>PlannedKisSearch</code>, <code>TrakeSearch</code>, lọc traffic là một bộ lọc dùng chung); <code>FusionEngine</code> nhận danh sách <code>Modality</code> (vis, asr, obj, sau này OCR) thay cho ba nhánh viết cứng. <code>SearchService</code> chọn chiến lược một lần, xoá rẽ nhánh <code>isinstance</code> kép và tính <code>allowed_mask</code> đúng một lần.</li>
+          <li><strong>Tách hợp đồng HTTP khỏi model nội bộ</strong> — chuyển các Protocol (<code>RetrievalEngine</code>, <code>QueryEnhancer</code>) và kiểu dùng chung sang một package <code>domain/</code>; repository trả dataclass của domain (<code>TrafficOptions</code>, <code>SearchHit</code>); router hoặc một lớp presenter map sang <code>schemas/</code>, gồm cả URL <code>/media</code> và định dạng giờ.</li>
+          <li><strong>Sinh kiểu TypeScript từ OpenAPI</strong> — dùng <code>openapi-typescript</code> sinh <code>api/types.ts</code> từ <code>/openapi.json</code> (xuất bằng một script không cần nạp model, vì app đã dựng được với factory giả); CI chạy lại và báo lỗi khi file sinh ra khác bản đã commit.</li>
+          <li><strong>Chia nhỏ SearchWorkspace.tsx</strong> — đưa trạng thái form vào một hook hoặc reducer (<code>useSearchForm</code>), tách <code>SourcePanel</code>, <code>KisPlanEditor</code>, <code>ResultsPane</code>; giữ hướng đang làm là đưa logic thuần ra file <code>.ts</code> có test.</li>
+          <li><strong>Lịch sử nộp DRES lấy từ backend</strong> — thêm <code>GET /api/dres/submissions</code> đọc <code>jsonl</code>; frontend dùng nó thay cho <code>localStorage</code>. Sửa comment "or two machines" cho đúng phạm vi thật, hoặc nếu đội cần chặn trùng giữa các máy thì chạy một backend dùng chung cho việc nộp bài.</li>
+          <li><strong>Log thời gian theo từng bước của một lần tìm</strong> — một dòng log mỗi request với request id và số mili giây cho Gemini, embed, FAISS, ES, object, fusion và rerank; cũng có thể trả về trong <code>SearchResponse</code> để hiện ở SearchInsight.</li>
+          <li><strong>Test cho pipeline dữ liệu và luật phụ thuộc</strong> — dựng một thư mục <code>data</code> nhỏ (vài video L, M, N) làm fixture để test các script build đầu cuối; thêm <code>import-linter</code> vào CI với các luật: <code>repositories</code> và <code>infrastructure</code> không import <code>schemas</code> hay <code>router</code>, <code>services</code> không import <code>router</code>.</li>
+          <li><strong>Bộ eval có nhãn nằm trong repo</strong> — commit một <code>eval/queries.jsonl</code> nhỏ (vài chục truy vấn đã biết đáp án) và chạy <code>evaluate_retrieval.py</code> trước mỗi thay đổi prompt, trọng số hay model.</li>
+          <li><strong>Frontend chờ backend khởi động</strong> — cho query <code>/api/config</code> thử lại khi gặp lỗi mạng hoặc 502/503 trong khoảng 2 phút, hiện "Đang chờ backend khởi động".</li>
+          <li><strong>Ghi lại quyết định kiến trúc</strong> — tạo <code>docs/adr/</code> với vài ADR ngắn: dữ liệu nạp vào RAM thay vì DB, <code>faiss_id</code> theo vị trí và nhóm N nối cuối, mỗi thành viên một backend, công thức fusion, chặn API khi bind ra ngoài localhost.</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h3>Migration Notes</h3>
+        <p><strong>Đợt 1 — an toàn dữ liệu (1–2 ngày, không đổi API):</strong> mục 1, 2, 3, 4 và 13. Đều là thay đổi cục bộ, có test được ngay, và chặn các lỗi cho kết quả sai mà không báo. Sau mục 1 và 3, các thành viên cần build lại ES và nhận gói index mới có metadata model, nên gộp vào cùng một lần phát gói.</p>
+        <p><strong>Đợt 2 — ranh giới tầng (làm dần):</strong> mục 6 trước, vì nó tạo chỗ cho mục 5. Bắt đầu bằng việc chuyển Protocol sang <code>domain/</code> (chỉ đổi import), rồi đổi <code>TrafficMetadataRepository.options()</code> sang dataclass, sau đó mới đến presenter cho kết quả tìm kiếm. Bật <code>import-linter</code> (mục 11) ở chế độ cảnh báo ngay từ đầu, rồi chuyển sang chặn khi đã hết vi phạm.</p>
+        <p><strong>Đợt 3 — tách lớp lớn:</strong> mục 5 và 8. Test API hiện có (<code>test_search_api.py</code>, <code>test_trake_diversity.py</code>) và test frontend là lưới an toàn; tách từng chế độ một, mỗi bước giữ nguyên toàn bộ test xanh. Mục 7 nên làm trước mục 8 để việc tách component có kiểu chính xác.</p>
+        <p><strong>Giữ nguyên trong khi refactor:</strong> <code>create_app(services_factory)</code> và test không cần GPU, health/readiness theo thành phần, cơ chế giảm cấp có cảnh báo, kiểm tra order hash của FAISS, và việc giữ bí mật phía server.</p>
+      </div>
+    </section>
+
+  </main>
+</body>
+</html>
