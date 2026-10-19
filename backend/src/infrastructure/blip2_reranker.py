@@ -6,7 +6,7 @@ import torch
 from PIL import Image
 from transformers import Blip2ForImageTextRetrieval, Blip2Processor
 
-from schemas.retrieval import ScoredCandidate
+from models.candidate import ScoredCandidate
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class BLIP2Reranker:
         device: str | None = None,
         depth: int = 100,
         batch_size: int = 16,
+        revision: str | None = None,
     ) -> None:
         self.data_root = data_root
         self.enable = enable
@@ -39,15 +40,17 @@ class BLIP2Reranker:
         self.model = None
 
         if self.enable:
-            logger.info("Initializing BLIP-2 reranker %s on %s...", model_id, self.device)
+            logger.debug("Initializing BLIP-2 reranker %s on %s...", model_id, self.device)
             try:
-                self.processor = Blip2Processor.from_pretrained(model_id)
+                self.processor = Blip2Processor.from_pretrained(model_id, revision=revision)
                 self.model = (
-                    Blip2ForImageTextRetrieval.from_pretrained(model_id, dtype=self._dtype)
+                    Blip2ForImageTextRetrieval.from_pretrained(
+                        model_id, revision=revision, dtype=self._dtype
+                    )
                     .to(self.device)
                     .eval()
                 )
-                logger.info("BLIP-2 model loaded.")
+                logger.info("BLIP-2 reranker %s loaded on %s", model_id, self.device)
             except Exception:  # noqa: BLE001 - reranking is optional
                 logger.exception("Failed to load BLIP-2 model; reranking is disabled")
                 self.enable = False

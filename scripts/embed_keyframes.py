@@ -47,6 +47,9 @@ from _common import ROOT, add_shard_argument, make_archive, matches_any, select_
 VIDEO_ID_RE = re.compile(r"^[A-Z]\d{2,3}[-_]V\d{3}$")
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 DIMS = {"siglip2": 1152, "beit3": 768}
+SIGLIP2_MODEL = "google/siglip2-so400m-patch14-384"
+# Hub commit; the backend embeds queries with the same one (Settings.siglip_model_revision).
+SIGLIP2_REVISION = "e8e487298228002f3d8a82e0cd5c8ea9c567f57f"
 # Folder names read by build_faiss_index.py / the backend config.
 OUTPUT_DIRS = {"siglip2": "siglip", "beit3": "beit3"}
 BEIT3_WEIGHTS = "beit3_base_patch16_384_coco_retrieval.pth"
@@ -104,9 +107,8 @@ class ImageDataset(Dataset):
 def build_siglip2(device: torch.device):
     from transformers import AutoModel, AutoProcessor
 
-    name = "google/siglip2-so400m-patch14-384"
-    processor = AutoProcessor.from_pretrained(name)
-    model = AutoModel.from_pretrained(name).to(device).eval()
+    processor = AutoProcessor.from_pretrained(SIGLIP2_MODEL, revision=SIGLIP2_REVISION)
+    model = AutoModel.from_pretrained(SIGLIP2_MODEL, revision=SIGLIP2_REVISION).to(device).eval()
 
     def preprocess(image: Image.Image) -> torch.Tensor:
         # Pad 16:9 frames to a square so the processor does not crop the sides away.

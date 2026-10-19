@@ -6,10 +6,15 @@ import numpy as np
 import sentencepiece as spm
 import torch
 from transformers import AutoModel, AutoProcessor
+from transformers.utils import logging as transformers_logging
 
-from infrastructure.retrieval import RetrievalDataError
+from models.errors import RetrievalDataError
 
 logger = logging.getLogger(__name__)
+
+# Hub configs carry harmless validation warnings and loaders draw progress bars; keep errors only.
+transformers_logging.set_verbosity_error()
+transformers_logging.disable_progress_bar()
 
 _BEIT3_BOS_ID = 0
 _BEIT3_PAD_ID = 1
@@ -46,6 +51,7 @@ class EmbeddingService:
         siglip_model_id: str,
         beit3_checkpoint_dir: Path,
         device: str | None = None,
+        siglip_revision: str | None = None,
     ) -> None:
         self.device = device or default_device()
         # torch modules are not guaranteed to be thread-safe; requests run in a threadpool.
@@ -56,20 +62,23 @@ class EmbeddingService:
         self.beit3_model = None
         self.beit3_tokenizer = None
         self.beit3_error: str | None = None
-        self._load_siglip(siglip_model_id)
+        self._load_siglip(siglip_model_id, siglip_revision or None)
         self._load_beit3(beit3_checkpoint_dir)
 
-    def _load_siglip(self, model_id: str) -> None:
-        logger.info("Loading SigLIP model %s on %s", model_id, self.device)
+    def _load_siglip(self, model_id: str, revision: str | None) -> None:
+        logger.debug("Loading SigLIP model %s@%s on %s", model_id, revision, self.device)
         try:
-            self.siglip_processor = AutoProcessor.from_pretrained(model_id)
+            self.siglip_processor = AutoProcessor.from_pretrained(model_id, revision=revision)
             model = AutoModel.from_pretrained(
                 model_id,
+                revision=revision,
                 dtype=torch.float16 if self.device.startswith("cuda") else torch.float32,
                 low_cpu_mem_usage=True,
             )
             self.siglip_model = model.to(self.device).eval()
-            logger.info("SigLIP model loaded.")
+            logger.info(
+                "SigLIP model %s@%s loaded on %s", model_id, (revision or "main")[:12], self.device
+            )
         except Exception as exc:  # noqa: BLE001 - reported through siglip_error and /health/ready
             self.siglip_error = str(exc)
             logger.exception("Failed to load SigLIP model %s", model_id)
@@ -78,7 +87,7 @@ class EmbeddingService:
         try:
             from infrastructure.beit3 import modeling_finetune
 
-            logger.info("Loading BEiT-3 tokenizer and model from %s", checkpoint_dir)
+            logger.debug("Loading BEiT-3 tokenizer and model from %s", checkpoint_dir)
             self.beit3_tokenizer = spm.SentencePieceProcessor(
                 model_file=str(checkpoint_dir / _BEIT3_TOKENIZER_FILE)
             )
@@ -94,7 +103,7 @@ class EmbeddingService:
                     f"unexpected={incompatible.unexpected_keys}"
                 )
             self.beit3_model = model.to(self.device).eval()
-            logger.info("BEiT-3 model loaded.")
+            logger.info("BEiT-3 model loaded from %s on %s", checkpoint_dir, self.device)
         except Exception as exc:  # noqa: BLE001 - reported through beit3_error and /health/ready
             self.beit3_model = None
             self.beit3_error = str(exc)
