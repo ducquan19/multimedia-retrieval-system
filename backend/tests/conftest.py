@@ -42,7 +42,11 @@ def test_data_root(tmp_path: Path) -> Path:
 @pytest.fixture
 def app_settings(test_data_root: Path) -> Settings:
     # _env_file=None: a developer's .env must not change test behaviour.
-    return Settings(_env_file=None, data_root=test_data_root, log_dir=None)
+    # TestClient reports the client host "testclient", which is not a loopback address; the
+    # local-only guard has its own tests.
+    return Settings(
+        _env_file=None, data_root=test_data_root, log_dir=None, allow_remote_clients=True
+    )
 
 
 @pytest.fixture

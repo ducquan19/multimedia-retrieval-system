@@ -5,6 +5,7 @@ from core.config import Settings, get_settings
 from core.container import ServicesFactory, build_services
 from core.lifespan import lifespan
 from core.logger import configure_logging
+from factories.middleware import add_local_only_guard, add_search_timing
 from infrastructure.dres_client import DresClient
 from infrastructure.hf_signed_url import HuggingFaceUrlSigner
 from infrastructure.media_files import MediaFiles
@@ -58,6 +59,9 @@ def create_app(
         resolved_settings.dres_log_path,
     )
 
+    add_search_timing(app)
+    if not resolved_settings.allow_remote_clients:
+        add_local_only_guard(app)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[str(resolved_settings.frontend_origin).rstrip("/")],
