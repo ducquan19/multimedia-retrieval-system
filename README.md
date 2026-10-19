@@ -72,7 +72,10 @@ Copy-Item .env.example .env
 | `AIC_DRES_USERNAME`, `AIC_DRES_PASSWORD` | trống | Tài khoản nộp bài DRES |
 | `AIC_DRES_BASE_URL` | `https://eventretrieval.one` | Địa chỉ server DRES |
 | `AIC_DEVICE` | tự chọn | `cuda` hoặc `cpu` cho các model |
+| `AIC_ALLOW_REMOTE_CLIENTS` | `false` | Mặc định API chỉ trả lời request từ chính máy này (API không có đăng nhập và nộp DRES bằng tài khoản của đội). Chỉ bật khi cố ý chia sẻ backend trong mạng |
 | `AIC_LOG_LEVEL` | `INFO` | Mức log của backend (ghi ra console và `logs/backend.log`) |
+| `AIC_GEMINI_TIMEOUT_SECONDS` | `10` | Quá thời gian này thì bỏ Gemini, tìm bằng truy vấn gốc |
+| `AIC_SIGLIP_MODEL_REVISION` | commit cố định | Commit của SigLIP trên Hugging Face; phải trùng commit dùng khi trích embedding |
 
 Danh sách đầy đủ (model, index, Elasticsearch, tham số TRAKE, ...) nằm trong `backend/src/core/config.py`; mọi trường đều đặt được bằng biến `AIC_<TÊN_TRƯỜNG>`.
 
@@ -169,6 +172,7 @@ data/
 │   ├── beit3.index
 │   └── beit3.index.meta.json
 ├── objects_index.json               # build_object_index.py + append_traffic_index.py
+├── asr_texts.json                   # build_es_index.py: transcript theo shot để hiện trên giao diện
 ├── video_sources.json               # nguồn phát và fps của từng video (có trong gói dữ liệu)
 └── dres_submissions.jsonl           # lịch sử nộp DRES, backend tự ghi
 ```
@@ -191,7 +195,7 @@ Tương tự, chuyển các thư mục video trong `Objects_*` (cả N) vào `da
 
 ### Các bước build dữ liệu
 
-Chạy theo đúng thứ tự dưới đây. Mỗi khi thêm hoặc bớt keyframe, cần chạy lại từ bước 1 (kể cả bước 5). Tham số và cách chạy trên Kaggle của từng script: [scripts/README.md](scripts/README.md).
+Chạy theo đúng thứ tự dưới đây. Mỗi khi thêm hoặc bớt keyframe, cần chạy lại từ bước 1 (kể cả bước 5). Các script ghi file kết quả qua file tạm rồi mới thay thế, nên dừng giữa chừng không làm hỏng file cũ. Tham số và cách chạy trên Kaggle của từng script: [scripts/README.md](scripts/README.md).
 
 Embedding `.npy` được trích trên GPU bằng notebook `notebooks/embed_siglip2.ipynb` / `embed_beit3.ipynb` (Kaggle), hoặc `scripts/embed_keyframes.py` (Colab, Lightning, máy local). Dòng i của `<video_id>.npy` là ảnh thứ i theo số `n` tăng dần.
 
@@ -209,7 +213,7 @@ Embedding `.npy` được trích trên GPU bằng notebook `notebooks/embed_sigl
    python scripts/build_faiss_index.py
    ```
 
-3. **Build Elasticsearch index (BM25)** cho transcript. Cần chạy Elasticsearch (`docker compose up -d`) trước.
+3. **Build Elasticsearch index (BM25)** cho transcript. Cần chạy Elasticsearch (`docker compose up -d`) trước. Script chỉ đọc `keyframes.json`; transcript để hiện trên giao diện được ghi ra `data/asr_texts.json`. Index ghi lại thứ tự keyframe mà nó được build từ đó, và backend bỏ qua nguồn ASR (kèm cảnh báo) nếu thứ tự này không khớp `keyframes.json` đang dùng.
 
    ```powershell
    python scripts/build_es_index.py
@@ -254,7 +258,7 @@ Chỉ một người build dữ liệu theo [Các bước build dữ liệu](#c�
 
    Thiếu ảnh thì tìm kiếm vẫn chạy nhưng kết quả không hiện hình.
 
-4. **Index transcript vào Elasticsearch** (index nằm trong Docker của từng máy nên phải tự chạy). Sau khi đã có transcript trong `data/asr/`:
+4. **Index transcript vào Elasticsearch** (index nằm trong Docker của từng máy nên phải tự chạy). Mỗi lần nhận gói mới đều phải chạy lại bước này: nếu quên, `/api/health/ready` báo `elasticsearch` lệch thứ tự và tìm kiếm bỏ qua nguồn ASR. Sau khi đã có transcript trong `data/asr/`:
 
    ```powershell
    docker compose up -d
@@ -340,6 +344,16 @@ Vùng tìm KIS có quy trình **Query Understanding & Planning** (tuỳ chọn b
 
 Xem lại kế hoạch rồi bấm Search.
 
+## Duyệt kết quả
+
+- **Tìm ảnh tương tự:** trong chi tiết một kết quả, nút **Tìm ảnh tương tự** tìm các keyframe trông giống keyframe đang xem, bằng chính vector của nó trong FAISS (`POST /api/search/similar`). Dùng khi đã thấy một cảnh gần đúng và cần các frame khác cùng bối cảnh. Thanh công cụ có nút **← Về kết quả tìm** để quay lại.
+- **1 ảnh mỗi shot:** mỗi shot chỉ giữ ảnh có hạng cao nhất; số ảnh được gộp hiện ở góc ảnh (`+2`). Video chưa chia shot (ví dụ nhóm S) được gộp theo cửa sổ 10 giây.
+- **Cỡ ảnh S / M / L:** S hiện khoảng gấp đôi số kết quả trên một màn hình.
+- Ảnh đã mở chi tiết được làm mờ và gắn nhãn **Đã xem**; nút **Ẩn video** trong chi tiết bỏ mọi kết quả của video đó khỏi lần tìm hiện tại.
+- Phím tắt: <kbd>/</kbd> vào ô truy vấn, mũi tên để chuyển giữa các ảnh, <kbd>Enter</kbd> mở ảnh, <kbd>?</kbd> xem đủ danh sách.
+
+Cỡ ảnh và lựa chọn gộp shot được nhớ trong trình duyệt.
+
 ## Nộp bài DRES
 
 Đặt `AIC_DRES_USERNAME` và `AIC_DRES_PASSWORD` trong `.env`; có thể đặt thêm `AIC_DRES_BASE_URL`. Backend tự đăng nhập, giữ phiên DRES và gia hạn khi hết hạn. Trình duyệt không bao giờ thấy tài khoản.
@@ -350,7 +364,7 @@ Mở chi tiết một kết quả, bấm **Submit DRES**, chọn evaluation, ki�
 - **VQA** (dùng được cả trên kết quả KIS): `QA-<ANSWER>-<VIDEO_ID>-<TIME(ms)>`.
 - **TRAKE**: `TR-<VIDEO_ID>-<FRAME_ID1>,<FRAME_ID2>,...` lấy từ cả hàng ứng viên.
 
-Khi đang mở trình phát video, nút **Dùng frame đang xem** lấy thời điểm đang xem (với TRAKE là frame của sự kiện đó). Mọi câu trả lời đã được DRES chấm được ghi thêm vào `data/dres_submissions.jsonl`. Nộp lại đúng câu trả lời cũ cho cùng evaluation luôn bị chặn (`409`), kể cả sau khi khởi động lại backend; thời điểm `"12000"` và `12000` được coi là cùng một câu trả lời.
+Khi đang mở trình phát video, nút **Dùng frame đang xem** lấy thời điểm đang xem (với TRAKE là frame của sự kiện đó). Mọi câu trả lời đã được DRES chấm được ghi thêm vào `data/dres_submissions.jsonl`; nút **Đã nộp** trên thanh công cụ đọc lịch sử này từ backend (`GET /api/dres/submissions`), nên xoá dữ liệu trình duyệt không làm mất nó. Các lần nộp lỗi (mạng, DRES từ chối mà không chấm) chỉ lưu trên trình duyệt và xoá được bằng nút **Xóa lần lỗi**. Việc chặn nộp trùng chỉ áp dụng cho các lần nộp qua cùng một backend: hai thành viên chạy hai backend riêng không chặn được nhau. Nộp lại đúng câu trả lời cũ cho cùng evaluation luôn bị chặn (`409`), kể cả sau khi khởi động lại backend; thời điểm `"12000"` và `12000` được coi là cùng một câu trả lời.
 
 ## Kiểm tra chất lượng
 
@@ -361,7 +375,21 @@ make test
 make build
 ```
 
+`make typecheck` kiểm tra thêm `frontend/src/api/schema.gen.ts` còn khớp API: kiểu response của frontend được sinh từ các model Pydantic. Sau khi đổi một model của API, chạy `make api-types` (hoặc `python scripts/generate_api_types.py`) rồi commit file sinh ra.
+
+`backend/tests/test_architecture.py` kiểm tra chiều phụ thuộc giữa các package backend (xem [ADR 0005](docs/adr/0005-layered-backend.md)).
+
 `make test` không cần GPU, model hay `data/`: test backend dựng app với FAISS trong bộ nhớ, encoder và Elasticsearch giả (`backend/tests/fakes.py`). GitHub Actions (`.github/workflows/ci.yml`) chạy các lệnh trên cho mỗi push và pull request.
+
+### Log khi chạy
+
+Console chỉ hiện log của chính ứng dụng (mỗi dòng có nhãn `api |` hoặc `web |` khi chạy bằng `dev.py`). Mỗi lần tìm ghi một dòng với thời gian từng bước, ví dụ:
+
+```text
+api | 09:31:00 INFO factories.middleware: POST /api/search 200 in 517ms [embed=247ms faiss=101ms asr=163ms fusion=2ms] id=5e2263ee
+```
+
+`id` cũng có trong header `X-Request-ID` của response. Mỗi lời gọi Gemini ghi thời gian, số token và phiên bản prompt; tổng số lời gọi và token từ lúc khởi động hiện ở `/api/health/ready`.
 
 ### Đánh giá chất lượng tìm kiếm
 
@@ -378,6 +406,7 @@ python scripts/evaluate_retrieval.py data/eval/queries.jsonl --top-k 100 --outpu
 ```text
 .
 ├── backend/              # Ứng dụng FastAPI, domain model, repository và test
+├── docs/                 # ADR (docs/adr/) và báo cáo review kiến trúc
 ├── data/                 # Dữ liệu, index và media (không đưa lên Git)
 ├── frontend/             # Ứng dụng React/Vite và test frontend
 ├── notebooks/            # Notebook Kaggle: chia shot, ASR, embedding, OCR, object (GPU)
