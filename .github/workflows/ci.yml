@@ -24,7 +24,9 @@ jobs:
       - name: Install dependencies (CPU-only torch)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install torch -c backend/requirements.lock --index-url https://download.pytorch.org/whl/cpu
+          # torchvision (pulled in by timm) must come from the same index as torch: a PyPI build
+          # does not match the CPU torch and transformers then fails to import.
+          python -m pip install torch torchvision -c backend/requirements.lock --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -e "./backend[dev]" -c backend/requirements.lock
       - name: Lint
         run: |
