@@ -10,13 +10,13 @@ from pathlib import Path
 import numpy as np
 
 from models.keyframe import Keyframe
+from models.query import DAYPARTS, WEATHERS, TrafficFilters
+from models.traffic import TrafficCamera, TrafficOptions
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
-from schemas.search import TrafficCamera, TrafficFilters, TrafficOptionsResponse
 
 logger = logging.getLogger(__name__)
 
 TRAFFIC_PREFIX = "N"
-_DAYPARTS = ("morning", "midday", "night")
 _ALLOWED_CACHE_SIZE = 64
 
 
@@ -144,15 +144,16 @@ class TrafficMetadataRepository:
         except ValueError:
             return None
 
-    def options(self) -> TrafficOptionsResponse:
+    def options(self) -> TrafficOptions:
         self.load()
         videos = self._videos.values()
-        return TrafficOptionsResponse(
+        return TrafficOptions(
             available=bool(self._videos),
             cameras=self._cameras,
             dates=tuple(sorted({v.date for v in videos if v.date})),
-            dayparts=tuple(p for p in _DAYPARTS if any(v.daypart == p for v in videos)),
-            weathers=tuple(sorted({v.weather for v in videos if v.weather})),
+            dayparts=tuple(p for p in DAYPARTS if any(v.daypart == p for v in videos)),
+            # Only labels the traffic filters accept; video_weather.csv has no others.
+            weathers=tuple(w for w in WEATHERS if any(v.weather == w for v in videos)),
         )
 
     def video(self, video_id: str) -> TrafficVideo | None:

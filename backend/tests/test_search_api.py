@@ -14,7 +14,7 @@ from core.intro_exclusion import IntroExclusionPolicy
 from factories.factory import create_app
 from fakes import FakeElasticsearch, build_test_services
 from infrastructure.embedding_service import EmbeddingService, _remap_beit3_sentencepiece_ids
-from infrastructure.retrieval import RetrievalDataError
+from models.errors import RetrievalDataError
 from models.keyframe import Keyframe, KeyframeCollection
 from repositories.text_repository import KeyframeTextRepository, TextSearchUnavailable
 from repositories.vector_repository import KeyframeVectorRepository
@@ -239,10 +239,7 @@ def test_asr_source_uses_elasticsearch(client: TestClient) -> None:
 
 def test_offline_elasticsearch_is_reported_as_a_warning(app_settings: Settings) -> None:
     def services_with_offline_es(settings, video_sources):
-        services = build_test_services(settings, video_sources)
-        engine = services.search_service._retrieval_engine
-        engine._text_repository.es = FakeElasticsearch(available=False)
-        return services
+        return build_test_services(settings, video_sources, es=FakeElasticsearch(available=False))
 
     with TestClient(create_app(app_settings, services_with_offline_es)) as offline_client:
         response = offline_client.post(

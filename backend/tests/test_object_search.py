@@ -1,22 +1,31 @@
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 from core.intro_exclusion import IntroExclusionPolicy
-from infrastructure.retrieval import RetrievalOutcome
+from models.candidate import ScoredCandidate
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
 from repositories.object_repository import KeyframeObjectRepository
-from schemas.retrieval import ScoredCandidate
 from schemas.search import KISSearchRequest, ObjectQueryTerm, QueryVariants, SearchSources
-from services.retrieval_service import RetrievalService
+from services.ports import RetrievalOutcome
+from services.retrieval.fusion import (
+    AsrModality,
+    CandidateSearch,
+    ObjectModality,
+    VisualModality,
+)
 from services.search_service import SearchService, SearchValidationError
 
 _SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "build_object_index.py"
 
 
 def _load_build_script():
+    # The scripts import their shared helpers as `_common`, like `python scripts/<x>.py` does.
+    if str(_SCRIPT.parent) not in sys.path:
+        sys.path.insert(0, str(_SCRIPT.parent))
     spec = importlib.util.spec_from_file_location("build_object_index", _SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -225,7 +234,7 @@ def test_enhanced_search_reports_auto_objects_and_gated_weights(data_root: Path)
 
     assert enhancer.sources == request.search_sources
     assert response.auto_object_query == (ObjectQueryTerm(label="Dog"),)
-    assert response.applied_weights == {"w_vis": 0.8, "w_asr": 0.0, "w_obj": 0.9}
+    assert response.applied_weights.model_dump() == {"w_vis": 0.8, "w_asr": 0.0, "w_obj": 0.9}
     assert response.warnings == []
     assert "Objects: Dog ≥1" in response.enhanced_query
 
@@ -285,11 +294,6 @@ class _FakeTextRepository:
         return self.candidates
 
 
-class _FakeEmbeddings:
-    def get_siglip_embedding(self, query):
-        return None
-
-
 def _candidate(repository: KeyframeMetadataRepository, keyframe_id: str, score: float):
     return ScoredCandidate(
         faiss_id=repository.index_of(keyframe_id),
@@ -298,15 +302,17 @@ def _candidate(repository: KeyframeMetadataRepository, keyframe_id: str, score: 
     )
 
 
-def _retrieval(data_root: Path, keyframes, visual, text) -> RetrievalService:
-    return RetrievalService(
-        keyframe_repository=keyframes,
-        siglip_vector_repo=_FakeVectorRepository(visual),
-        beit3_vector_repo=_FakeVectorRepository([]),
-        text_repository=text,
-        embedding_service=_FakeEmbeddings(),
-        intro_exclusion_policy=IntroExclusionPolicy({}),
-        object_repository=_repository(data_root),
+def _fusion(data_root: Path, visual, text) -> CandidateSearch:
+    intro = IntroExclusionPolicy({})
+    return CandidateSearch(
+        visual=VisualModality(
+            {"siglip": lambda _: None, "beit3": lambda _: None},
+            {"siglip": _FakeVectorRepository(visual), "beit3": _FakeVectorRepository([])},
+            intro,
+        ),
+        asr=AsrModality(text, intro),
+        objects=ObjectModality(_repository(data_root)),
+        intro_exclusion_policy=intro,
     )
 
 
@@ -321,7 +327,7 @@ def test_fusion_merges_auto_objects_and_shares_asr_scores_within_a_shot(
     ]
     # ASR only hit the other keyframe of shot 0; its score must reach 000480 too.
     text = _FakeTextRepository([_candidate(keyframes, "L99_V001/S00000/000400", 12.0)])
-    service = _retrieval(data_root, keyframes, visual, text)
+    service = _fusion(data_root, visual, text)
     enhanced = QueryVariants(
         variants=["a dog"],
         w_vis=0.5,
@@ -331,7 +337,7 @@ def test_fusion_merges_auto_objects_and_shares_asr_scores_within_a_shot(
         objects=(ObjectQueryTerm(label="Dog"), ObjectQueryTerm(label="Person")),
     )
 
-    candidates = service._search_candidates(
+    candidates = service.search(
         "chó",
         ["siglip"],
         fetch_k=10,
@@ -358,9 +364,9 @@ def test_fusion_renormalizes_weights_when_a_modality_returns_nothing(data_root: 
         _candidate(keyframes, "L99_V001/S00002/000900", 0.9),
         _candidate(keyframes, "L99_V001/S00001/000600", 0.1),
     ]
-    service = _retrieval(data_root, keyframes, visual, _FakeTextRepository([]))
+    service = _fusion(data_root, visual, _FakeTextRepository([]))
 
-    candidates = service._search_candidates(
+    candidates = service.search(
         "q",
         ["siglip"],
         fetch_k=10,

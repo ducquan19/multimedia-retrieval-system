@@ -7,7 +7,7 @@ the weights the retrieval engine actually fused with.
 from dataclasses import dataclass
 
 from core.constants import MANUAL_OBJECT_WEIGHT
-from schemas.search import ObjectQueryTerm, QueryVariants, SearchSources
+from models.query import ObjectQueryTerm, QueryVariants, SearchSources
 
 
 @dataclass(frozen=True)

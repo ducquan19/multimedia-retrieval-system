@@ -2,12 +2,12 @@
 
 import pytest
 
-from core.intro_exclusion import IntroExclusionPolicy
-from infrastructure.retrieval import RetrievalOutcome
+from models.candidate import ScoredCandidate
 from models.keyframe import Keyframe
-from schemas.retrieval import ScoredCandidate
 from schemas.search import SearchSources, TRAKEEventQuery, TRAKESearchRequest
-from services.retrieval_service import RetrievalService, TrakeConfig
+from services.ports import RetrievalOutcome
+from services.retrieval.presenter import ResultPresenter
+from services.retrieval.trake import TrakeConfig, TrakeSearch
 
 FPS = 25.0
 
@@ -23,22 +23,33 @@ def candidate(frame: int, score: float, video: str = "L01_V001", shot: str | Non
     return ScoredCandidate(faiss_id=frame, keyframe=keyframe, similarity_score=score)
 
 
+class _FixedCandidates:
+    """Only the beam search is under test: each event query returns fixed candidates."""
+
+    def __init__(self, candidates_by_query: dict[str, list[ScoredCandidate]]) -> None:
+        self._candidates_by_query = candidates_by_query
+
+    def search(self, query: str, *args, **kwargs) -> list[ScoredCandidate]:
+        return list(self._candidates_by_query[query])
+
+
+class _TrakeOnly:
+    def __init__(self, search: TrakeSearch) -> None:
+        self._search = search
+
+    def retrieve(self, request: TRAKESearchRequest) -> RetrievalOutcome:
+        sequences = self._search.search(request, None, None, [])
+        return RetrievalOutcome(results=ResultPresenter().trake(sequences))
+
+
 def service(candidates_by_query: dict[str, list[ScoredCandidate]], dedup_seconds: float):
-    retrieval = RetrievalService(
-        keyframe_repository=None,  # type: ignore[arg-type]
-        siglip_vector_repo=None,  # type: ignore[arg-type]
-        beit3_vector_repo=None,  # type: ignore[arg-type]
-        text_repository=None,  # type: ignore[arg-type]
-        embedding_service=None,  # type: ignore[arg-type]
-        intro_exclusion_policy=IntroExclusionPolicy({}),
-        fps_lookup=lambda _: FPS,
-        trake_config=TrakeConfig(dedup_seconds=dedup_seconds),
+    return _TrakeOnly(
+        TrakeSearch(
+            _FixedCandidates(candidates_by_query),  # type: ignore[arg-type]
+            TrakeConfig(dedup_seconds=dedup_seconds),
+            fps_lookup=lambda _: FPS,
+        )
     )
-    # Only the beam search is under test: each event query returns fixed candidates.
-    retrieval._search_candidates = lambda query, *args, **kwargs: list(  # type: ignore[method-assign]
-        candidates_by_query[query]
-    )
-    return retrieval
 
 
 def trake(*queries: str) -> TRAKESearchRequest:

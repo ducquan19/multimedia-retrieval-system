@@ -97,9 +97,10 @@ class FakeEmbeddingService:
 class FakeElasticsearch:
     """Answers every BM25 query with the first keyframes inside the requested ranges."""
 
-    def __init__(self, available: bool = True) -> None:
+    def __init__(self, available: bool = True, meta: dict[str, Any] | None = None) -> None:
         self.available = available
         self.queries: list[dict[str, Any]] = []
+        self.indices = _FakeIndices(self, meta)
 
     def ping(self) -> bool:
         return self.available
@@ -124,6 +125,22 @@ class FakeElasticsearch:
         return {"hits": {"hits": hits[:size]}}
 
 
+class _FakeIndices:
+    """The mapping of the one index: ``meta`` is what build_es_index.py records in _meta."""
+
+    def __init__(self, es: FakeElasticsearch, meta: dict[str, Any] | None) -> None:
+        self._es = es
+        self.meta = meta
+
+    def get_mapping(self, *, index: str) -> dict:
+        if not self._es.available:
+            raise ConnectionError("Elasticsearch is offline")
+        mappings: dict[str, Any] = {"properties": {}}
+        if self.meta is not None:
+            mappings["_meta"] = self.meta
+        return {index: {"mappings": mappings}}
+
+
 class FakeQueryEnhancer:
     available = True
 
@@ -144,7 +161,11 @@ class FakeQueryEnhancer:
         return None
 
 
-def build_test_services(settings: Settings, video_sources: VideoSourceService) -> AppServices:
+def build_test_services(
+    settings: Settings,
+    video_sources: VideoSourceService,
+    es: FakeElasticsearch | None = None,
+) -> AppServices:
     keyframe_repository = KeyframeMetadataRepository(settings.data_root)
     count = len(keyframe_repository)
     intro_policy = IntroExclusionPolicy({})
@@ -157,7 +178,13 @@ def build_test_services(settings: Settings, video_sources: VideoSourceService) -
         "BEiT-3", Path("memory"), TEST_DIM, keyframe_repository, intro_policy, index=index
     )
     text_repository = KeyframeTextRepository(
-        "http://es.invalid", keyframe_repository, intro_policy, es_client=FakeElasticsearch()
+        "http://es.invalid",
+        keyframe_repository,
+        intro_policy,
+        es_client=es
+        or FakeElasticsearch(
+            meta={"keyframe_order": keyframe_repository.order_hash(), "keyframe_count": count}
+        ),
     )
     object_repository = KeyframeObjectRepository(
         settings.object_index_path, keyframe_repository, intro_policy
@@ -180,7 +207,6 @@ def build_test_services(settings: Settings, video_sources: VideoSourceService) -
         max_trake_events=settings.max_trake_events,
         max_query_length=settings.max_query_length,
         object_repository=object_repository,
-        traffic_repository=traffic_repository,
     )
     return AppServices(
         search_service=search_service,

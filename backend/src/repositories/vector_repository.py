@@ -7,10 +7,10 @@ import faiss
 import numpy as np
 
 from core.intro_exclusion import IntroExclusionPolicy
-from infrastructure.retrieval import RetrievalDataError
+from models.candidate import ScoredCandidate
+from models.errors import RetrievalDataError
 from repositories import id_filter
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
-from schemas.retrieval import ScoredCandidate
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,12 @@ class KeyframeVectorRepository:
             np.ascontiguousarray(query_vector, dtype=np.float32), top_k, params=params
         )
         return self._hydrate_candidates(indices[0].tolist(), distances[0].tolist())
+
+    def vector(self, faiss_id: int) -> np.ndarray:
+        """The indexed embedding of one keyframe, shaped (1, dim) for ``search``."""
+        if self._index is None:
+            raise RetrievalDataError(f"The {self.name} index is not available")
+        return self._index.reconstruct(faiss_id).reshape(1, -1)
 
     def _restriction(self, allowed: np.ndarray | None) -> np.ndarray | None:
         intro_mask = self._get_intro_mask()

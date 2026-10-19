@@ -42,6 +42,13 @@ class AppServices:
 ServicesFactory = Callable[[Settings, VideoSourceService], AppServices]
 
 
+def elasticsearch_check(text_repository: KeyframeTextRepository, es_url: str) -> tuple[bool, str]:
+    if not text_repository.ping():
+        return False, f"unreachable: {es_url}"
+    status, detail = text_repository.index_order_status()
+    return status == "ok", detail
+
+
 def build_services(settings: Settings, video_sources: VideoSourceService) -> AppServices:
     # Imported here so that importing the app (e.g. for tests) does not import torch models.
     from infrastructure.blip2_reranker import BLIP2Reranker
@@ -49,9 +56,11 @@ def build_services(settings: Settings, video_sources: VideoSourceService) -> App
     from repositories.vector_repository import KeyframeVectorRepository
     from services.retrieval_service import RetrievalService, TrakeConfig
 
-    logger.info("Loading keyframe metadata from %s", settings.data_root)
+    logger.debug("Loading keyframe metadata from %s", settings.data_root)
     keyframe_repository = KeyframeMetadataRepository(
-        settings.data_root, settings.keyframes_filename
+        settings.data_root,
+        settings.keyframes_filename,
+        asr_texts_filename=settings.asr_texts_filename,
     )
     keyframe_repository.load()
     intro_policy = IntroExclusionPolicy(settings.intro_frame_counts)
@@ -63,7 +72,10 @@ def build_services(settings: Settings, video_sources: VideoSourceService) -> App
         "BEiT-3", settings.faiss_beit3_path, settings.beit3_dim, keyframe_repository, intro_policy
     )
     embedding_service = EmbeddingService(
-        settings.siglip_model_id, settings.beit3_checkpoint_dir, settings.device
+        settings.siglip_model_id,
+        settings.beit3_checkpoint_dir,
+        settings.device,
+        siglip_revision=settings.siglip_model_revision,
     )
     text_repository = KeyframeTextRepository(
         settings.es_url, keyframe_repository, intro_policy, settings.es_index_name
@@ -80,6 +92,7 @@ def build_services(settings: Settings, video_sources: VideoSourceService) -> App
         settings.data_root,
         settings.enable_reranking,
         model_id=settings.blip2_model_id,
+        revision=settings.blip2_model_revision or None,
         device=settings.device,
         depth=settings.rerank_depth,
     )
@@ -104,6 +117,7 @@ def build_services(settings: Settings, video_sources: VideoSourceService) -> App
         api_key=settings.gemini_api_key.get_secret_value() if settings.gemini_api_key else None,
         object_labels=object_repository.labels(),
         model=settings.gemini_model,
+        timeout_seconds=settings.gemini_timeout_seconds,
     )
     search_service = SearchService(
         retrieval_engine=retrieval_service,
@@ -111,7 +125,6 @@ def build_services(settings: Settings, video_sources: VideoSourceService) -> App
         max_trake_events=settings.max_trake_events,
         max_query_length=settings.max_query_length,
         object_repository=object_repository,
-        traffic_repository=traffic_repository,
     )
 
     def model_check(model, error: str | None, index: KeyframeVectorRepository):
@@ -136,16 +149,14 @@ def build_services(settings: Settings, video_sources: VideoSourceService) -> App
             "beit3": model_check(
                 embedding_service.beit3_model, embedding_service.beit3_error, beit3_repo
             ),
-            "elasticsearch": lambda: (
-                (True, "ok")
-                if text_repository.ping()
-                else (False, f"unreachable: {settings.es_url}")
-            ),
+            "elasticsearch": lambda: elasticsearch_check(text_repository, settings.es_url),
             "objects": lambda: (
                 (True, "ok") if object_repository.available else (False, "object index missing")
             ),
             "gemini": lambda: (
-                (True, "ok") if query_enhancer.available else (False, "no API key or client")
+                (True, f"ok, {query_enhancer.usage_summary()}")
+                if query_enhancer.available
+                else (False, "no API key or client")
             ),
         },
         closers=[text_repository.close],

@@ -1,7 +1,5 @@
-from infrastructure.query_enhancer import QueryEnhancer
-from infrastructure.retrieval import EnhancedQueries, RetrievalEngine
+from core.timing import stage
 from repositories.object_repository import KeyframeObjectRepository
-from repositories.traffic_repository import TrafficMetadataRepository
 from schemas.search import (
     KISQueryPlan,
     KISSearchRequest,
@@ -10,6 +8,8 @@ from schemas.search import (
     QueryVariants,
     SearchRequest,
     SearchResponse,
+    SimilarSearchRequest,
+    SimilarSearchResponse,
     SingleSearchResult,
     TrafficSearchRequest,
     TrafficSearchResponse,
@@ -18,6 +18,7 @@ from schemas.search import (
     TRAKESearchResult,
     VQASearchResponse,
 )
+from services.ports import EnhancedQueries, QueryEnhancer, RetrievalEngine
 from services.weights import object_terms_for, resolve_weights
 
 _GEMINI_FALLBACK_WARNING = (
@@ -37,14 +38,12 @@ class SearchService:
         max_trake_events: int,
         max_query_length: int,
         object_repository: KeyframeObjectRepository | None = None,
-        traffic_repository: TrafficMetadataRepository | None = None,
     ) -> None:
         self._retrieval_engine = retrieval_engine
         self._query_enhancer = query_enhancer
         self._max_trake_events = max_trake_events
         self._max_query_length = max_query_length
         self._object_repository = object_repository
-        self._traffic_repository = traffic_repository
 
     @property
     def _object_search_available(self) -> bool:
@@ -55,12 +54,16 @@ class SearchService:
             raise SearchValidationError(
                 f"query must contain at most {self._max_query_length} characters"
             )
-        plan = self._query_enhancer.plan_kis(query) if self._query_enhancer else None
+        with stage("gemini"):
+            plan = self._query_enhancer.plan_kis(query) if self._query_enhancer else None
         if plan is None:
             raise SearchValidationError(
                 "Gemini could not create a KIS query plan. Check the API key/quota and retry."
             )
         return plan
+
+    def similar(self, request: SimilarSearchRequest) -> SimilarSearchResponse:
+        return self._retrieval_engine.similar(request)
 
     def search(self, request: SearchRequest) -> SearchResponse:
         self._validate_query_lengths(request)
@@ -115,16 +118,6 @@ class SearchService:
         if not planned:
             warnings.extend(self._object_warnings(request, auto_objects))
 
-        filtered_keyframes = 0
-        if isinstance(request, TrafficSearchRequest):
-            if self._traffic_repository is None or not self._traffic_repository.available:
-                raise SearchValidationError(
-                    "Traffic metadata is unavailable (data/traffic_camera/cameras.json)."
-                )
-            filtered_keyframes = int(self._traffic_repository.allowed_mask(request.filters).sum())
-            if filtered_keyframes == 0:
-                warnings.append("No traffic keyframe matches the selected filters.")
-
         outcome = self._retrieval_engine.retrieve(request, enhanced_queries)
         warnings.extend(outcome.warnings)
 
@@ -152,7 +145,7 @@ class SearchService:
             return TrafficSearchResponse(
                 query_type="TRAFFIC",
                 auto_object_query=auto_objects,
-                filtered_keyframes=filtered_keyframes,
+                filtered_keyframes=outcome.filtered_keyframes or 0,
                 results=results,
                 **common,
             )
@@ -163,16 +156,18 @@ class SearchService:
     def _enhance(self, request: SearchRequest) -> QueryVariants | None:
         if self._query_enhancer is None:
             return None
-        enhanced = self._query_enhancer.enhance(
-            request.query, request.query_type, request.search_sources
-        )
+        with stage("gemini"):
+            enhanced = self._query_enhancer.enhance(
+                request.query, request.query_type, request.search_sources
+            )
         return enhanced if enhanced and enhanced.variants else None
 
     def _enhance_batch(self, request: TRAKESearchRequest) -> dict[int, QueryVariants] | None:
         if self._query_enhancer is None:
             return None
         queries = {event.event_index: event.query for event in request.events}
-        return self._query_enhancer.enhance_batch(queries, request.search_sources) or None
+        with stage("gemini"):
+            return self._query_enhancer.enhance_batch(queries, request.search_sources) or None
 
     def _applied_weights(
         self, request: SearchRequest, enhanced: QueryVariants | None

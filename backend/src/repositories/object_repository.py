@@ -8,9 +8,9 @@ from typing import Any
 import numpy as np
 
 from core.intro_exclusion import IntroExclusionPolicy
+from models.candidate import ScoredCandidate
+from models.query import ObjectQueryTerm
 from repositories.keyframe_metadata_repository import KeyframeMetadataRepository
-from schemas.retrieval import ScoredCandidate
-from schemas.search import ObjectQueryTerm
 
 logger = logging.getLogger(__name__)
 

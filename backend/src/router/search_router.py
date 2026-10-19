@@ -7,7 +7,7 @@ from core.dependencies import (
     TrafficRepositoryDependency,
     VideoSourcesDependency,
 )
-from infrastructure.retrieval import RetrievalDataError
+from models.errors import RetrievalDataError
 from repositories.keyframe_metadata_repository import KeyframeMetadataError
 from schemas.search import (
     KISQueryPlan,
@@ -15,9 +15,13 @@ from schemas.search import (
     ObjectLabelsResponse,
     SearchRequest,
     SearchResponse,
+    SimilarSearchRequest,
+    SimilarSearchResponse,
     TrafficOptionsResponse,
 )
 from schemas.video import VideoKeyframe, VideoKeyframesResponse, VideoSourceResponse
+from services.retrieval.presenter import ResultPresenter, media_url
+from services.retrieval.similar import ExampleNotFound
 from services.search_service import SearchValidationError
 from services.video_source_service import (
     VideoSourceError,
@@ -65,6 +69,22 @@ def search(payload: SearchRequest, service: SearchServiceDependency) -> SearchRe
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+@router.post(
+    "/search/similar",
+    response_model=SimilarSearchResponse,
+    summary="Keyframes that look like a given keyframe",
+)
+def search_similar(
+    payload: SimilarSearchRequest, service: SearchServiceDependency
+) -> SimilarSearchResponse:
+    try:
+        return service.similar(payload)
+    except ExampleNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (KeyframeMetadataError, RetrievalDataError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.get("/objects/labels", response_model=ObjectLabelsResponse)
 def get_object_labels(repository: ObjectRepositoryDependency) -> ObjectLabelsResponse:
     return ObjectLabelsResponse(available=repository.available, labels=repository.labels())
@@ -72,7 +92,7 @@ def get_object_labels(repository: ObjectRepositoryDependency) -> ObjectLabelsRes
 
 @router.get("/traffic/options", response_model=TrafficOptionsResponse)
 def get_traffic_options(repository: TrafficRepositoryDependency) -> TrafficOptionsResponse:
-    return repository.options()
+    return TrafficOptionsResponse.model_validate(repository.options(), from_attributes=True)
 
 
 @router.get("/videos/{video_id}/keyframes", response_model=VideoKeyframesResponse)
@@ -90,6 +110,7 @@ def get_video_keyframes(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not window:
         raise HTTPException(status_code=404, detail=f"No keyframes for video {video_id}.")
+    presenter = ResultPresenter(objects)
     return VideoKeyframesResponse(
         video_id=video_id,
         center_index=center_index,
@@ -97,10 +118,10 @@ def get_video_keyframes(
             VideoKeyframe(
                 frame_id=item.frame_id,
                 time_ms=item.time_ms,
-                keyframe_url=f"/media/{item.image_path}",
+                keyframe_url=media_url(item.image_path),
                 segment_id=item.segment_id or "",
                 asr_text=item.asr_text or "",
-                objects=item.objects or objects.objects_for(item.keyframe_id),
+                objects=presenter.objects_for(item),
             )
             for item in window
         ],
