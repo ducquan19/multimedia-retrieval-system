@@ -1,8 +1,9 @@
 import logging
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Sequence
-from typing import Literal, Protocol
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -11,11 +12,19 @@ try:
 except ImportError:
     genai = None
 
-from schemas.search import KISQueryPlan, ObjectQueryTerm, QueryVariants, SearchSources
+from models.query import KISQueryPlan, ObjectQueryTerm, QueryVariants, SearchSources
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_GEMINI_TIMEOUT_SECONDS = 10.0
+# Bump the version of a prompt whenever its wording changes, so logs and evaluation runs can
+# tell which prompt produced a result.
+PROMPT_VERSIONS = {
+    "enhance": "enhance-v1",
+    "enhance_batch": "enhance-batch-v1",
+    "kis_plan": "kis-plan-v1",
+}
 _KIS_PLAN_CACHE_SIZE = 128
 _ENHANCE_CACHE_SIZE = 256
 _MAX_AUTO_OBJECTS = 4
@@ -120,26 +129,24 @@ class _LruCache[T]:
                 self._items.popitem(last=False)
 
 
-class QueryEnhancer(Protocol):
-    def enhance(
-        self, query: str, query_type: str, sources: SearchSources | None = None
-    ) -> QueryVariants | None: ...
-    def enhance_batch(
-        self, queries: dict[int, str], sources: SearchSources | None = None
-    ) -> dict[int, QueryVariants] | None: ...
-    def plan_kis(self, query: str) -> KISQueryPlan | None: ...
-
-
 class GeminiQueryEnhancer:
-    """Uses Gemini to rewrite a query, pick detector objects and weight each modality."""
+    """Uses Gemini to rewrite a query, pick detector objects and weight each modality.
+
+    Implements services.ports.QueryEnhancer.
+    """
 
     def __init__(
         self,
         api_key: str | None = None,
         object_labels: Sequence[str] = (),
         model: str = DEFAULT_GEMINI_MODEL,
+        timeout_seconds: float = DEFAULT_GEMINI_TIMEOUT_SECONDS,
     ) -> None:
         self.model = model
+        self._usage_lock = threading.Lock()
+        self._calls = 0
+        self._failures = 0
+        self._tokens = 0
         self._kis_plan_cache: _LruCache[KISQueryPlan] = _LruCache(_KIS_PLAN_CACHE_SIZE)
         self._enhance_cache: _LruCache[QueryVariants] = _LruCache(_ENHANCE_CACHE_SIZE)
         self._object_labels = tuple(object_labels)
@@ -151,13 +158,75 @@ class GeminiQueryEnhancer:
             logger.warning("AIC_GEMINI_API_KEY is not set; Enhance query is disabled.")
         else:
             try:
-                self.client = genai.Client(api_key=api_key)
+                # Gemini runs inside the search request: without a timeout a stalled call holds
+                # a worker and the user never gets the raw-query fallback.
+                self.client = genai.Client(
+                    api_key=api_key,
+                    http_options=genai.types.HttpOptions(timeout=int(timeout_seconds * 1000)),
+                )
             except Exception:  # noqa: BLE001 - enhancement is optional
                 logger.exception("Could not create the Gemini client; Enhance query is disabled.")
 
     @property
     def available(self) -> bool:
         return self.client is not None
+
+    def usage_summary(self) -> str:
+        """Calls and tokens since startup, e.g. for /api/health/ready."""
+        with self._usage_lock:
+            return f"{self._calls} calls ({self._failures} failed), {self._tokens} tokens"
+
+    def _generate(
+        self,
+        kind: str,
+        prompt: str,
+        schema: type[BaseModel],
+        temperature: float,
+        max_output_tokens: int | None = None,
+    ) -> Any:
+        """One structured Gemini call, logged with its duration, tokens and prompt version."""
+        started = time.perf_counter()
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    automatic_function_calling=genai.types.AutomaticFunctionCallingConfig(
+                        disable=True
+                    ),
+                ),
+            )
+        except Exception:
+            with self._usage_lock:
+                self._calls += 1
+                self._failures += 1
+            logger.warning(
+                "Gemini %s (%s) failed after %.0f ms",
+                kind,
+                PROMPT_VERSIONS[kind],
+                (time.perf_counter() - started) * 1000,
+            )
+            raise
+        usage = getattr(response, "usage_metadata", None)
+        prompt_tokens = getattr(usage, "prompt_token_count", None) or 0
+        output_tokens = getattr(usage, "candidates_token_count", None) or 0
+        total_tokens = getattr(usage, "total_token_count", None) or prompt_tokens + output_tokens
+        with self._usage_lock:
+            self._calls += 1
+            self._tokens += total_tokens
+        logger.info(
+            "Gemini %s (%s) took %.0f ms, %d prompt + %d output tokens",
+            kind,
+            PROMPT_VERSIONS[kind],
+            (time.perf_counter() - started) * 1000,
+            prompt_tokens,
+            output_tokens,
+        )
+        return response.parsed
 
     def enhance(
         self, query: str, query_type: str, sources: SearchSources | None = None
@@ -198,20 +267,9 @@ class GeminiQueryEnhancer:
         """
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=_GeminiQueryVariants,
-                    temperature=0.2,
-                    automatic_function_calling=genai.types.AutomaticFunctionCallingConfig(
-                        disable=True
-                    ),
-                ),
-            )
-            if response.parsed:
-                enhanced = self._to_query_variants(response.parsed)
+            parsed = self._generate("enhance", prompt, _GeminiQueryVariants, temperature=0.2)
+            if parsed:
+                enhanced = self._to_query_variants(parsed)
                 if enhanced is not None:
                     logger.info(
                         "Gemini enhanced '%s' -> %s | asr=%s | objects=%s | "
@@ -257,22 +315,12 @@ class GeminiQueryEnhancer:
         """
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=_GeminiQueryVariantsBatch,
-                    temperature=0.2,
-                    automatic_function_calling=genai.types.AutomaticFunctionCallingConfig(
-                        disable=True
-                    ),
-                ),
+            parsed = self._generate(
+                "enhance_batch", prompt, _GeminiQueryVariantsBatch, temperature=0.2
             )
-
-            if response.parsed:
+            if parsed:
                 results_dict = {}
-                for item in response.parsed.results:
+                for item in parsed.results:
                     enhanced = self._to_query_variants(item.result)
                     if item.event_index in queries and enhanced is not None:
                         results_dict[item.event_index] = enhanced
@@ -327,22 +375,12 @@ class GeminiQueryEnhancer:
         """
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=_GeminiKISQueryPlan,
-                    temperature=0.1,
-                    max_output_tokens=1200,
-                    automatic_function_calling=genai.types.AutomaticFunctionCallingConfig(
-                        disable=True
-                    ),
-                ),
+            parsed = self._generate(
+                "kis_plan", prompt, _GeminiKISQueryPlan, temperature=0.1, max_output_tokens=1200
             )
-            if response.parsed:
+            if parsed:
                 plan = KISQueryPlan.model_validate(
-                    {**response.parsed.model_dump(), "planner_model": self.model}
+                    {**parsed.model_dump(), "planner_model": self.model}
                 )
                 self._kis_plan_cache.put(cache_key, plan)
                 logger.info("Gemini planned KIS query with %d event(s).", len(plan.events))
