@@ -1,31 +1,45 @@
 import { useEffect, useState } from "react";
 
-const DARK_MODE_STORAGE_KEY = "aic-retrieval-theme";
+const THEME_STORAGE_KEY = "aic-retrieval-theme";
+const DARK_QUERY = "(prefers-color-scheme: dark)";
 
-function prefersDarkMode(): boolean {
+/** "system" follows the operating system, also when it changes while the page is open. */
+export type ThemeMode = "light" | "dark" | "system";
+
+function storedMode(): ThemeMode {
   try {
-    const storedTheme = window.localStorage.getItem(DARK_MODE_STORAGE_KEY);
-    if (storedTheme === "dark") return true;
-    if (storedTheme === "light") return false;
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
   } catch {
-    // Fall through to the operating-system preference when storage is unavailable.
+    // Storage unavailable: follow the operating system.
   }
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  return "system";
 }
 
-/** Dark-mode switch persisted per browser and applied as <html data-theme>. */
-export function useThemePreference(): [boolean, (dark: boolean) => void] {
-  const [isDarkMode, setIsDarkMode] = useState(prefersDarkMode);
+function systemPrefersDark(): boolean {
+  return window.matchMedia?.(DARK_QUERY).matches ?? false;
+}
+
+/** Theme choice persisted per browser and applied as <html data-theme="light|dark">. */
+export function useThemePreference(): [ThemeMode, (mode: ThemeMode) => void] {
+  const [mode, setMode] = useState<ThemeMode>(storedMode);
 
   useEffect(() => {
-    const theme = isDarkMode ? "dark" : "light";
-    document.documentElement.dataset.theme = theme;
     try {
-      window.localStorage.setItem(DARK_MODE_STORAGE_KEY, theme);
+      window.localStorage.setItem(THEME_STORAGE_KEY, mode);
     } catch {
-      // The visual preference still applies for this session when storage is unavailable.
+      // The theme still applies for this session when storage is unavailable.
     }
-  }, [isDarkMode]);
+    const apply = () => {
+      const dark = mode === "dark" || (mode === "system" && systemPrefersDark());
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+    };
+    apply();
+    if (mode !== "system" || !window.matchMedia) return;
+    const query = window.matchMedia(DARK_QUERY);
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, [mode]);
 
-  return [isDarkMode, setIsDarkMode];
+  return [mode, setMode];
 }

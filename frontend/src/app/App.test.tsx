@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -180,19 +180,51 @@ describe("App query workspace", () => {
     );
   });
 
-  it("toggles and remembers dark mode from the brand switch", async () => {
+  it("switches and remembers the light, dark or device theme", async () => {
     setupApi();
     const user = userEvent.setup();
     renderApp();
 
-    const themeSwitch = await screen.findByRole("switch", { name: "Chế độ tối" });
-    expect(themeSwitch).not.toBeChecked();
+    // Nothing chosen yet: follow the device (light here, jsdom has no dark preference).
+    const toggle = await screen.findByRole("button", { name: /^Giao diện theo thiết bị/ });
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
 
-    await user.click(themeSwitch);
-    expect(themeSwitch).toBeChecked();
+    // One button cycles: device -> light -> dark -> device.
+    await user.click(toggle);
+    expect(toggle).toHaveAccessibleName("Giao diện sáng. Bấm để chuyển sang tối");
+    expect(window.localStorage.getItem("aic-retrieval-theme")).toBe("light");
+
+    await user.click(toggle);
+    expect(toggle).toHaveAccessibleName(/^Giao diện tối/);
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     expect(window.localStorage.getItem("aic-retrieval-theme")).toBe("dark");
+
+    await user.click(toggle);
+    expect(toggle).toHaveAccessibleName(/^Giao diện theo thiết bị/);
+    expect(window.localStorage.getItem("aic-retrieval-theme")).toBe("system");
+  });
+
+  it("follows the device theme while it changes", async () => {
+    setupApi();
+    let dark = false;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      media: query,
+      get matches() {
+        return dark;
+      },
+      addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+    }));
+    window.localStorage.setItem("aic-retrieval-theme", "system");
+    renderApp();
+    await screen.findByRole("button", { name: /^Giao diện theo thiết bị/ });
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+
+    dark = true;
+    act(() => listeners.forEach((listener) => listener()));
+
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   });
 
   it("keeps result controls and video lookup in one shared header", async () => {
@@ -675,6 +707,25 @@ describe("App query workspace", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Không thể kết nối tới backend",
     );
+  });
+
+  it("waits for the backend while it is still starting", async () => {
+    const fetchMock = setupApi();
+    const answer = fetchMock.getMockImplementation()!;
+    let configCalls = 0;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/api/config") && configCalls++ === 0) {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return answer(input, init);
+    });
+    renderApp();
+
+    expect(await screen.findByText(/Đang chờ backend khởi động/)).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/^Truy vấn KIS/, {}, { timeout: 3_000 }),
+    ).toBeInTheDocument();
+    expect(configCalls).toBe(2);
   });
 
   it("renders an explicit empty state", async () => {
