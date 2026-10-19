@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from core.dependencies import DresServiceDependency, SettingsDependency
 from infrastructure.dres_client import DresError, DresNotConfigured
 from schemas.dres import (
     DresEvaluation,
     DresStatusResponse,
+    DresSubmissionRecord,
     DresSubmitRequest,
     DresSubmitResponse,
 )
@@ -29,6 +30,14 @@ def list_evaluations(service: DresServiceDependency) -> list[DresEvaluation]:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except DresError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/submissions", response_model=list[DresSubmissionRecord])
+def submission_history(
+    service: DresServiceDependency, limit: int = Query(default=200, ge=1, le=1_000)
+) -> list[DresSubmissionRecord]:
+    """Answers DRES judged through this backend, newest first."""
+    return service.history(limit)
 
 
 @router.post("/submit", response_model=DresSubmitResponse)

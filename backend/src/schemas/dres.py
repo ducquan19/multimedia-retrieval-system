@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -67,6 +67,21 @@ class DresEvaluation(BaseModel):
 class DresStatusResponse(BaseModel):
     configured: bool
     username: str | None = None
+
+
+class DresSubmissionRecord(BaseModel):
+    """One answer DRES judged, as recorded in the backend's submission log."""
+
+    time: str
+    evaluation_id: str
+    mode: Literal["KIS", "VQA", "TRAKE"] | None
+    video_id: str | None
+    # The time range ("20200–20200 ms") or the answer text
+    answer: str
+    accepted: bool
+    status_code: int
+    submission: str | None = None
+    description: str | None = None
 
 
 class DresSubmitResponse(BaseModel):

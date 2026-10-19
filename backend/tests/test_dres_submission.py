@@ -220,3 +220,34 @@ def test_malformed_answers_are_rejected(answer: dict) -> None:
         DresSubmitRequest.model_validate(
             {"evaluation_id": "ev1", "answerSets": [{"answers": [answer]}]}
         )
+
+
+def test_history_lists_judged_answers_newest_first_and_survives_a_restart(
+    tmp_path: Path,
+) -> None:
+    fake = FakeDres()
+    api = _api(_service(tmp_path, fake))
+    qa = {"text": "QA-HAI-MƯƠI-N001-V001-20200"}
+    trake = {"text": "TR-L21_V001-100,250,400"}
+    for answer in (KIS_BODY["answerSets"][0]["answers"][0], qa, trake):
+        body = {"evaluation_id": "ev1", "answerSets": [{"answers": [answer]}]}
+        assert api.post("/api/dres/submit", json=body).status_code == 200
+
+    restarted = _api(_service(tmp_path, FakeDres()))
+    history = restarted.get("/api/dres/submissions").json()
+
+    assert [(r["mode"], r["video_id"], r["answer"]) for r in history] == [
+        ("TRAKE", "L21_V001", "TR-L21_V001-100,250,400"),
+        ("VQA", "N001-V001", "QA-HAI-MƯƠI-N001-V001-20200"),
+        ("KIS", "L21_V001", "12000–12000 ms"),
+    ]
+    assert all(r["accepted"] and r["submission"] == "CORRECT" for r in history)
+    assert restarted.get("/api/dres/submissions", params={"limit": 1}).json() == history[:1]
+
+
+def test_answers_rejected_without_a_verdict_are_not_in_the_history(tmp_path: Path) -> None:
+    api = _api(_service(tmp_path, FakeDres(status_code=422)))
+
+    api.post("/api/dres/submit", json=KIS_BODY)
+
+    assert api.get("/api/dres/submissions").json() == []

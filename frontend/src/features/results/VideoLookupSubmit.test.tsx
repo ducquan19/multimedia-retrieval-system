@@ -28,6 +28,7 @@ function setupApi(submitVerdict: string) {
     if (url.endsWith("/api/dres/submit")) {
       return Promise.resolve(jsonResponse(verdict(submitVerdict)));
     }
+    if (url.endsWith("/api/dres/submissions")) return Promise.resolve(jsonResponse([]));
     return Promise.resolve(
       jsonResponse({ video_id: "L21_V003", url: "/v.mp4", source: "local", fps: 25 }),
     );

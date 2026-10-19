@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   ApiError,
@@ -9,15 +9,20 @@ import {
 } from "../../api/client";
 import type { DresSubmitBody, DresSubmitResponse } from "../../api/types";
 import {
-  appendSubmissionLog,
+  appendLocalAttempt,
   formatClock,
+  submissionTone,
   type SubmissionTone,
-  useSubmissionLog,
+  type SubmitMode,
+  SUBMISSIONS_QUERY_KEY,
+  useSubmissionHistory,
+  verdictLabel,
 } from "./submissionLog";
 
-const EVALUATION_STORAGE_KEY = "aic-dres-evaluation";
+export { submissionTone };
+export type { SubmitMode };
 
-export type SubmitMode = "KIS" | "VQA" | "TRAKE";
+const EVALUATION_STORAGE_KEY = "aic-dres-evaluation";
 
 export type SubmitTarget =
   | {
@@ -44,10 +49,6 @@ interface DresSubmitPanelProps {
 
 const MODES = ["KIS", "VQA"] as const;
 const MODES_WITH_TRAKE = ["KIS", "VQA", "TRAKE"] as const;
-
-function verdictLabel(response: DresSubmitResponse): string {
-  return response.submission ?? (response.accepted ? "Đã nộp, chờ chấm" : "Nộp thất bại");
-}
 
 export function frameToMs(frame: number, fps: number): number {
   return Math.round((frame / fps) * 1000);
@@ -101,18 +102,6 @@ export function rejectionHint(message: string | null | undefined, mode: SubmitMo
   if (!message || mode === "KIS" || !/non-temporal/i.test(message)) return null;
   const sent = mode === "VQA" ? "QA" : "TRAKE";
   return `Task đang chạy là KIS: DRES chỉ nhận mediaItemName + start/end, không nhận ${sent}. Chọn KIS rồi nộp lại.`;
-}
-
-/**
- * Colour of a DRES reply: green only for a CORRECT verdict, red for WRONG or a
- * rejection, amber while DRES has not judged it (INDETERMINATE / no verdict).
- */
-export function submissionTone(response: DresSubmitResponse): SubmissionTone {
-  if (!response.accepted) return "fail";
-  const text = `${response.submission ?? ""} ${response.description ?? ""}`;
-  if (/\b(WRONG|INCORRECT)\b/i.test(text)) return "fail";
-  if (/\bCORRECT\b/i.test(text)) return "ok";
-  return "pending";
 }
 
 function readStoredEvaluation(): string | null {
@@ -172,6 +161,7 @@ export function DresSubmitPanel({
     enabled: target.kind === "single",
     staleTime: Infinity,
   });
+  const queryClient = useQueryClient();
   const submitMutation = useMutation<DresSubmitResponse, unknown, void>({
     mutationFn: () => submitToDres({ evaluation_id: evaluationId, ...body }),
     onSuccess: (response) =>
@@ -202,7 +192,7 @@ export function DresSubmitPanel({
     resetSubmission();
   }, [targetKey, resetSubmission]);
 
-  const submissionLog = useSubmissionLog();
+  const { entries: submissionLog } = useSubmissionHistory();
   const previousForVideo = submissionLog.filter(
     (entry) => entry.videoId === target.videoId && entry.evaluationId === evaluationId,
   );
@@ -275,7 +265,12 @@ export function DresSubmitPanel({
   };
 
   function logSubmission(verdict: string, tone: SubmissionTone, judged: boolean) {
-    appendSubmissionLog({
+    if (judged) {
+      // The backend logged it: refetch its history instead of keeping a copy here.
+      void queryClient.invalidateQueries({ queryKey: SUBMISSIONS_QUERY_KEY });
+      return;
+    }
+    appendLocalAttempt({
       at: Date.now(),
       evaluationId,
       mode,

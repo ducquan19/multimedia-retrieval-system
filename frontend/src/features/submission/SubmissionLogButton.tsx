@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
-import { clearSubmissionLog, entryTone, formatClock, useSubmissionLog } from "./submissionLog";
+import {
+  clearLocalAttempts,
+  entryTone,
+  formatClock,
+  useSubmissionHistory,
+} from "./submissionLog";
 
 export function SubmissionLogButton() {
-  const entries = useSubmissionLog();
+  const { entries, localAttempts, historyUnavailable } = useSubmissionHistory();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -37,17 +42,23 @@ export function SubmissionLogButton() {
         <section className="submission-log__panel" aria-label="Submission log">
           <header>
             <strong>Nhật ký nộp DRES</strong>
-            {entries.length > 0 && (
+            {localAttempts > 0 && (
               <button
                 type="button"
+                title="Các lần DRES đã chấm nằm trong log của backend và không bị xóa."
                 onClick={() => {
-                  if (window.confirm("Xóa toàn bộ nhật ký nộp trên máy này?")) clearSubmissionLog();
+                  if (window.confirm("Xóa các lần nộp lỗi lưu trên máy này?")) clearLocalAttempts();
                 }}
               >
-                Xóa
+                Xóa lần lỗi
               </button>
             )}
           </header>
+          {historyUnavailable && (
+            <p className="submission-log__empty">
+              Không đọc được lịch sử nộp từ backend; chỉ hiện các lần lỗi trên máy này.
+            </p>
+          )}
           {entries.length === 0 ? (
             <p className="submission-log__empty">Chưa nộp lần nào.</p>
           ) : (
@@ -55,7 +66,7 @@ export function SubmissionLogButton() {
               {entries.map((entry) => (
                 <li key={`${entry.at}-${entry.videoId}`} data-tone={entryTone(entry)}>
                   <span className="submission-log__time">{formatClock(entry.at)}</span>
-                  <span className="submission-log__mode">{entry.mode}</span>
+                  <span className="submission-log__mode">{entry.mode ?? "—"}</span>
                   <span className="submission-log__answer" title={entry.answer}>
                     <strong>{entry.videoId}</strong> {entry.answer}
                   </span>

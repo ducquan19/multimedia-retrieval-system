@@ -13,36 +13,61 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+interface SentPayload {
+  evaluation_id: string;
+  answerSets: { answers: ({ text: string } | { start: string; end: string })[] }[];
+}
+
+/** What the backend's submission log returns for an answer DRES judged. */
+function historyRecord(payload: SentPayload, verdict: Record<string, unknown>) {
+  const answer = payload.answerSets[0]!.answers[0]!;
+  const isText = "text" in answer;
+  return {
+    time: new Date().toISOString(),
+    evaluation_id: payload.evaluation_id,
+    mode: isText ? (answer.text.startsWith("QA-") ? "VQA" : "TRAKE") : "KIS",
+    video_id: "L01_V001",
+    answer: isText ? answer.text : `${answer.start}–${answer.end} ms`,
+    accepted: verdict.accepted,
+    status_code: verdict.status_code,
+    submission: verdict.submission ?? null,
+    description: verdict.description ?? null,
+  };
+}
+
 function setupApi(submitResponses: Response[] = []) {
-  const fetchMock = vi.fn((input: RequestInfo | URL, _init: RequestInit = {}) => {
-    void _init;
+  // Newest first, like GET /api/dres/submissions
+  const judged: ReturnType<typeof historyRecord>[] = [];
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(input);
+    if (url.endsWith("/api/dres/submissions")) return jsonResponse(judged);
+    if (url.endsWith("/api/dres/submit")) {
+      const response =
+        submitResponses.shift() ??
+        jsonResponse({
+          accepted: true,
+          status_code: 200,
+          submission: "CORRECT",
+          description: "Submission correct",
+          body: {},
+        });
+      const verdict = (await response.clone().json()) as Record<string, unknown>;
+      const statusCode = Number(verdict.status_code);
+      if (response.ok && statusCode >= 200 && statusCode < 300) {
+        judged.unshift(historyRecord(JSON.parse(String(init.body)) as SentPayload, verdict));
+      }
+      return response;
+    }
     if (url.endsWith("/api/dres/evaluations")) {
-      return Promise.resolve(
-        jsonResponse([
-          { id: "old", name: "Warm-up", type: "SYNCHRONOUS", status: "ENDED" },
-          { id: "ev1", name: "Round 1", type: "SYNCHRONOUS", status: "ACTIVE" },
-        ]),
-      );
+      return jsonResponse([
+        { id: "old", name: "Warm-up", type: "SYNCHRONOUS", status: "ENDED" },
+        { id: "ev1", name: "Round 1", type: "SYNCHRONOUS", status: "ACTIVE" },
+      ]);
     }
     if (url.includes("/api/videos/L01_V001/source")) {
-      return Promise.resolve(
-        jsonResponse({ video_id: "L01_V001", url: "/v.mp4", source: "remote", fps: 25 }),
-      );
+      return jsonResponse({ video_id: "L01_V001", url: "/v.mp4", source: "remote", fps: 25 });
     }
-    if (url.endsWith("/api/dres/submit")) {
-      return Promise.resolve(
-        submitResponses.shift() ??
-          jsonResponse({
-            accepted: true,
-            status_code: 200,
-            submission: "CORRECT",
-            description: "Submission correct",
-            body: {},
-          }),
-      );
-    }
-    return Promise.resolve(jsonResponse({ detail: "Not found" }, 404));
+    return jsonResponse({ detail: "Not found" }, 404);
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -133,6 +158,8 @@ describe("DRES submission", () => {
     await user.click(screen.getByRole("button", { name: "Xác nhận nộp" }));
     expect(await screen.findByText("CORRECT")).toBeInTheDocument();
     unmount();
+    // The judged answer is in the backend log, so a cleared browser still knows about it.
+    window.localStorage.clear();
 
     // Reopened on the same frame: that exact answer is blocked before any request.
     renderModal(target);

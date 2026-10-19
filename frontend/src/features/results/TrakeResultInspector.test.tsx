@@ -108,7 +108,9 @@ describe("TrakeResultInspector", () => {
             }
           : url.endsWith("/api/dres/evaluations")
             ? [{ id: "ev1", name: "Round 1", type: null, status: "ACTIVE" }]
-            : {};
+            : url.endsWith("/api/dres/submissions")
+              ? []
+              : {};
         return Promise.resolve(
           new Response(JSON.stringify(body), {
             status: 200,

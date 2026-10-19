@@ -1,14 +1,25 @@
 import json
 import logging
+import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from infrastructure.dres_client import DresClient
-from schemas.dres import DresEvaluation, DresSubmitRequest, DresSubmitResponse
+from schemas.dres import (
+    DresEvaluation,
+    DresSubmissionRecord,
+    DresSubmitRequest,
+    DresSubmitResponse,
+)
 
 logger = logging.getLogger(__name__)
+
+# Video ids look like L21_V001 or N001-V001; answers may contain dashes, so they are matched last.
+_VIDEO_ID = r"[A-Za-z]+\d+[_-]V\d+"
+_QA_TEXT = re.compile(rf"^QA-(?P<answer>.*)-(?P<video>{_VIDEO_ID})-(?P<time>\d+)$", re.S)
+_TRAKE_TEXT = re.compile(rf"^TR-(?P<video>{_VIDEO_ID})-(?P<frames>[\d,]+)$")
 
 
 class DuplicateSubmission(ValueError):
@@ -43,7 +54,9 @@ class DresSubmissionService:
         body = request.dres_body()
         key = self._key(request.evaluation_id, body)
         with self._lock:
-            # In flight counts too, so two clicks (or two machines) cannot both send it.
+            # In flight counts too, so two quick clicks cannot both send it. The guard covers
+            # the answers sent through this backend only: teammates running their own backend
+            # have their own log.
             if key in self._submitted or key in self._in_flight:
                 raise DuplicateSubmission(
                     "Đáp án này đã được nộp cho evaluation này, không thể nộp lại."
@@ -62,16 +75,28 @@ class DresSubmissionService:
             with self._lock:
                 self._in_flight.discard(key)
 
-        payload_dict = payload if isinstance(payload, dict) else {}
-        accepted = 200 <= status_code < 300 and payload_dict.get("status", True) is not False
+        verdict = _verdict(status_code, payload)
+        return DresSubmitResponse(**verdict, body=body)
 
-        return DresSubmitResponse(
-            accepted=accepted,
-            status_code=status_code,
-            submission=_as_text(payload_dict.get("submission")),
-            description=_as_text(payload_dict.get("description")),
-            body=body,
-        )
+    def history(self, limit: int = 200) -> list[DresSubmissionRecord]:
+        """Judged answers from the submission log, newest first.
+
+        The log of this backend is the authority on what was submitted: unlike the browser's
+        storage it survives a cleared browser and backs the duplicate guard.
+        """
+        if not self._log_path.exists():
+            return []
+        with self._lock, open(self._log_path, encoding="utf-8") as f:
+            lines = f.readlines()
+        records = []
+        for line in reversed(lines):
+            try:
+                records.append(_record(json.loads(line)))
+            except (ValueError, KeyError, TypeError, IndexError):
+                continue  # already reported by _load_submitted
+            if len(records) >= limit:
+                break
+        return records
 
     @staticmethod
     def _key(evaluation_id: str, body: dict) -> str:
@@ -109,6 +134,38 @@ class DresSubmissionService:
 
 def _as_text(value: Any) -> str | None:
     return None if value is None else str(value)
+
+
+def _verdict(status_code: int, payload: Any) -> dict[str, Any]:
+    payload_dict = payload if isinstance(payload, dict) else {}
+    return {
+        "accepted": 200 <= status_code < 300 and payload_dict.get("status", True) is not False,
+        "status_code": status_code,
+        "submission": _as_text(payload_dict.get("submission")),
+        "description": _as_text(payload_dict.get("description")),
+    }
+
+
+def _record(entry: dict[str, Any]) -> DresSubmissionRecord:
+    answer = entry["body"]["answerSets"][0]["answers"][0]
+    mode, video_id, text = None, None, ""
+    if "text" in answer:
+        text = str(answer["text"])
+        if match := _QA_TEXT.match(text):
+            mode, video_id = "VQA", match["video"]
+        elif match := _TRAKE_TEXT.match(text):
+            mode, video_id = "TRAKE", match["video"]
+    else:
+        mode, video_id = "KIS", answer.get("mediaItemName")
+        text = f"{answer.get('start')}–{answer.get('end')} ms"
+    return DresSubmissionRecord(
+        time=entry["time"],
+        evaluation_id=entry["evaluation_id"],
+        mode=mode,
+        video_id=video_id,
+        answer=text,
+        **_verdict(int(entry["status_code"]), entry.get("response")),
+    )
 
 
 def _canonical(value: Any) -> Any:
