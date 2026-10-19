@@ -50,4 +50,6 @@ tokenizers==0.22.2
 torch==2.13.0
 torchmetrics==1.9.0
 torchscale==0.3.0
+# Pulled in by timm; it must be the build made for this torch (CI installs both from the CPU index).
+torchvision==0.28.0
 transformers==5.15.0
